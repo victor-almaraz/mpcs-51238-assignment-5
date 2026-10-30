@@ -8,6 +8,9 @@
 //
 // Modulation and shaping params default to their neutral value, so a patch that omits them
 // plays the plain sound of its synth type (synthesis-conventions.md, patch-format.md).
+//
+// mod: ModDef | null (modulation.md, Synth targets). Every numeric param has one; enums and
+// arrays have null. Audio-rate defs name the voice node and AudioParam the route connects to.
 
 export const SYNTH_TYPES = ['subtractive', 'fm', 'additive', 'pluck', 'granular'];
 
@@ -19,29 +22,34 @@ export const SYNTH_INFO = {
   granular: { label: 'Granular', description: 'Clouds of short grains' },
 };
 
-const attack = (def) => ({ name: 'attack', label: 'Attack', unit: 's', kind: 'number', min: 0.002, max: 2, default: def, scale: 'pow3' });
-const release = (def) => ({ name: 'release', label: 'Release', unit: 's', kind: 'number', min: 0.01, max: 4, default: def, scale: 'pow3' });
+/** Control-rate ModDef: applied by pump() (modulation.md). */
+const CTL = Object.freeze({ rate: 'control' });
+/** Audio-rate ModDef on the voice AudioParam `target` ('<node>.<param>'). */
+const audio = (target) => Object.freeze({ rate: 'audio', target });
+
+const attack = (def) => ({ name: 'attack', label: 'Attack', unit: 's', kind: 'number', min: 0.002, max: 2, default: def, scale: 'pow3', mod: CTL });
+const release = (def) => ({ name: 'release', label: 'Release', unit: 's', kind: 'number', min: 0.01, max: 4, default: def, scale: 'pow3', mod: CTL });
 // ADSR decay and sustain (audio-engine-core.md "Envelopes"). Sustain 1 is the plain AR shape.
-const decay = (def) => ({ name: 'decay', label: 'Decay', unit: 's', kind: 'number', min: 0.01, max: 4, default: def, scale: 'pow3' });
-const sustain = () => ({ name: 'sustain', label: 'Sustain', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 1, scale: 'lin', step: 0.01 });
+const decay = (def) => ({ name: 'decay', label: 'Decay', unit: 's', kind: 'number', min: 0.01, max: 4, default: def, scale: 'pow3', mod: CTL });
+const sustain = () => ({ name: 'sustain', label: 'Sustain', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 1, scale: 'lin', step: 0.01, mod: CTL });
 
 export const PARAM_DEFS = {
   subtractive: [
     { name: 'waveform', label: 'Waveform', unit: '', kind: 'enum', scale: 'radio',
-      options: ['sine', 'sawtooth', 'square', 'triangle'], optionLabels: ['Sine', 'Saw', 'Square', 'Tri'], default: 'sawtooth' },
-    { name: 'cutoff', label: 'Cutoff', unit: 'Hz', kind: 'number', min: 40, max: 16000, default: 2000, scale: 'log' },
-    { name: 'resonance', label: 'Resonance', unit: 'dB', kind: 'number', min: 0, max: 20, default: 1, scale: 'lin' },
-    { name: 'envAmount', label: 'Filter env', unit: 'oct', kind: 'number', min: 0, max: 6, default: 0, scale: 'lin', step: 0.1 },
+      options: ['sine', 'sawtooth', 'square', 'triangle'], optionLabels: ['Sine', 'Saw', 'Square', 'Tri'], default: 'sawtooth', mod: null },
+    { name: 'cutoff', label: 'Cutoff', unit: 'Hz', kind: 'number', min: 40, max: 16000, default: 2000, scale: 'log', mod: audio('filter.detune') },
+    { name: 'resonance', label: 'Resonance', unit: 'dB', kind: 'number', min: 0, max: 20, default: 1, scale: 'lin', mod: audio('filter.Q') },
+    { name: 'envAmount', label: 'Filter env', unit: 'oct', kind: 'number', min: 0, max: 6, default: 0, scale: 'lin', step: 0.1, mod: CTL },
     attack(0.01),
     decay(0.3),
     sustain(),
     release(0.3),
   ],
   fm: [
-    { name: 'ratio', label: 'Ratio', unit: 'ratio', kind: 'number', min: 0.5, max: 12, default: 2, scale: 'lin', step: 0.5 },
-    { name: 'fine', label: 'Fine', unit: 'offset', kind: 'number', min: -0.5, max: 0.5, default: 0, scale: 'lin', step: 0.01 },
-    { name: 'index', label: 'Index', unit: 'index', kind: 'number', min: 0, max: 20, default: 3, scale: 'lin', step: 0.1 },
-    { name: 'indexDecay', label: 'Index decay', unit: 's', kind: 'number', min: 0.01, max: 4, default: 0.5, scale: 'pow3' },
+    { name: 'ratio', label: 'Ratio', unit: 'ratio', kind: 'number', min: 0.5, max: 12, default: 2, scale: 'lin', step: 0.5, mod: CTL },
+    { name: 'fine', label: 'Fine', unit: 'offset', kind: 'number', min: -0.5, max: 0.5, default: 0, scale: 'lin', step: 0.01, mod: CTL },
+    { name: 'index', label: 'Index', unit: 'index', kind: 'number', min: 0, max: 20, default: 3, scale: 'lin', step: 0.1, mod: CTL },
+    { name: 'indexDecay', label: 'Index decay', unit: 's', kind: 'number', min: 0.01, max: 4, default: 0.5, scale: 'pow3', mod: CTL },
     attack(0.005),
     decay(0.5),
     sustain(),
@@ -49,31 +57,31 @@ export const PARAM_DEFS = {
   ],
   additive: [
     { name: 'harmonics', label: 'Harmonics', unit: 'fraction', kind: 'array', length: 8, min: 0, max: 1, step: 0.01,
-      default: [1, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12], scale: 'lin' },
+      default: [1, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12], scale: 'lin', mod: null },
     attack(0.02),
     decay(0.5),
     sustain(),
     release(0.5),
-    { name: 'vibratoRate', label: 'Vibrato rate', unit: 'Hz', kind: 'number', min: 0.5, max: 12, default: 5, scale: 'log' },
-    { name: 'vibratoDepth', label: 'Vibrato', unit: 'cents', kind: 'number', min: 0, max: 100, default: 0, scale: 'lin', step: 1 },
+    { name: 'vibratoRate', label: 'Vibrato rate', unit: 'Hz', kind: 'number', min: 0.5, max: 12, default: 5, scale: 'log', mod: audio('lfo.detune') },
+    { name: 'vibratoDepth', label: 'Vibrato', unit: 'cents', kind: 'number', min: 0, max: 100, default: 0, scale: 'lin', step: 1, mod: audio('depth.gain') },
   ],
   pluck: [
-    { name: 'damping', label: 'Damping', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.5, scale: 'lin', step: 0.01 },
-    { name: 'brightness', label: 'Brightness', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.7, scale: 'lin', step: 0.01 },
+    { name: 'damping', label: 'Damping', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.5, scale: 'lin', step: 0.01, mod: CTL },
+    { name: 'brightness', label: 'Brightness', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.7, scale: 'lin', step: 0.01, mod: CTL },
     // Fraction of the string length from the bridge; 0 plucks at the bridge (no comb).
-    { name: 'pickPosition', label: 'Pick position', unit: 'fraction', kind: 'number', min: 0, max: 0.5, default: 0, scale: 'lin', step: 0.01 },
-    { name: 'decay', label: 'Decay', unit: 's', kind: 'number', min: 0.2, max: 10, default: 2, scale: 'pow3' },
+    { name: 'pickPosition', label: 'Pick position', unit: 'fraction', kind: 'number', min: 0, max: 0.5, default: 0, scale: 'lin', step: 0.01, mod: CTL },
+    { name: 'decay', label: 'Decay', unit: 's', kind: 'number', min: 0.2, max: 10, default: 2, scale: 'pow3', mod: CTL },
     // T60 after note-off (string muting); never longer than the decay.
-    { name: 'release', label: 'Release', unit: 's', kind: 'number', min: 0.02, max: 2, default: 0.1, scale: 'pow3' },
+    { name: 'release', label: 'Release', unit: 's', kind: 'number', min: 0.02, max: 2, default: 0.1, scale: 'pow3', mod: CTL },
   ],
   granular: [
     { name: 'source', label: 'Source', unit: '', kind: 'enum', scale: 'radio',
-      options: ['saw', 'noise', 'chord', 'sample'], optionLabels: ['Saw', 'Noise', 'Chord', 'File'], default: 'saw' },
-    { name: 'position', label: 'Position', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.5, scale: 'lin', step: 0.01 },
-    { name: 'grainSize', label: 'Grain size', unit: 's', kind: 'number', min: 0.01, max: 0.25, default: 0.06, scale: 'log' },
-    { name: 'density', label: 'Density', unit: 'per-s', kind: 'number', min: 2, max: 60, default: 20, scale: 'log' },
-    { name: 'spray', label: 'Spray', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.2, scale: 'lin', step: 0.01 },
-    { name: 'pitchSpread', label: 'Pitch spread', unit: 'cents', kind: 'number', min: 0, max: 1200, default: 0, scale: 'lin', step: 1 },
+      options: ['saw', 'noise', 'chord', 'sample'], optionLabels: ['Saw', 'Noise', 'Chord', 'File'], default: 'saw', mod: null },
+    { name: 'position', label: 'Position', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.5, scale: 'lin', step: 0.01, mod: CTL },
+    { name: 'grainSize', label: 'Grain size', unit: 's', kind: 'number', min: 0.01, max: 0.25, default: 0.06, scale: 'log', mod: CTL },
+    { name: 'density', label: 'Density', unit: 'per-s', kind: 'number', min: 2, max: 60, default: 20, scale: 'log', mod: CTL },
+    { name: 'spray', label: 'Spray', unit: 'fraction', kind: 'number', min: 0, max: 1, default: 0.2, scale: 'lin', step: 0.01, mod: CTL },
+    { name: 'pitchSpread', label: 'Pitch spread', unit: 'cents', kind: 'number', min: 0, max: 1200, default: 0, scale: 'lin', step: 1, mod: CTL },
     attack(0.05),
     release(0.4),
   ],

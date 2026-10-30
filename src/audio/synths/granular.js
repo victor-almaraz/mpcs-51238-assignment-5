@@ -191,6 +191,11 @@ export class Granular extends Instrument {
     src.start(t, offset, content);
   }
 
+  /** Grains emitted from now on play at the new pitch. */
+  glideVoice(v, sounding) {
+    v.freq = mtof(sounding);
+  }
+
   /** Ends the voice at `t`: grains still scheduled past `t` are stopped (before start → silent). */
   stopAt(v, t) {
     super.stopAt(v, t);
@@ -205,7 +210,7 @@ export class Granular extends Instrument {
   retire(v) {
     if (!this.voiceSet.has(v)) return;
     this.voiceSet.delete(v);
-    v.env.disconnect();
+    for (const n of v.nodes) n.disconnect();
   }
 
   /** Disconnects voice buses whose release has completed and whose grains have all ended. */
@@ -223,7 +228,7 @@ export class Granular extends Instrument {
     const t = this.ctx.currentTime;
     for (const v of this.voiceSet) this.stopAt(v, t);
     super.dispose();
-    for (const v of this.voiceSet) v.env.disconnect();
+    for (const v of this.voiceSet) for (const n of v.nodes) n.disconnect();
     this.voiceSet.clear();
     this.spans.length = 0;
   }

@@ -12,18 +12,16 @@ AudioContext lifecycle, engine construction, the widget interface, voices, envel
 ```ts
 // src/audio/context.js — imported only from client components
 let ctx: AudioContext | null = null;
-let bus: Promise<MasterBus> | null = null;
-export async function ensureRunning(): Promise<AudioContext> {
+export function ensureRunning(): Promise<AudioContext> {
   if (!ctx) {
     if ('audioSession' in navigator) (navigator as any).audioSession.type = 'playback'; // iOS 17+: bypass ringer switch
     ctx = new AudioContext({ latencyHint: 'interactive' });
   }
   const resumed = ctx.state !== 'running' ? ctx.resume() : Promise.resolve(); // called synchronously in the gesture
-  bus ??= buildMasterBus(ctx);                                                 // audio-safety.md
-  await Promise.all([resumed, bus]);
-  return ctx;
+  return resumed.then(() => ctx);
 }
 ```
+- `ensureRunning()` only creates and resumes the context. It does not build the master bus: the caller builds exactly one bus per context with `buildMasterBus(ctx, { realtime: true, masterGain: 0 })` (`audio-safety.md`), keeps it for the life of the context, and calls `bus.fadeIn(level)` once the engine exists (and again after each resume), because a realtime bus starts with `masterGain` at 0.
 - `ensureRunning()` is called from the first Add Synth, Play, Connect MIDI Device or Play with Keyboard click. `resume()` is called before any `await`, which keeps user activation.
 - The start notice and master fade-in in `audio-safety.md` apply to the first start.
 - `ctx.onstatechange`:
@@ -53,7 +51,7 @@ voice → widget.output (volume × mute/solo × polyGain) → [insert chain] →
 ```
 - `buildMasterBus(ctx)` builds `mixBus`, `masterGain` and the safety stage; values and the full chain are in `audio-safety.md`.
 - Insert and master effect chains are `fx-chain` AudioWorklet nodes (`effects.md`). Parameter modulation is specified in `modulation.md`.
-- `buildEngine(ctx: BaseAudioContext, seed: number)` (`src/audio/engine.js`) builds the master bus and one instrument per widget from rack state. The live app and offline render (`recording.md`) use the same function.
+- `buildEngine(ctx: BaseAudioContext, seed: number)` (`src/audio/engine.js`) builds the master bus and one instrument per widget from rack state. The offline render (`recording.md`) uses it; the live page builds the bus itself and constructs `new Engine(ctx, bus, opts)` (`bindings.md`, Audio host). Both paths create the same graph.
 - `seed` initializes every `mulberry32` PRNG (`src/audio/random.js`) used by instruments. Audio code does not call `Math.random()`.
 - Per-voice headroom: velocity gain ≤ 0.3 before widget volume.
 - `latencyHint` is `'interactive'` (the default). `'playback'` increases output latency in exchange for fewer dropouts, which delays live parameter changes and live input.
@@ -63,14 +61,25 @@ voice → widget.output (volume × mute/solo × polyGain) → [insert chain] →
 interface Instrument {
   readonly type: 'subtractive' | 'fm' | 'additive' | 'pluck' | 'granular';
   readonly output: GainNode;                        // connected to mixBus by the rack
-  noteOn(pitch: number, velocity: number, time: number, source: 'file' | 'live'): void;
-  noteOff(pitch: number, time: number, source: 'file' | 'live'): void;  // may be called with a future time
+  noteOn(pitch: number, velocity: number, time: number, source: string): void;
+  noteOff(pitch: number, time: number, source: string): void;  // may be called with a future time
   allNotesOff(time: number): void;                  // fast release, also cancels future-start voices
   setParam(name: string, value: number | number[] | string): void; // value already validated/clamped
   getParams(): Record<string, unknown>;
   dispose(): void;                                  // stop + disconnect everything
+  // Voice control (bindings.md, Instrument contracts); absent on pluck
+  setVoicePitch?(source: string, pitch: number, glideMs: number): void;
+  setVoicePan?(source: string, pan: number): void;
+  setVoiceMod?(source: string, mods: Record<string, number>): void;
+  /** Envelope value 0–1 (relative to the velocity peak) of the newest voice tagged `source` at `time` (default now), or null. */
+  voiceEnv(source: string, time?: number): number | null;
 }
 ```
+- `source` is an opaque string tag compared with `===`. The binding runtime uses `sky:<bindingId>:<objectId>` and `trig:<bindingId>` (`bindings.md`, Voice identity).
+- `setVoicePitch` glides the newest unreleased voice tagged `source` to `pitch` (plus the instrument's tuning shift, clamped to 0–127) through the oscillator `detune` with `setTargetAtTime(cents, now, glideMs / 3000)`; FM glides carrier and modulator together and rescales the index depth. Granular voices change pitch at the next grain. The voice keeps its played pitch for `noteOff` matching.
+- `setVoicePan` inserts a `StereoPannerNode` (equal power) between the voice's envelope and `polyNode` on the first call, then moves `pan` with τ = 10 ms. An unpanned voice is up-mixed to both channels at full level; a panned voice at the centre is 3 dB lower per channel.
+- `setVoiceMod` is specified in `modulation.md` (Per-voice values).
+- Pluck voices live in one worklet node, so pluck implements none of the three; the binding runtime uses its fallbacks. Pluck `voiceEnv` follows the T60 decay and release model.
 - `noteOff(pitch, time, source)` releases the **oldest active voice with that pitch and source** that started before `time` and has no release scheduled yet. Retriggered same-pitch notes scheduled in advance therefore release in order.
 - Voices are tagged with `source`, so a live note and a file note on the same pitch in the same widget release independently.
 - `setParam` applies to new voices and, for continuous parameters, to sounding voices through smoothing (below).
@@ -138,6 +147,29 @@ v.env.gain.setTargetAtTime(0, tOff, v.release / 3);
 - Live changes (cutoff, FM index, volume) use `param.setTargetAtTime(value, ctx.currentTime, 0.01)`, a 10 ms time constant that avoids zipper noise.
 - Slider `input` events are coalesced: the latest value is applied once per animation frame.
 - `setValueCurveAtTime` is not used for live changes; it throws when it overlaps other automation events.
+
+## Engine interface
+`Engine` (`src/audio/engine.js`) is constructed as `new Engine(ctx, bus, { seed, realtime, lookahead, maxTime, ks, onFault, onError })`.
+
+| Method | Effect |
+|---|---|
+| `sync(widgets, { rampIn })` | Creates, updates and removes instruments to match the widget list; re-resolves effect wiring and modulation routes |
+| `get(id)` | The instrument for a widget id, or `null` |
+| `pump(until)` | Granular grain scheduling, control-rate modulation, scheduled LFO sources and held data posts; call every 25 ms |
+| `releaseAll(t)`, `fadeOutAll(t)`, `panic(t)` | Release every voice; fade widget outputs; release and reset every effect chain |
+| `flush()` | Resolves when pluck and chain worklets have received every earlier message (offline renders) |
+| `rebuild(type)` | Recreates instruments (and resets effect chains) after a fault |
+| `setTempo`, `setFx`, `setFxParam`, `setFxBypass`, `onFxFault` | `effects.md`, Engine API |
+| `setLfos`, `setMods`, `postModValue`, `modulatedValue` | `modulation.md`, Engine API |
+| `level(id)`, `spectrum(id, bands)`, `voiceEnv(id, source)` | Analysis taps (below) |
+| `dispose()` | Stops and disconnects everything the engine created and restores `mixBus → masterGain` |
+
+### Analysis taps
+- `level(id)` returns the RMS level of the instrument's output (after volume and mute, before its insert chain) as `clamp((20·log10(rms) + 60) / 60, 0, 1)`: −60 dBFS and below is 0, 0 dBFS is 1. It returns `null` for an unknown id or an instrument that could not be built.
+- `spectrum(id, bands)` returns `bands` values (rounded and clamped to 4–32) in 0–1: the mean `getByteFrequencyData` value / 255 over log-spaced bands from 40 Hz to min(16 kHz, fs / 2), using the analyser's default −100…−30 dB scale. A band narrower than one bin reads the nearest bin.
+- `voiceEnv(id, source)` returns the instrument's `voiceEnv(source)`.
+- The first `level` or `spectrum` call for an instrument creates one `AnalyserNode` (`fftSize` 1024, `smoothingTimeConstant` 0.5) connected from its output. The analyser is a sink: it is not connected onward, so it does not change the signal path, and the safety stage still follows every output. An instrument has at most one analyser; it moves to a rebuilt instrument and is disconnected when the instrument is removed.
+- Reads are cached per instrument and recomputed at most once per 16 ms of context time, so callers may ask every animation frame without extra cost.
 
 ## Teardown
 - Widget removal: `allNotesOff(now)`, then `dispose()` after 50 ms (disconnect the output; `port.close()` on worklets).

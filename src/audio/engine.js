@@ -1,5 +1,8 @@
 // Engine: one instrument per rack widget, connected to the master bus (audio-engine-core.md).
-//   voice → inst.output (volume × mute/solo; polyGain inside) → mixBus → masterGain → safety
+//   voice → inst.output (volume × mute/solo; polyGain inside) → [insert chain] → mixBus
+//         → [master chain] → masterGain → safety stage
+// Effect chains: fx/fx-host.js (effects.md). Modulation: mod/mod-host.js (modulation.md).
+// Analysis taps: analysis.js (audio-engine-core.md, Analysis taps).
 // The live app and offline render build the engine the same way; buildEngine() is the
 // offline/test entry point.
 
@@ -13,6 +16,11 @@ import { TrackedParam, GAIN_TAU, RISE_TAU } from './smoothing.js';
 import { dbToGain, tuningSemitones } from './synths/param-defs.js';
 import { hashSeed } from './random.js';
 import { buildMasterBus } from './master-bus.js';
+import { FxHost, PANIC_RESET_DELAY_S } from './fx/fx-host.js';
+import { ModHost } from './mod/mod-host.js';
+import { AnalysisTaps } from './analysis.js';
+
+export { FxLimitError, ModLimitError, ModTargetError } from './errors.js';
 
 const REMOVE_DELAY_MS = 50;
 
@@ -81,11 +89,15 @@ export class Engine {
     this.onFault = onFault;
     this.onError = onError;
     this.pool = new VoicePool(MAX_VOICES_GLOBAL);
-    this.entries = new Map();          // id → { widget, inst, gain, serial }
+    this.entries = new Map();          // id → { widget, inst, gain, serial, outlet }
     this.order = [];                   // widget ids in rack order
     this.counter = 0;
     this.timeouts = new Set();
     this.disposed = false;
+    this.t0 = ctx.currentTime;         // LFO phase origin (modulation.md, LFOs)
+    this.fx = new FxHost(this);
+    this.mod = new ModHost(this);
+    this.taps = new AnalysisTaps(this);
   }
 
   get output() {
@@ -118,7 +130,9 @@ export class Engine {
     for (const [k, v] of Object.entries(e.widget.params)) inst.setParam(k, v);
     if (e.widget.sample && inst.setSample) inst.setSample(e.widget.sample.buffer);
     inst.setDetune(e.widget.detune);
-    inst.output.connect(this.bus.mixBus);
+    e.outlet = this.fx.outlet(e.widget.id);
+    inst.output.connect(e.outlet);
+    this.taps.attach(e.widget.id, inst);
     e.gain = new TrackedParam(inst.output.gain, 0);
     if (rampIn > 0) e.gain.linearTo(target, now, rampIn);
     else e.gain.setAt(target, now);   // no voices yet, so a jump is silent
@@ -154,8 +168,14 @@ export class Engine {
       if (prev.part !== e.widget.part) e.inst.allNotesOff(now);
       if (Math.abs(target - e.gain.target) > 1e-9) e.gain.setTarget(target, now, target > e.gain.target ? RISE_TAU : GAIN_TAU);
     }
-    for (const [id, e] of this.entries) if (!seen.has(id)) this.remove(e, now);
+    const gone = [];
+    for (const [id, e] of this.entries) if (!seen.has(id)) { this.remove(e, now); gone.push(id); }
     this.order = widgets.map((w) => w.id);
+    if (gone.length) {
+      this.fx.ownersRemoved(gone, REMOVE_DELAY_MS / 1000);
+      for (const id of gone) this.taps.remove(id);
+    }
+    this.mod.refresh();
   }
 
   remove(e, now) {
@@ -192,6 +212,12 @@ export class Engine {
     for (const e of this.entries.values()) if (e.inst) e.inst.allNotesOff(t);
   }
 
+  /** Panic: releases every voice, then resets every effect chain after the voice fade (effects.md). */
+  panic(t = this.ctx.currentTime) {
+    this.releaseAll(t);
+    this.fx.resetAll(PANIC_RESET_DELAY_S);
+  }
+
   /** Ramps every widget output to 0 (τ 10 ms) from its tracked value; used before a patch swap. */
   fadeOutAll(t = this.ctx.currentTime) {
     for (const e of this.entries.values()) if (e.gain) e.gain.setTarget(0, t, GAIN_TAU);
@@ -199,11 +225,49 @@ export class Engine {
 
   /** Resolves when every instrument's scheduled notes have reached the audio thread. Offline only. */
   flush() {
-    return Promise.all([...this.entries.values()].map((e) => (e.inst ? e.inst.flush() : null)));
+    return Promise.all([...[...this.entries.values()].map((e) => (e.inst ? e.inst.flush() : null)), this.fx.flush()]);
   }
 
   pump(until) {
+    if (this.disposed) return;
+    this.mod.pump(until);
     for (const e of this.entries.values()) if (e.inst) e.inst.pump(until);
+  }
+
+  // ----- EngineFx (effects.md, Engine API) -----
+
+  setTempo(bpm) { this.fx.setTempo(bpm); }
+
+  setFx(owner, slots) { this.fx.setFx(owner, slots); }
+
+  setFxParam(slotId, name, value) { this.fx.setFxParam(slotId, name, value); }
+
+  setFxBypass(slotId, on) { this.fx.setFxBypass(slotId, on); }
+
+  onFxFault(fn) { this.fx.onFxFault(fn); }
+
+  // ----- EngineMod (modulation.md, Engine API) -----
+
+  setLfos(lfos) { this.mod.setLfos(lfos); }
+
+  setMods(routes) { this.mod.setMods(routes); }
+
+  postModValue(sourceId, value, smoothMs) { this.mod.postModValue(sourceId, value, smoothMs); }
+
+  modulatedValue(target) { return this.mod.modulatedValue(target); }
+
+  // ----- analysis taps (audio-engine-core.md) -----
+
+  /** RMS level 0–1 of an instrument's output (−60–0 dBFS), or null. */
+  level(id) { return this.taps.level(id); }
+
+  /** `bands` (4–32) log-spaced band levels 0–1 of an instrument's output, or null. */
+  spectrum(id, bands) { return this.taps.spectrum(id, bands); }
+
+  /** Envelope value 0–1 of the voice tagged `source` on instrument `id`, or null. */
+  voiceEnv(id, source) {
+    const inst = this.get(id);
+    return inst && typeof inst.voiceEnv === 'function' ? inst.voiceEnv(source) : null;
   }
 
   /**
@@ -219,6 +283,8 @@ export class Engine {
       if (e.inst) e.inst.dispose();
       this.attach(e, gainTarget(e.widget, soloActive), now, 0);
     }
+    if (type === null) this.fx.resetAll();
+    this.mod.refresh();
   }
 
   dispose() {
@@ -227,6 +293,9 @@ export class Engine {
     for (const h of this.timeouts) clearTimeout(h);
     this.timeouts.clear();
     for (const e of this.entries.values()) if (e.inst) e.inst.dispose();
+    this.fx.dispose();
+    this.mod.dispose();
+    this.taps.dispose();
     this.entries.clear();
     this.order = [];
   }

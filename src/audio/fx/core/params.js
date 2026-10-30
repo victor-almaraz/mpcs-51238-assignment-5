@@ -11,8 +11,12 @@
  *   options?: string[],                         // enum option names
  *   step?: number,                              // plain-unit step, snapped from min
  *   smoothMs?: number,                          // smoothing τ override, in ms
- * }
+ *   mod?: { dir: 'down' } | null,               // modulation (modulation.md): absent = both
+ * }                                             //   directions, DOWN = lowers only, null = set only
  */
+
+/** `mod` of a parameter that modulation may only lower (effects.md, "down"). */
+export const DOWN = Object.freeze({ dir: 'down' });
 
 const SCALES = ['lin', 'log', 'pow3', 'enum'];
 
@@ -38,6 +42,9 @@ export function defineParam(def) {
   if (d.scale === 'log' && d.min <= 0) throw new Error(`ParamDef ${d.id}: log scale needs min > 0`);
   if (d.step !== undefined && !(d.step > 0)) throw new Error(`ParamDef ${d.id}: step must be > 0`);
   if (!(d.default >= d.min && d.default <= d.max)) throw new Error(`ParamDef ${d.id}: default outside range`);
+  if (d.mod !== undefined && d.mod !== null && !(typeof d.mod === 'object' && (d.mod.dir === 'down' || d.mod.dir === 'both'))) {
+    throw new Error(`ParamDef ${d.id}: mod must be null or { dir: 'down' | 'both' }`);
+  }
   return Object.freeze(d);
 }
 

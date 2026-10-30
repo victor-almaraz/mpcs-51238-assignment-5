@@ -25,6 +25,17 @@ type ParamDef = {
   mod?: ModDef | null;   // modulation path (modulation.md); absent means null
 };
 ```
+- **Modulation paths** (`modulation.md`, Synth targets). Every numeric parameter has a `ModDef`; enum and array parameters have `mod: null`.
+
+  | Type | Audio rate (`target`) | Control rate |
+  |---|---|---|
+  | `subtractive` | `cutoff` (`filter.detune`), `resonance` (`filter.Q`) | `envAmount`, `attack`, `decay`, `sustain`, `release` |
+  | `fm` | | every numeric parameter |
+  | `additive` | `vibratoRate` (`lfo.detune`), `vibratoDepth` (`depth.gain`) | `attack`, `decay`, `sustain`, `release` |
+  | `pluck` | | every parameter |
+  | `granular` | | every numeric parameter |
+
+  Control-rate envelope times, FM `ratio`, `fine` and `indexDecay`, subtractive `envAmount`, and pluck `pickPosition`, `decay` and `release` take effect at the next note; the others also move sounding voices.
 - **Scaled params:** store values in natural units, and map the UI's normalised slider position `u ∈ [0,1]`:
   - Frequency-like (log): `v = min * (max/min) ** u`.
   - Times (cubic): `v = min + (max-min) * u ** 3`.

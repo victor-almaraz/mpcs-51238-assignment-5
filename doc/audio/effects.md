@@ -122,12 +122,15 @@ The chain processor follows the real-time rules of assignment 3's `a3-audio-impl
 ### Messages from the engine
 | `t` | Fields | Effect |
 |---|---|---|
-| `slots` | `slots: [{ id, type, params, bypass }]` | Replaces the slot list. Slots with an unchanged `id` and `type` keep their kernel and state; their params move to the given values through smoothing. Other slots are created, with smoothers snapped to the given values. |
+| `slots` | `slots: [{ id, type, params, bypass }]` | Replaces the slot list. `params` holds every parameter of the type (enum values as option indices). Slots with an unchanged `id` and `type` keep their kernel and state; their params move to the given values through smoothing. Other slots are created, with smoothers snapped to the given values; in a chain that has already processed audio a new slot fades in from dry over 10 ms. |
 | `param` | `slot`, `name`, `value` | Sets one base value. The kernel clamps it through its `ParamDef`. |
 | `bypass` | `slot`, `on` | Bypasses or activates a slot with a 10 ms crossfade |
-| `tempo` | `bpm` (20–300) | Sets the tempo used by `sync` params and synced LFOs |
-| `lfos`, `mods`, `modValue` | See `modulation.md` | Modulation configuration and data values |
+| `tempo` | `bpm` (20–300), `at` (context seconds) | Sets the tempo used by `sync` params and synced LFOs; synced LFO phases re-anchor at `at` |
+| `lfos` | `seed`, `lfos: [{ id, index, shape, rate, phase, smooth, anchorT, anchorPhase, hz }]` | LFO definitions with the engine's phase anchor (`modulation.md`, Sources) |
+| `mods` | `routes: [{ slot, name, source, depth }]` | Routes whose target is a slot of this chain, in piece route order |
+| `modValue` | `id`, `value` (−1 to 1), `smoothMs`, `snap` | New data value for a data source (`modulation.md`, Data values); `snap: true` also sets the smoothed value, used to start a new chain at the current value |
 | `reset` | | Resets every kernel; used by panic |
+| `ping` | `id` | Replies `{ t: 'pong', id }` from the message handler; offline renders await it (`audioworklet.md`, Message protocol) |
 
 The engine validates every message before posting it. The processor validates again and ignores invalid messages, reporting `{ t: 'error', code }` once per code.
 
@@ -135,26 +138,32 @@ The engine validates every message before posting it. The processor validates ag
 | `t` | Fields | Meaning |
 |---|---|---|
 | `fault` | `slot` | The slot reset and bypassed itself (slot rules) |
-| `report` | `values: Float32Array` | Current modulated value of every routed parameter, posted at most every 100 ms (`modulation.md`) |
+| `report` | `values: Float32Array` | Current modulated value of every route target of the chain, in the order of the `mods` routes, posted at most every 100 ms (`modulation.md`) |
 | `error` | `code` | An invalid message was ignored |
+| `pong` | `id` | Reply to `ping` |
+
+### Structure
+The processor logic lives in `ChainCore` (`src/audio/fx/chain-core.js`), plain JavaScript that Node tests drive directly. `src/audio/fx/worklet.js` wraps it in the `fx-chain` `AudioWorkletProcessor`. Message handlers run on the audio thread between quanta; they may allocate and they replace the structures `process()` reads.
 
 ## Slot rules
 - **Bypass:** a bypass change crossfades between dry and wet over 10 ms. A fully bypassed slot does not run its kernel. Leaving full bypass resets the kernel.
 - **Fault:** after each chunk the slot computes `e = Σ wet²` over both channels. If `e` is not finite or exceeds `1e12`, the slot resets its kernel, bypasses at once, outputs the dry signal for that chunk, and reports `fault` once. A faulted slot stays bypassed until a `bypass` message with `on: false`.
 - **Non-finite input:** a chunk whose input is already non-finite is silenced without running the kernel or reporting a fault, so one bad source does not fault every later slot.
 - **Feedback:** every feedback path has loop gain below 1, enforced by parameter ranges (`delay.feedback ≤ 0.9`, reverb comb gain ≤ 0.98).
-- **Level:** distortion output is at most 0 dB with `|f| ≤ 1`. Modulation never raises `output` or `makeup` above their base values (`modulation.md`).
+- **Level:** distortion output is at most 0 dB with `|f| ≤ 1`. Modulation never raises `output` or `makeup` above their base values (`modulation.md`). Their `ParamDef`s carry `mod: { dir: 'down' }`.
+- **Removal:** `setFx(owner, [])` bypasses every slot (10 ms crossfade), and 30 ms later reconnects the owner directly and disconnects the chain node. A `setFx` for the same owner within those 30 ms reuses the node.
 
 ## Limits
-| Item | Limit |
-|---|---|
-| Slots per chain | 8 |
-| Insert chains | One per instrument (16) |
-| Master chain | 1 |
-| `reverb` slots per piece | 4 |
-| Tempo | 20–300 BPM, default 120 |
+| Item | Limit | `FxLimitError.limit` |
+|---|---|---|
+| Slots per chain | 8 | `slots` |
+| Insert chains | One per instrument (16) | `insert chains` |
+| Master chain | 1 | |
+| `reverb` slots per piece | 4 | `reverbs` |
+| Slot ids | Unique across all chains | `slot ids` |
+| Tempo | 20–300 BPM, default 120 | `tempo` |
 
-The engine rejects a configuration over any limit and throws `FxLimitError` naming the limit.
+The engine rejects a configuration over any limit and throws `FxLimitError` (`src/audio/errors.js`) naming the limit. It validates the whole new configuration before changing anything, so a rejected `setFx` leaves every chain as it was. A malformed slot (unknown type, unknown parameter, non-finite value, non-boolean bypass) throws `TypeError`.
 
 ## Engine API
 ```ts
@@ -172,9 +181,13 @@ interface EngineFx {
 }
 ```
 - Slot ids are unique across all chains.
+- `params` may omit parameters; omitted ones take their defaults. An enum value is an option index or an option name.
 - `setFx` with an unchanged list posts nothing.
-- Panic posts `reset` to every chain after the voice fade.
-- `dispose` disconnects and closes every chain node.
+- `setFx` for an instrument id that the engine does not have yet stores the chain; the instrument's output connects to it when `sync` creates the instrument. When `sync` removes an instrument, its chain is removed with it.
+- `setFxParam` and `setFxBypass` throw `Error` for an unknown slot id. `setFxParam` ignores a non-finite value.
+- `engine.panic(t)` releases every voice and posts `reset` to every chain 30 ms later, after the voice fade.
+- `dispose` disconnects and closes every chain node and restores `mixBus → masterGain`, so a new engine can reuse the master bus.
+- Without the `fx-chain` module (no `audioWorklet`, or loading failed), `setFx` validates and stores the configuration but creates no node; the signal passes dry and `onError` receives one error.
 
 ## Porting
 Copy from assignment 3 into `src/audio/fx/`:
@@ -184,7 +197,7 @@ Copy from assignment 3 into `src/audio/fx/`:
 
 The effect `ParamDef` format (`id`, `min`, `max`, `default`, `unit`, `scale`, `options`, `step`, `smoothMs`) stays as defined in `src/audio/fx/core/params.js`. `toNorm` and `fromNorm` read only `min`, `max`, `scale` and `step`, so they also accept synth `PARAM_DEFS` entries (`synthesis-conventions.md`).
 
-`public/worklets/fx-chain.js` is a bundled module built from `src/audio/fx/worklet.js` by the same copy step that places the engine's other worklets in `public/worklets/` (`audioworklet.md`).
+`public/worklets/fx-chain.js` is a bundled module built from `src/audio/fx/worklet.js` by `node scripts/build-worklets.mjs`. The output is committed; `node scripts/build-worklets.mjs --check` fails when it differs from a fresh build (`audioworklet.md`, Module format).
 
 ## Sources
 - Assignment 3 repository: `src/dsp/effects/`, `docs/a3-audio-implementation.md` (Real-time rules, Effects), `docs/audio-safety.md`

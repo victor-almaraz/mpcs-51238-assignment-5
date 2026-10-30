@@ -125,8 +125,12 @@ interface Instrument {
   setParam(name: string, value: number | number[] | string): void;
   getParams(): Record<string, unknown>;
   dispose(): void;
+  /** Envelope value 0–1 of the newest voice tagged `source` at `time` (default now), or null when none sounds. */
+  voiceEnv(source: string, time?: number): number | null;
 }
 ```
+`source` is an opaque string compared with `===`; the engine attaches no meaning to it.
+
 The runtime reaches instruments through `engine.get(id)`, and effects and modulation through the engine methods in `audio/effects.md` (`EngineFx`) and `audio/modulation.md` (`EngineMod`).
 
 The user implements these optional extensions. The runtime detects each one with `typeof inst.setVoicePitch === 'function'` and uses the fallback when absent.
@@ -146,6 +150,19 @@ interface VoiceControl {
 | `setVoicePan` | No pan |
 | `setVoiceMod` | No per-voice modulation |
 
+Subtractive, FM, additive and granular implement all three; pluck implements none (`audio/audio-engine-core.md`, Common widget interface). `setVoiceMod` names are audio-rate parameter names with values in −1 to 1 (`audio/modulation.md`, Per-voice values).
+
+### Audio signals
+The engine provides the inputs of `audio.level`, `audio.spectrum` and `audio.voice(inst).env()` (`visuals.md`):
+```ts
+interface EngineAudioSignals {
+  level(instId: string): number | null;                     // RMS of the instrument output, 0–1 (−60–0 dBFS)
+  spectrum(instId: string, bands: number): number[] | null; // `bands` (4–32) log-spaced band levels, 0–1
+  voiceEnv(instId: string, source: string): number | null;  // inst.voiceEnv(source) at the current time
+}
+```
+The host's `audio` resolver maps `level(inst)` to `engine.level(inst)`, `spectrum(inst, bands)` to `engine.spectrum(inst, bands)` and `env(inst, source)` to `engine.voiceEnv(inst, source)`. Each instrument has at most one analyser, created on the first `level` or `spectrum` call; reads are cached for 16 ms (`audio/audio-engine-core.md`, Analysis taps).
+
 ## Fakes
 `tests/fakes.js` exports:
 - `FakeInstrument`: implements `Instrument` and `VoiceControl` (each extension can be left out), records every call as `[method, ...args]`, and throws `CapExceeded` when more than its cap of voices sound at once.
@@ -159,9 +176,7 @@ A console export under `tests/fixtures/traces/<name>.jsonl` is paired with `<nam
 
 ## Open items
 - `piece-dsl.md` does not list the effect-follow binding kinds. The runtime follows `src/dsl/ir.schema.json`: `fxParam { slot, param, expr, smoothMs }` and `fxBypass { slot, expr }`. A `param` binding whose `inst` is a slot id is treated the same way.
-- `audio.voice(inst).env()`, `audio.level` and `audio.spectrum` need an engine interface that is not listed here (a per-voice envelope value by source tag, and an analyser tap per instrument). Until it exists they evaluate to `null` and layers use their defaults.
-- Verify the argument of the `bus.setHandler` callback; the host accepts a string or `{ type }`.
-- Verify with the user that the engine treats `source` as an opaque string. Assignment 2 passes only `'file'` and `'live'`.
+- The `bus.setHandler` callback receives `{ type }` with `type` `'fault'`, `'duck'` or `'error'` (`src/audio/master-bus.js`).
 
 ## Sources
 - User audio engine: `audio/audio-engine-core.md`, `audio/audio-safety.md`, `audio/synthesis-conventions.md`, `audio/effects.md`, `audio/modulation.md`

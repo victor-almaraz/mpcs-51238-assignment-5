@@ -1,7 +1,7 @@
-// Fixture of the user's engine definition tables, built from the parameter tables in
-// content/learn/reference.md, doc/audio/synthesis-*.md and doc/audio/effects.md.
-// Stands in for src/audio/param-defs.js and src/audio/fx/effects/registry.js in tests and in
-// `--defs` builds until the engine is in the repository.
+// Fixture of the engine definition tables, built from the parameter tables in
+// content/learn/reference.md, doc/audio/synthesis-*.md and doc/audio/effects.md. DSL tests use it
+// so they do not depend on src/audio/. It matches src/audio/synths/param-defs.js and
+// src/audio/fx/effects/registry.js in names, ranges, defaults, options and ModDefs.
 
 const ctl = { rate: 'control' };
 /** @param {string} target */
@@ -35,8 +35,8 @@ export const PARAM_DEFS = {
     { name: 'decay', label: 'Decay', unit: 's', min: 0.01, max: 4, default: 0.5, scale: 'pow3', mod: ctl },
     { name: 'sustain', label: 'Sustain', unit: '', min: 0, max: 1, default: 1, scale: 'lin', step: 0.01, mod: ctl },
     { name: 'release', label: 'Release', unit: 's', min: 0.01, max: 4, default: 0.5, scale: 'pow3', mod: ctl },
-    { name: 'vibratoRate', label: 'Vibrato rate', unit: 'Hz', min: 0.5, max: 12, default: 5, scale: 'log', mod: aud('vibrato.frequency') },
-    { name: 'vibratoDepth', label: 'Vibrato', unit: 'cents', min: 0, max: 100, default: 0, scale: 'lin', step: 1, mod: aud('vibratoGain.gain') },
+    { name: 'vibratoRate', label: 'Vibrato rate', unit: 'Hz', min: 0.5, max: 12, default: 5, scale: 'log', mod: aud('lfo.detune') },
+    { name: 'vibratoDepth', label: 'Vibrato', unit: 'cents', min: 0, max: 100, default: 0, scale: 'lin', step: 1, mod: aud('depth.gain') },
   ],
   pluck: [
     { name: 'damping', label: 'Damping', unit: '', min: 0, max: 1, default: 0.5, scale: 'lin', mod: ctl },
@@ -63,7 +63,7 @@ export const TUNING_DEFS = {
 };
 
 const SYNC = ['off'];
-for (const d of ['1/32', '1/16', '1/8', '1/4', '1/2', '1/1']) SYNC.push(`${d}t`, d, `${d}d`);
+for (const d of ['1/32', '1/16', '1/8', '1/4', '1/2', '1/1']) SYNC.push(d, `${d}d`, `${d}t`);
 
 const down = { dir: 'down' };
 

@@ -7,6 +7,7 @@ AudioWorklet processors: file layout, loading in a static Next.js export, real-t
 |---|---|---|
 | `safety-limiter` | `public/worklets/safety-limiter.js` | `audio-safety.md` |
 | `ks-processor` | `public/worklets/ks-processor.js` | this doc, `synthesis-pluck.md` |
+| `fx-chain` | `public/worklets/fx-chain.js` (built from `src/audio/fx/worklet.js`) | `effects.md`, `modulation.md` |
 | `recorder` | `public/worklets/recorder.js` | `recording.md` |
 
 ## Availability
@@ -21,8 +22,8 @@ AudioWorklet processors: file layout, loading in a static Next.js export, real-t
 - Modules are loaded once per context, `AudioContext` and `OfflineAudioContext` alike. `safety-limiter` loads first; no widget connects to the master bus until it is ready (`audio-safety.md`).
 ```ts
 // src/audio/worklet-loader.js
-const MODULES = ['safety-limiter', 'ks-processor', 'recorder'] as const;
-const VERSION = 1;
+const MODULES = ['safety-limiter', 'ks-processor', 'fx-chain', 'recorder'] as const;
+const VERSION = 2;
 const loaded = new WeakMap<BaseAudioContext, Promise<void>>();
 
 export function loadWorklets(ctx: BaseAudioContext): Promise<void> {
@@ -42,11 +43,13 @@ export function loadWorklets(ctx: BaseAudioContext): Promise<void> {
 - Failure handling:
   - `safety-limiter` fails: the fallback stage is used (`audio-safety.md`).
   - `ks-processor` fails: the Pluck option is disabled in the Add Synth menu with "Pluck unavailable in this browser"; other widgets work.
+  - `fx-chain` fails: effects are unavailable and the signal passes dry (`effects.md`, Engine API).
   - `recorder` fails: Record is disabled with the reason; offline render is unaffected.
 - The Pluck widget shows "Loading pluck engine…" until loading resolves.
 
 ## Module format
 - Processor files are plain JavaScript. ES module syntax is allowed; the files have no imports.
+- `fx-chain.js` shares its kernels with Node tests, so its source lives in `src/audio/fx/` as ES modules. `node scripts/build-worklets.mjs` links `src/audio/fx/worklet.js` and its imports into one file without imports (each module converted with Sucrase's `imports` transform and wrapped in a function), with a header naming the source. The output is committed; `--check` fails when it differs from a fresh build. Run it after changing any file under `src/audio/fx/` or `src/audio/mod/lfo.js`, and increment `VERSION`.
 - Processor files are not under `src/`, where Next would compile them (`repo-structure.md`).
 
 ## Pluck processor structure
@@ -86,7 +89,7 @@ registerProcessor('ks-processor', KSProcessor);
 - **One node per Pluck widget**, polyphonic inside. One node per voice would add node setup and a message round-trip to every note.
 
 ## Message protocol
-- Main thread to processor: `node.port.postMessage({ type: 'on', pitch, vel, time, decay, source })`. `source` is `'file'` or `'live'`; `off` matches voices by pitch and source. `time` is in AudioContext seconds.
+- Main thread to processor: `node.port.postMessage({ type: 'on', id, pitch, vel, time, decay, pickPosition })`. The main thread matches `noteOff` by pitch and source tag and sends `off` with the voice `id`. `time` is in AudioContext seconds.
 - `on`:
   - The processor converts with `frame = Math.round(time * sampleRate)` and starts the voice when `currentFrame + i === frame` (sample-accurate).
   - Messages arrive asynchronously; the 100 ms scheduler lookahead absorbs the delay in realtime.

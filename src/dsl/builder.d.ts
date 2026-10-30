@@ -118,7 +118,7 @@ interface OrbitOptions {
 type Curve = 'lin' | 'log' | 'exp';
 type OrbitQuantity = 'latitude' | 'phaseSin' | 'phaseCos' | 'altitude' | 'longitude' | 'sunlit' | 'elevation';
 type LfoShape = 'sine' | 'triangle' | 'square' | 'saw' | 'random' | 'smooth';
-type SyncName = '1/32t' | '1/32' | '1/32d' | '1/16t' | '1/16' | '1/16d' | '1/8t' | '1/8' | '1/8d' | '1/4t' | '1/4' | '1/4d' | '1/2t' | '1/2' | '1/2d' | '1/1t' | '1/1' | '1/1d';
+type SyncName = '1/32' | '1/32d' | '1/32t' | '1/16' | '1/16d' | '1/16t' | '1/8' | '1/8d' | '1/8t' | '1/4' | '1/4d' | '1/4t' | '1/2' | '1/2d' | '1/2t' | '1/1' | '1/1d' | '1/1t';
 type ScaleMode = 'major' | 'minor' | 'dorian' | 'phrygian' | 'lydian' | 'mixolydian' | 'locrian' | 'pentatonic' | 'chromatic';
 type NoteName = 'C' | 'C#' | 'Cb' | 'D' | 'D#' | 'Db' | 'E' | 'E#' | 'Eb' | 'F' | 'F#' | 'Fb' | 'G' | 'G#' | 'Gb' | 'A' | 'A#' | 'Ab' | 'B' | 'B#' | 'Bb';
 type Projection = 'orbital' | 'map' | 'sky';
@@ -409,11 +409,11 @@ interface FmOptions {
   octave?: number;
   /** −100–100. Default 0. */
   cents?: number;
-  /** 0.5–12. Default 2. */
+  /** 0.5–12 ratio. Default 2. */
   ratio?: number;
-  /** −0.5–0.5. Default 0. */
+  /** −0.5–0.5 offset. Default 0. */
   fine?: number;
-  /** 0–20. Default 3. */
+  /** 0–20 index. Default 3. */
   index?: number;
   /** 0.01–4 s. Default 0.5. */
   indexDecay?: number;
@@ -430,11 +430,11 @@ interface FmHandle {
   readonly __instrument: 'fm';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
-  /** 0.5–12. Default 2. */
+  /** 0.5–12 ratio. Default 2. */
   readonly ratio: ModParam;
-  /** −0.5–0.5. Default 0. */
+  /** −0.5–0.5 offset. Default 0. */
   readonly fine: ModParam;
-  /** 0–20. Default 3. */
+  /** 0–20 index. Default 3. */
   readonly index: ModParam;
   /** 0.01–4 s. Default 0.5. */
   readonly indexDecay: ModParam;
@@ -532,7 +532,7 @@ interface GranularOptions {
   position?: number;
   /** 0.01–0.25 s. Default 0.06. */
   grainSize?: number;
-  /** 2–60 grains/s. Default 20. */
+  /** 2–60 per-s. Default 20. */
   density?: number;
   /** 0–1. Default 0.2. */
   spray?: number;
@@ -553,7 +553,7 @@ interface GranularHandle {
   readonly position: ModParam;
   /** 0.01–0.25 s. Default 0.06. */
   readonly grainSize: ModParam;
-  /** 2–60 grains/s. Default 20. */
+  /** 2–60 per-s. Default 20. */
   readonly density: ModParam;
   /** 0–1. Default 0.2. */
   readonly spray: ModParam;
@@ -710,8 +710,8 @@ interface DistortionHandle {
 interface DelayOptions {
   /** 1–2000 ms. Default 375. */
   time?: number;
-  /** 'off', '1/32t', '1/32', '1/32d', '1/16t', '1/16', '1/16d', '1/8t', '1/8', '1/8d', '1/4t', '1/4', '1/4d', '1/2t', '1/2', '1/2d', '1/1t', '1/1', '1/1d'. Default 'off'. */
-  sync?: 'off' | '1/32t' | '1/32' | '1/32d' | '1/16t' | '1/16' | '1/16d' | '1/8t' | '1/8' | '1/8d' | '1/4t' | '1/4' | '1/4d' | '1/2t' | '1/2' | '1/2d' | '1/1t' | '1/1' | '1/1d';
+  /** 'off', '1/32', '1/32d', '1/32t', '1/16', '1/16d', '1/16t', '1/8', '1/8d', '1/8t', '1/4', '1/4d', '1/4t', '1/2', '1/2d', '1/2t', '1/1', '1/1d', '1/1t'. Default 'off'. */
+  sync?: 'off' | '1/32' | '1/32d' | '1/32t' | '1/16' | '1/16d' | '1/16t' | '1/8' | '1/8d' | '1/8t' | '1/4' | '1/4d' | '1/4t' | '1/2' | '1/2d' | '1/2t' | '1/1' | '1/1d' | '1/1t';
   /** 0–0.9. Default 0.35. */
   feedback?: number;
   /** 1000–20000 Hz. Default 8000. */
@@ -726,7 +726,7 @@ interface DelayHandle {
   readonly bypass: BypassParam;
   /** 1–2000 ms. Default 375. */
   readonly time: ModParam;
-  /** 'off', '1/32t', '1/32', '1/32d', '1/16t', '1/16', '1/16d', '1/8t', '1/8', '1/8d', '1/4t', '1/4', '1/4d', '1/2t', '1/2', '1/2d', '1/1t', '1/1', '1/1d'. Default 'off'. */
+  /** 'off', '1/32', '1/32d', '1/32t', '1/16', '1/16d', '1/16t', '1/8', '1/8d', '1/8t', '1/4', '1/4d', '1/4t', '1/2', '1/2d', '1/2t', '1/1', '1/1d', '1/1t'. Default 'off'. */
   readonly sync: SetParam;
   /** 0–0.9. Default 0.35. */
   readonly feedback: ModParam;

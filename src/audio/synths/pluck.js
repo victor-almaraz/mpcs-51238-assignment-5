@@ -6,6 +6,12 @@ import { Instrument } from '../instrument.js';
 import { GAIN_TAU } from '../smoothing.js';
 
 export class Pluck extends Instrument {
+  // Voices live inside one worklet node, which has no per-voice pitch, pan or modulation inputs.
+  // The binding runtime detects the missing methods and uses its fallbacks (bindings.md).
+  setVoicePitch = undefined;
+  setVoicePan = undefined;
+  setVoiceMod = undefined;
+
   constructor(ctx, pool, opts = {}) {
     super('pluck', ctx, pool, opts);
     this.nextId = 1;
@@ -55,7 +61,15 @@ export class Pluck extends Instrument {
     const { decay, pickPosition } = this.params;
     this.node.port.postMessage({ type: 'on', id, pitch, vel: velocity, time: t, decay, pickPosition });
     // Without a release the string decays below −120 dB (the inactivity floor) after 2 × T60.
-    return { id, start: t, offTime: Infinity, end: t + 2 * decay };
+    return { id, start: t, offTime: Infinity, end: t + 2 * decay, decay, release: 0, peak: 1 };
+  }
+
+  /** T60 decay, then the release's T60 from the note-off (synthesis-pluck.md). */
+  envAt(v, t) {
+    const held = (x) => Math.pow(10, (-3 * Math.max(0, x - v.start)) / v.decay);
+    if (!(t > v.offTime)) return held(t);
+    const rel = Math.min(v.release || v.decay, v.decay);
+    return held(v.offTime) * Math.pow(10, (-3 * (t - v.offTime)) / rel);
   }
 
   releaseVoice(v, t) {
@@ -64,6 +78,7 @@ export class Pluck extends Instrument {
     const release = this.params.release;
     this.node.port.postMessage({ type: 'off', id: v.id, time: t, release });
     v.offTime = t;
+    v.release = release;
     v.end = Math.min(v.end, t + 2 * release + 0.05);
   }
 

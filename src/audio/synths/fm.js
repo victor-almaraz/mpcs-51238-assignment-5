@@ -37,9 +37,22 @@ export class FM extends Instrument {
     carrier.connect(env).connect(this.polyNode);
     decay.gain.setValueAtTime(1, t);
     decay.gain.setTargetAtTime(0.1, t, Math.max(0.01, p.indexDecay) / 3);
-    Object.assign(v, { env, depth, fc, ratio, sources: [carrier, mod], nodes: [mod, depth, decay, carrier, env] });
+    Object.assign(v, { env, depth, fc, ratio, carrier, mod, sources: [carrier, mod], nodes: [mod, depth, decay, carrier, env] });
     this.launch(v);
     return v;
+  }
+
+  /** Glides carrier and modulator together and rescales the index depth to the new pitch. */
+  glideVoice(v, sounding, tau, now) {
+    const cents = (sounding - v.sounding) * 100;
+    v.fc = mtof(sounding);
+    const depth = this.depthHz(v.fc, v.ratio, this.params.index);
+    for (const p of [v.carrier.detune, v.mod.detune]) {
+      if (tau > 0) p.setTargetAtTime(cents, now, tau);
+      else p.setValueAtTime(cents, now);
+    }
+    if (tau > 0) v.depth.gain.setTargetAtTime(depth, now, tau);
+    else v.depth.gain.setValueAtTime(depth, now);
   }
 
   applyParam(name, value, now) {

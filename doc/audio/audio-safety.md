@@ -85,7 +85,7 @@ masterGain → preMeter (AnalyserNode), drives the limiting indicator
 - On the first non-finite or out-of-threshold input sample, the worklet zeroes the rest of the render quantum, resets its state (DC blocker, delay line, gain), holds silence for 250 ms, fades in over 50 ms and posts `{type:'fault'}` once.
 - On `fault`, `master-bus.js`:
   1. Stops the transport and calls `releaseAll()` (`midi-playback-scheduling.md`).
-  2. Disconnects and recreates every BiquadFilterNode and every worklet node that may hold NaN state (`ks-processor`).
+  2. Disconnects and recreates every BiquadFilterNode and every worklet node that may hold NaN state (`ks-processor`): `engine.rebuild()`, which also posts `reset` to every effect chain (`effects.md`). Effect chains sit before `masterGain`, so their output always passes the safety stage.
   3. Announces "Audio fault — output muted and reset" in the assertive live region.
 - Worklets flush state variables with `if (Math.abs(s) < 1e-20) s = 0` (project limit). Applies to `ks-processor.js` and `safety-limiter.js`.
 

@@ -6,7 +6,7 @@ Automated tests run with `node:test` and the manual deployment checklist. Page-s
 ## Commands
 ```bash
 npm test                 # node --test tests/*.test.js tests/audio/*.test.js
-npm run generate:check   # generated files (sandbox bundle, builder.d.ts, starter IR) are current
+npm run generate:check   # generated files (fx-chain worklet, sandbox bundle, builder.d.ts, starter IR) are current
 cd worker && npm test    # node --test test/*.test.js
 ```
 Tests construct no `AudioContext`, no WebGL context and no network connection. They use fakes.
@@ -69,8 +69,10 @@ The tests run the pipeline with a fake fetch and a fake store that implements `u
 | LFOs | Phase from frames equals phase from `t − t₀`; `random` and `smooth` sequences repeat for a seed; rate changes keep phase continuous |
 | Audio-rate routes | Depth-to-gain conversion (cents for log, units for lin); route gain limit keeps `toNorm(base) ± Σ |depth|` within 0–1 |
 | Limits | `FxLimitError` and `ModLimitError` at each documented limit |
+| Chain processor | `ChainCore` message handling, invalid messages, 32-frame route evaluation, reports, data smoothing, tempo re-anchoring; the committed `public/worklets/fx-chain.js` is up to date and registers `fx-chain` |
+| Engine graph | Chain placement before `mixBus` and `masterGain`, removal and `dispose` restore direct wiring, route distribution to chains and instruments, voice control by source tag, analysis taps |
 
-Kernel and model tests run in Node without Web Audio. Audio-rate route tests use the fake `AudioParam` in `tests/fakes.js`.
+Kernel and model tests run in Node without Web Audio. Engine graph and audio-rate route tests use the fake nodes in `tests/audio/support/webaudio.js`, built on the fake `AudioParam` in `tests/fakes.js`; its `fx-chain` node runs the real `ChainCore`.
 
 ## Guide tests
 `tests/guide.test.js` reads `content/learn/*.md` and asserts:

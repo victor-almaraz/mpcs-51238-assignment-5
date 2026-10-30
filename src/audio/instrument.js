@@ -1,18 +1,28 @@
 // Common widget interface and voice handling (audio-engine-core.md).
 //
-//   type, output (GainNode, connected to mixBus by the engine)
-//   noteOn(pitch, velocity, time, source)    source: 'file' | 'live'
+//   type, output (GainNode, connected to mixBus or the insert chain by the engine)
+//   noteOn(pitch, velocity, time, source)    source: an opaque string tag, compared with ===
 //   noteOff(pitch, time, source)             may be called with a future time
 //   allNotesOff(time)                        fast release; cancels future-start voices
 //   setParam(name, value), getParams(), dispose()
+//   setVoicePitch, setVoicePan, setVoiceMod, voiceEnv   voice control (bindings.md)
+//   setModulated(name, value | null)         control-rate modulation (modulation.md)
 //
-// Subclasses implement startVoice(pitch, velocity, t) and applyParam(name, value, now).
-// Voices built from source nodes + an `env` GainNode use the default release/steal methods.
+// `base` holds the values setParam set (getParams returns them); `params` holds the values in
+// effect, which control-rate modulation may move away from the base.
+//
+// Subclasses implement startVoice(pitch, velocity, t), applyParam(name, value, now) and, for
+// pitch glides, glideVoice(v, sounding, tau, now). Voices built from source nodes + an `env`
+// GainNode use the default release/steal methods.
 
 import { MAX_VOICES_PER_WIDGET } from './voices.js';
 import { TrackedParam, POLY_TAU } from './smoothing.js';
 import { holdAt, scheduleAttack, scheduleRelease, FAST_TAU, STEAL_TAU, MIN_ATTACK, MIN_RELEASE } from './envelope.js';
+import { envValueAt } from './envelope.js';
 import { coerceParam, defaultParams, getDef, velocityGain } from './synths/param-defs.js';
+import { InstrumentMod } from './mod/inst-mod.js';
+
+const PAN_TAU = 0.01;
 
 export class Instrument {
   constructor(type, ctx, pool, opts = {}) {
@@ -24,7 +34,11 @@ export class Instrument {
     this.polyNode = new GainNode(ctx, { gain: 1 });
     this.polyNode.connect(this.output);
     this.poly = new TrackedParam(this.polyNode.gain, 1);
-    this.params = defaultParams(type);
+    this.base = defaultParams(type);   // setParam values
+    this.params = defaultParams(type); // values in effect (base, or control-rate modulated)
+    this.modded = new Set();           // params under control-rate modulation
+    this.mod = new InstrumentMod(this);
+    this.lastNoteOn = -Infinity;
     this.detune = 0;                   // semitones from the widget's tuning (setDetune)
     this.disposed = false;
   }
@@ -40,8 +54,16 @@ export class Instrument {
     v.owner = this;
     v.pitch = pitch;
     v.source = source;
+    v.sounding = sounding;
+    v.tune = this.detune;
     v.stolen = false;
     v.released = false;
+    v.modConns ??= [];
+    v.onEnd ??= [];
+    v.sources ??= [];
+    v.nodes ??= [];
+    this.lastNoteOn = t;
+    this.mod.connectVoice(v);
     this.pool.add(v);
     this.updatePoly(t);
   }
@@ -77,14 +99,108 @@ export class Instrument {
     const def = getDef(this.type, name);
     if (!def) return;
     const v = coerceParam(def, value);
+    this.base[name] = Array.isArray(v) ? v.slice() : v;
+    if (this.modded.has(name)) return;          // pump() applies the modulated value
     this.params[name] = Array.isArray(v) ? v.slice() : v;
-    if (!this.disposed) this.applyParam(name, this.params[name], this.ctx.currentTime);
+    if (!this.disposed) {
+      this.applyParam(name, this.params[name], this.ctx.currentTime);
+      this.mod.baseChanged(name);
+    }
   }
 
+  /**
+   * Control-rate modulation (modulation.md, Control rate): `value` becomes the parameter's value
+   * in effect; null returns it to the base value.
+   */
+  setModulated(name, value) {
+    const def = getDef(this.type, name);
+    if (!def || this.disposed) return;
+    let v;
+    if (value === null) {
+      if (!this.modded.has(name)) return;
+      this.modded.delete(name);
+      v = this.base[name];
+    } else {
+      this.modded.add(name);
+      v = coerceParam(def, value);
+    }
+    if (v === this.params[name]) return;
+    this.params[name] = v;
+    this.applyParam(name, v, this.ctx.currentTime);
+  }
+
+  /** Base values (setParam), not modulated ones. */
   getParams() {
     const out = {};
-    for (const [k, v] of Object.entries(this.params)) out[k] = Array.isArray(v) ? v.slice() : v;
+    for (const [k, v] of Object.entries(this.base)) out[k] = Array.isArray(v) ? v.slice() : v;
     return out;
+  }
+
+  // ----- voice control (bindings.md, Instrument contracts) -----
+
+  /** The newest unreleased, unstolen voice tagged `source` that has not ended. */
+  findVoice(source) {
+    const now = this.ctx.currentTime;
+    let best = null;
+    for (const v of this.pool.voices) {
+      if (v.owner !== this || v.stolen || v.released || v.source !== source || v.end <= now) continue;
+      if (!best || v.start >= best.start) best = v;
+    }
+    return best;
+  }
+
+  /** Glides the voice tagged `source` to `pitch` (MIDI, fractional) over about `glideMs`. */
+  setVoicePitch(source, pitch, glideMs) {
+    if (this.disposed || typeof pitch !== 'number' || !Number.isFinite(pitch)) return;
+    const v = this.findVoice(source);
+    if (!v) return;
+    const sounding = Math.min(127, Math.max(0, pitch + (v.tune ?? this.detune)));
+    const tau = Number.isFinite(glideMs) && glideMs > 0 ? glideMs / 3000 : 0;
+    this.glideVoice(v, sounding, tau, this.ctx.currentTime);
+  }
+
+  /** Hook: moves voice `v` to sounding pitch `sounding` with time constant `tau` (0: at once). */
+  glideVoice() {}
+
+  /** Sets the voice's stereo position, −1 to 1, through a per-voice StereoPannerNode. */
+  setVoicePan(source, pan) {
+    if (this.disposed || typeof pan !== 'number' || !Number.isFinite(pan)) return;
+    const v = this.findVoice(source);
+    if (!v || !v.env) return;
+    const p = pan < -1 ? -1 : pan > 1 ? 1 : pan;
+    if (v.panner) {
+      v.panner.pan.setTargetAtTime(p, this.ctx.currentTime, PAN_TAU);
+      return;
+    }
+    const panner = new StereoPannerNode(this.ctx, { pan: p });
+    v.env.disconnect(this.polyNode);
+    v.env.connect(panner).connect(this.polyNode);
+    v.panner = panner;
+    v.nodes.push(panner);
+  }
+
+  /** Per-voice modulation values keyed by audio-rate parameter name (modulation.md). */
+  setVoiceMod(source, mods) {
+    if (this.disposed || !mods || typeof mods !== 'object') return;
+    const v = this.findVoice(source);
+    if (v) this.mod.setVoiceMod(v, mods);
+  }
+
+  /** Envelope value 0–1 of the newest voice tagged `source` at `time`, or null when none sounds. */
+  voiceEnv(source, time = this.ctx.currentTime) {
+    let best = null;
+    for (const v of this.pool.voices) {
+      if (v.owner !== this || v.stolen || v.source !== source || v.start > time || v.end <= time) continue;
+      if (!best || v.start >= best.start) best = v;
+    }
+    if (!best) return null;
+    const x = this.envAt(best, time);
+    return Number.isFinite(x) ? (x < 0 ? 0 : x > 1 ? 1 : x) : null;
+  }
+
+  /** Envelope of voice `v` at `t` relative to its velocity peak. */
+  envAt(v, t) {
+    return v.peak > 0 ? envValueAt(v, t) / v.peak : 0;
   }
 
   /** Resolves when scheduled work has reached the audio thread (pluck's worklet); see Pluck.flush. */
@@ -101,6 +217,7 @@ export class Instrument {
     const t = this.ctx.currentTime;
     for (const v of this.pool.ofOwner(this)) this.stopAt(v, t);
     this.pool.removeOwner(this);
+    this.mod.dispose();
     this.output.disconnect();
   }
 
@@ -124,6 +241,8 @@ export class Instrument {
       end: Infinity,
       sources: [],
       nodes: [],
+      modConns: [],
+      onEnd: [],
     };
   }
 
@@ -132,7 +251,13 @@ export class Instrument {
     scheduleAttack(v.env.gain, v);
     for (const s of v.sources) s.start(v.start);
     if (v.sources.length > 0) {
-      v.sources[0].onended = () => { for (const n of v.nodes) n.disconnect(); };
+      v.sources[0].onended = () => {
+        for (const n of v.nodes) n.disconnect();
+        for (const [g, p] of v.modConns ?? []) {
+          try { g.disconnect(p); } catch { /* route already removed */ }
+        }
+        for (const fn of v.onEnd ?? []) fn();
+      };
     }
   }
 

@@ -9,7 +9,7 @@
  */
 import { BLOCK } from '../core/constants.js';
 import { flushDenormal } from '../core/math.js';
-import { clampParam, defineParam } from '../core/params.js';
+import { DOWN, clampParam, defineParam } from '../core/params.js';
 import { Smoother } from '../core/smoother.js';
 
 /** Soft-knee width, dB (project limit). */
@@ -27,7 +27,7 @@ export const COMPRESSOR_PARAMS = [
   defineParam({ id: 'ratio', min: 1, max: 20, default: 4, unit: ':1', scale: 'log' }),
   defineParam({ id: 'attack', min: 0.1, max: 100, default: 10, unit: 'ms', scale: 'log' }),
   defineParam({ id: 'release', min: 10, max: 1000, default: 120, unit: 'ms', scale: 'log' }),
-  defineParam({ id: 'makeup', min: 0, max: 24, default: 0, unit: 'dB', scale: 'lin', step: 0.1 }),
+  defineParam({ id: 'makeup', min: 0, max: 24, default: 0, unit: 'dB', scale: 'lin', step: 0.1, mod: DOWN }),
 ];
 
 const DEF = Object.fromEntries(COMPRESSOR_PARAMS.map((d) => [d.id, d]));

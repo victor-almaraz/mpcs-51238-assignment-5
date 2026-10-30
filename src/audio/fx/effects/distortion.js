@@ -21,7 +21,7 @@
  */
 import { BLOCK } from '../core/constants.js';
 import { dbToGain, flushDenormal } from '../core/math.js';
-import { clampParam, defineParam } from '../core/params.js';
+import { DOWN, clampParam, defineParam } from '../core/params.js';
 import { Smoother } from '../core/smoother.js';
 import { DcBlocker } from '../safety/dc-blocker.js';
 
@@ -33,7 +33,7 @@ export const DISTORTION_PARAMS = [
   defineParam({ id: 'bias', min: -0.5, max: 0.5, default: 0, unit: '', scale: 'lin', step: 0.01 }),
   defineParam({ id: 'tone', min: 500, max: 16000, default: 6000, unit: 'Hz', scale: 'log' }),
   defineParam({ id: 'mix', min: 0, max: 1, default: 1, unit: 'fraction', scale: 'lin', step: 0.01 }),
-  defineParam({ id: 'output', min: -36, max: 0, default: -6, unit: 'dB', scale: 'lin', step: 0.1 }),
+  defineParam({ id: 'output', min: -36, max: 0, default: -6, unit: 'dB', scale: 'lin', step: 0.1, mod: DOWN }),
 ];
 
 const DEF = Object.fromEntries(DISTORTION_PARAMS.map((d) => [d.id, d]));

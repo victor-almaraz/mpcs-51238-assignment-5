@@ -43,7 +43,7 @@ export class Subtractive extends Instrument {
     const filter = new BiquadFilterNode(this.ctx, { type: 'lowpass', frequency: hz, Q: p.resonance });
     const env = new GainNode(this.ctx, { gain: 0 });
     osc.connect(filter).connect(env).connect(this.polyNode);
-    Object.assign(v, { env, filter, sources: [osc], nodes: [osc, filter, env] });
+    Object.assign(v, { env, osc, filter, sources: [osc], nodes: [osc, filter, env] });
     if (v.envCents > 0) {
       const d = filter.detune;
       d.setValueAtTime(0, t);
@@ -62,6 +62,13 @@ export class Subtractive extends Instrument {
       holdAt(v.filter.detune, t, cents, t > v.start && t < v.start + v.attack);
       v.filter.detune.setTargetAtTime(0, t, v.release / 3);
     }
+  }
+
+  /** Pitch glide through the oscillator's detune (audio-engine-core.md, Common widget interface). */
+  glideVoice(v, sounding, tau, now) {
+    const cents = (sounding - v.sounding) * 100;
+    if (tau > 0) v.osc.detune.setTargetAtTime(cents, now, tau);
+    else v.osc.detune.setValueAtTime(cents, now);
   }
 
   applyParam(name, value, now) {

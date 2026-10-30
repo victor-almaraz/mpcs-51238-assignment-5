@@ -35,6 +35,12 @@ export class Additive extends Instrument {
     return v;
   }
 
+  glideVoice(v, sounding, tau, now) {
+    const cents = (sounding - v.sounding) * 100;
+    if (tau > 0) v.osc.detune.setTargetAtTime(cents, now, tau);
+    else v.osc.detune.setValueAtTime(cents, now);
+  }
+
   applyParam(name, value, now) {
     if (name === 'harmonics') {
       // The engine coalesces edits to one call per animation frame.
