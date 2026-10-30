@@ -370,7 +370,7 @@ interface SubtractiveOptions {
   cutoff?: number;
   /** 0–20 dB. Default 1. */
   resonance?: number;
-  /** 0–6 oct. Default 0. */
+  /** 0–6 octaves. Default 0. */
   envAmount?: number;
   /** 0.002–2 s. Default 0.01. */
   attack?: number;
@@ -391,7 +391,7 @@ interface SubtractiveHandle {
   readonly cutoff: ModParam;
   /** 0–20 dB. Default 1. */
   readonly resonance: ModParam;
-  /** 0–6 oct. Default 0. */
+  /** 0–6 octaves. Default 0. */
   readonly envAmount: ModParam;
   /** 0.002–2 s. Default 0.01. */
   readonly attack: ModParam;
@@ -409,11 +409,11 @@ interface FmOptions {
   octave?: number;
   /** −100–100. Default 0. */
   cents?: number;
-  /** 0.5–12 ratio. Default 2. */
+  /** 0.5–12. Default 2. */
   ratio?: number;
-  /** −0.5–0.5 offset. Default 0. */
+  /** −0.5–0.5. Default 0. */
   fine?: number;
-  /** 0–20 index. Default 3. */
+  /** 0–20. Default 3. */
   index?: number;
   /** 0.01–4 s. Default 0.5. */
   indexDecay?: number;
@@ -430,11 +430,11 @@ interface FmHandle {
   readonly __instrument: 'fm';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
-  /** 0.5–12 ratio. Default 2. */
+  /** 0.5–12. Default 2. */
   readonly ratio: ModParam;
-  /** −0.5–0.5 offset. Default 0. */
+  /** −0.5–0.5. Default 0. */
   readonly fine: ModParam;
-  /** 0–20 index. Default 3. */
+  /** 0–20. Default 3. */
   readonly index: ModParam;
   /** 0.01–4 s. Default 0.5. */
   readonly indexDecay: ModParam;
@@ -532,7 +532,7 @@ interface GranularOptions {
   position?: number;
   /** 0.01–0.25 s. Default 0.06. */
   grainSize?: number;
-  /** 2–60 per-s. Default 20. */
+  /** 2–60 grains/s. Default 20. */
   density?: number;
   /** 0–1. Default 0.2. */
   spray?: number;
@@ -553,7 +553,7 @@ interface GranularHandle {
   readonly position: ModParam;
   /** 0.01–0.25 s. Default 0.06. */
   readonly grainSize: ModParam;
-  /** 2–60 per-s. Default 20. */
+  /** 2–60 grains/s. Default 20. */
   readonly density: ModParam;
   /** 0–1. Default 0.2. */
   readonly spray: ModParam;

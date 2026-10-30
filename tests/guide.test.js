@@ -10,6 +10,7 @@ import { MAX_VOICES_GLOBAL } from '../src/audio/voices.js';
 import { EFFECTS } from '../src/audio/fx/effects/registry.js';
 import { DEFS } from '../src/dsl/load-defs.js';
 import { LIMITS } from '../src/dsl/limits.js';
+import { unitLabel } from '../src/dsl/units.js';
 import { buildPiece } from '../src/dsl/run-script.js';
 import { loadGuide, readPageSource, renderPage } from '../src/learn/guide.js';
 
@@ -34,8 +35,6 @@ function tables(markdown, heading) {
 }
 const ticks = (cell) => [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 const num = (s) => Number(s.replace(/−/g, '-').replace(/,/g, ''));
-/** How the guide writes engine unit labels: spelled out, or blank for dimensionless values. */
-const UNIT_ALIASES = { oct: 'octaves', 'per-s': 'grains/s', fraction: '', ratio: '', offset: '', index: '' };
 
 /** Option lists, expanding the note-value shorthand "`1/32`–`1/1`, with `d` … or `t` …". */
 function options(cell) {
@@ -107,7 +106,7 @@ test('instrument tables in reference.md match PARAM_DEFS', () => {
       } else {
         assert.deepEqual(range(rangeCell), [d.min, d.max], `${type}.${d.name} range`);
         assert.equal(num(defCell), d.default, `${type}.${d.name} default`);
-        assert.equal(unitCell, UNIT_ALIASES[d.unit] ?? d.unit ?? '', `${type}.${d.name} unit`);
+        assert.equal(unitCell, unitLabel(d.unit), `${type}.${d.name} unit`);
       }
     }
   }

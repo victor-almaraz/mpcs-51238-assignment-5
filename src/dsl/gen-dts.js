@@ -10,6 +10,7 @@
 // and 'audio' on full-screen layers and the view background.
 
 import { CURVES, EVENT_KINDS, LFO_SHAPES, ORBIT_QUANTITIES, PROJECTIONS, SCALE_MODES } from './limits.js';
+import { unitLabel } from './units.js';
 
 /** @typedef {import('./defs.js').Defs} Defs */
 /** @typedef {import('./defs.js').ParamSpec} ParamSpec */
@@ -143,7 +144,8 @@ const fmt = (x) => String(x).replace('-', '−');
 function paramDoc(p) {
   if (p.kind === 'enum') return `${p.options?.map((o) => `'${o}'`).join(', ')}. Default '${p.default}'.`;
   if (p.kind === 'array') return `${p.length} values, each ${fmt(p.min)}–${fmt(p.max)}. Default [${/** @type {number[]} */ (p.default).join(', ')}]. Constructor only.`;
-  const unit = p.unit && p.unit !== 'fraction' ? ` ${p.unit}` : '';
+  const label = unitLabel(p.unit);
+  const unit = label ? ` ${label}` : '';
   const mod = !p.modulatable ? ' Set only.' : p.dir === 'down' ? ' Modulation lowers only.' : '';
   return `${fmt(p.min)}–${fmt(p.max)}${unit}. Default ${fmt(/** @type {number} */ (p.default))}.${mod}`;
 }
