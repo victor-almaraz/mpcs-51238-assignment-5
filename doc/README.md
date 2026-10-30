@@ -8,7 +8,7 @@ Index and reading order for the Sphärenmusik docs. Each doc opens with a Scope 
 |---|---|
 | `architecture.md` | Components, interfaces, data-flow chart, trace of one change |
 | `sources.md` | External sources, source registry, normalization |
-| `worker.md` | Railway worker process, pipeline, logs, deployment |
+| `worker.md` | Harvest Edge Function, cron trigger, pipeline, logs, deployment |
 | `database.md` | Tables, RPC, row-level security, Realtime publication, retention, budget |
 | `auth.md` | Clerk, Clerk–Supabase third-party auth, Supabase clients, keys |
 | `sky-contract.md` | Browser sky store, events, freshness, replay, synthetic triggers |

@@ -18,6 +18,7 @@ Tables, the upsert RPC, grants, row-level security (RLS), the Realtime publicati
 ## DDL
 ```sql
 create extension if not exists pg_cron;
+create extension if not exists pg_net;
 
 create table public.sky_objects (
   id          text primary key,
@@ -161,6 +162,28 @@ grant execute on function public.upsert_sky_objects(text, text, jsonb, boolean)
 ```
 `p_full` is the registry entry's `full` value.
 
+## Claim RPC
+The worker claims a due entry before fetching it. The claim succeeds only when `last_attempt_at` still holds the value the worker read, so two overlapping invocations never fetch the same source.
+```sql
+create or replace function public.claim_source(
+  p_source_id text, p_interval_sec integer, p_prev timestamptz)
+returns boolean
+language sql security definer set search_path = '' as $$
+  with c as (
+    insert into public.source_status as s (source_id, interval_sec, last_attempt_at)
+    values (p_source_id, p_interval_sec, now())
+    on conflict (source_id) do update
+      set last_attempt_at = now(), interval_sec = excluded.interval_sec
+      where s.last_attempt_at is not distinct from p_prev and not s.halted
+    returning 1
+  )
+  select exists (select 1 from c);
+$$;
+revoke execute on function public.claim_source(text, integer, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.claim_source(text, integer, timestamptz) to service_role;
+```
+
 ## Starter seeding RPC
 Runs as the calling user (`security invoker`), so the RLS policies on `projects`, `project_subscriptions` and `user_settings` apply.
 ```sql
@@ -283,6 +306,27 @@ select cron.schedule('prune-projects', '53 3 * * *',
 ```
 Rows removed by `prune-removed` already carry `removed_at`, so clients have received their exit before the delete.
 
+## Harvest schedule
+The cron job reads the project URL and the harvest token from Vault at run time. The migration creates the job; a human stores the two Vault secrets once in the SQL editor:
+```sql
+select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
+select vault.create_secret('<HARVEST_TOKEN value>', 'harvest_token');
+```
+```sql
+select cron.schedule('harvest', '* * * * *', $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
+           || '/functions/v1/harvest',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets
+                                     where name = 'harvest_token')),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 5000)
+$$);
+```
+`pg_net` writes the header to `net.http_request_queue` until the request is sent. The header carries `HARVEST_TOKEN`, which can only start a tick; it never carries the secret key.
+
 ## Free-tier message budget
 Realtime counts one message per change per subscribed client.
 
@@ -300,4 +344,6 @@ The 2,000,000-message Free quota covers about 13 continuously open client-months
 - Supabase docs, Row Level Security: https://supabase.com/docs/guides/database/postgres/row-level-security
 - Supabase docs, Realtime Limits: https://supabase.com/docs/guides/realtime/limits
 - Supabase docs, Cron: https://supabase.com/docs/guides/cron
+- Supabase docs, Scheduling Edge Functions: https://supabase.com/docs/guides/functions/schedule-functions
+- Supabase docs, pg_net: https://supabase.com/docs/guides/database/extensions/pg_net
 - Clerk docs, Integrate Supabase with Clerk: https://clerk.com/docs/guides/development/integrations/databases/supabase

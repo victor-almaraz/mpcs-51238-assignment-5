@@ -12,10 +12,9 @@ flowchart LR
     JPL[JPL CAD and Scout<br/>15 min to 6 h]
     LL[Launch Library 2<br/>10 min]
   end
-  subgraph Railway
-    W[Worker<br/>fetch, normalize, hash, upsert, log run]
-  end
   subgraph Supabase
+    CR[pg_cron job harvest<br/>every minute, pg_net POST]
+    W[Edge Function harvest<br/>claim, fetch, normalize, hash, upsert, log run]
     SO[(sky_objects)]
     CH[(changes)]
     RU[(runs)]
@@ -32,6 +31,7 @@ flowchart LR
     VI[Visual renderer]
     CO[Console]
   end
+  CR -->|Bearer HARVEST_TOKEN| W
   CT & SW & JPL & LL --> W
   W -->|changed rows only| SO
   W --> CH & RU & SS & SM
@@ -48,8 +48,9 @@ flowchart LR
 ## Components
 | Component | Job | Input | Output | Error contract |
 |---|---|---|---|---|
-| Source registry | Declares each source's endpoint, schedule, normalizer and failure policy | `worker/sources.json` | Validated entries | Invalid entry: worker exits 1 at boot |
-| Scheduler | Starts each due fetch, one request per host at a time | Registry, `source_status` | Jobs | Overlapping job: skipped |
+| Cron trigger | Invokes the worker once a minute | `cron.job` `harvest` | HTTP POST | Failed POST: logged in `net._http_response`; next minute retries |
+| Source registry | Declares each source's endpoint, schedule, normalizer and failure policy | `supabase/functions/harvest/sources.json` | Validated entries | Invalid entry: HTTP 500 naming the entry; nothing runs |
+| Scheduler | Selects and claims due sources, one request per host at a time | Registry, `source_status` | Jobs | Entry claimed by an overlapping invocation: skipped |
 | Fetcher | Performs one HTTP GET with User-Agent and timeout | URL | Body, status | Non-200 or timeout: `FetchError` |
 | Normalizer | Converts one raw body into sky objects | Body | `SkyObject[]` | Malformed body: `NormalizeError` |
 | Upserter | Writes changed objects and their diffs | `SkyObject[]` | `changes` rows | RPC error: run fails |
@@ -71,7 +72,7 @@ flowchart LR
 - Scripts share only the builder API. The sandbox returns data; no script code runs during playback.
 
 ## Trace of one change
-1. **SOURCE.** The scheduler starts `swpc.wind`. The fetcher receives HTTP 200.
+1. **SOURCE.** The cron job invokes the Edge Function. The scheduler claims `swpc.wind`. The fetcher receives HTTP 200.
 2. **NORMALIZE.** The normalizer strips trailing NUL bytes, selects the newest row with `active: true`, maps `-9999` to `null`, and emits `{ id: "swpc.wind:l1", group: "swpc.wind", fields: { speed: 512.3, density: 4.1, temperature: 91000, spacecraft: "...", timeTag: "..." } }`.
 3. **CHANGE.** The upserter computes `hash = sha256(canonicalJson(fields))` and calls `upsert_sky_objects`. The RPC updates the row because the hash differs and inserts a `changes` row with a `trace_id`.
 4. **RUN.** The run logger inserts `runs { ok: true, rows_changed: 1 }` and updates `source_status`.

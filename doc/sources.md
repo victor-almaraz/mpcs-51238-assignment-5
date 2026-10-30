@@ -1,7 +1,7 @@
 # Sources
 
 ## Scope
-External data sources, their usage rules, the source registry and normalization to `SkyObject`. Schedules and failure policies are data in `worker/sources.json`; worker code contains no per-source timing.
+External data sources, their usage rules, the source registry and normalization to `SkyObject`. Schedules and failure policies are data in `supabase/functions/harvest/sources.json`; worker code contains no per-source timing.
 
 ## Source table
 | Registry id | Group | Endpoint | Interval | Key | Failure policy |
@@ -15,7 +15,7 @@ External data sources, their usage rules, the source registry and normalization 
 | `swpc.mag` | `swpc.mag` | `https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json` | 60 s | constant `l1` | `backoff` |
 | `jpl.cad` | `jpl.cad` | `https://ssd-api.jpl.nasa.gov/cad.api?dist-max=10LD&date-min=now&date-max=%2B60` | 21600 s | `des` + `cd` | `backoff` |
 | `jpl.scout` | `jpl.scout` | `https://ssd-api.jpl.nasa.gov/scout.api` | 900 s | `objectName` | `backoff` |
-| `ll2.upcoming` | `ll2.upcoming` | `${LL2_BASE}/launches/upcoming/?limit=10&mode=list` | 600 s | `id` | `retryAfter` |
+| `ll2.upcoming` | `ll2.upcoming` | `${LL2_BASE}/launches/upcoming/?limit=10&mode=normal` | 600 s | `id` | `retryAfter` |
 
 No source requires an API key. The worker sends `User-Agent: Sphaerenmusik/<version> (<WORKER_CONTACT>)` to every host.
 
@@ -36,9 +36,10 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 ## CelesTrak
 - Domain: `celestrak.org` only. An HTTP 301 indicates a wrong domain or legacy URL; treat it as a failure.
 - GP data updates once every 2 hours. CelesTrak enforces one download per update for each group (enforced from 2026-03-26). A second download before the next update returns HTTP 403 with a text explanation.
-- Policy `halt`: any non-200 response sets `source_status.halted = true` for that registry id. The worker makes no further requests to it until `node src/cli.js clear-halt <id>` runs. Repeated failing requests can put the worker's IP on CelesTrak's firewall.
+- Policy `halt`: any non-200 response sets `source_status.halted = true` for that registry id. The worker makes no further requests to it until a human clears the halt (`worker.md`, Failure policies). Repeated failing requests can put the worker's IP on CelesTrak's firewall.
 - The worker persists `last_success_at` per registry id and never fetches a group before `last_success_at + interval`, including after a restart.
-- Format: OMM JSON (`FORMAT=json`). Catalog numbers assigned from 2026-07-11 have six digits; the TLE format cannot represent them. Store `NORAD_CAT_ID` as text.
+- Format: OMM JSON (`FORMAT=json`). Catalog numbers assigned from 2026-07-11 have six digits (the `stations` group already contains `101031`); the TLE format cannot represent them. `NORAD_CAT_ID` arrives as a JSON number; the normalizer stores it as a decimal string.
+- Edge Functions have no static egress IP; the address is shared with other workloads. A download of the same group by another workload from the same address can produce a 403 for this worker, which halts the source like any other non-200 response.
 - An HTTP 200 response can carry a plain-text body such as "No GP data found". The normalizer rejects any body that is not a JSON array.
 - The `active` group (over 10,000 objects) is not a registry source.
 
@@ -86,10 +87,12 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 | `swpc.mag` | `timeTag` | `time_tag` | ISO 8601 UTC |
 
 ## JPL SSD/CNEOS
+- `ssd-api.jpl.nasa.gov` presents a chain that ends at Sectigo Public Server Authentication Root R46. Node.js and Deno bundle that root; the macOS `/etc/ssl/cert.pem` lacks it, so `curl` on macOS fails verification unless given a current CA bundle.
 - The SSD/CNEOS fair-use policy requires one request at a time, no unnecessary repeated requests, caching of results, and backing off on errors. Browsers may not call these APIs; only the worker does.
 - Check `signature.version` in every response. CAD documents version `1.5`. A different version logs `warn` with event `version_mismatch` and the run still proceeds; a missing field fails normalization.
 - CAD returns `fields` (column names) and `data` (rows). Zip them into objects. `count: 0` with HTTP 200 is a valid empty result.
-- Scout returns a `data` array of candidate objects. Verify the field names below against the saved fixture before implementing the normalizer.
+- CAD returns every value as a string. The normalizer converts numeric columns with `Number` and maps non-finite results to `null`. `cd` has the form `2026-Oct-31 02:35`.
+- Scout returns `signature.version` `1.3`, `count` as a string, and a `data` array of candidate objects. `neoScore`, `phaScore`, `nObs` and `rating` arrive as numbers; `H`, `arc` and `vInf` arrive as strings or `null`. The normalizer converts them to numbers. `tEphem` advances on every Scout run and is not a field, so an unchanged candidate does not produce an update.
 
 | Group | Field | Source key | Unit |
 |---|---|---|---|
@@ -112,6 +115,8 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 
 ## Launch Library 2
 - Anonymous access allows 15 requests per hour per IP. HTTP 429 carries `Retry-After`; policy `retryAfter` waits that many seconds, or 3600 s when the header is absent.
+- `mode=normal` is required: `mode=list` omits `launch_service_provider` and `pad`. A `limit=10` response is about 90 KB.
+- `pad.latitude` and `pad.longitude` arrive as numbers.
 - `LL2_BASE` is `https://lldev.thespacedevs.com/2.3.0` in development (stale data, no rate limit) and `https://ll.thespacedevs.com/2.3.0` in production.
 
 | Field | Source key |
@@ -170,9 +175,23 @@ type SkyObject = {
 ## Attribution
 The page footer and console show: "Orbital data: CelesTrak. Space weather: NOAA SWPC. Close approaches and Scout: NASA/JPL CNEOS. Launches: The Space Devs, Launch Library 2."
 
-## Open items
-- Verify the Scout field names against a saved response before writing the normalizer.
-- Verify CelesTrak group names (`cosmos-2251-debris`, `gps-ops`) with one request each before enabling them.
+## Saved responses
+`worker/test/fixtures/captures.jsonl` lists each saved response with its URL, time, status and size, and names the source of each derived fixture. Observations from two captures five minutes apart on 2026-10-30:
+
+| Source | Objects | Change between captures |
+|---|---|---|
+| `celestrak.stations` | 20 | None; the second request returned HTTP 200 with an identical body, not 403 |
+| `celestrak.gps-ops` | 32 | Captured once (one download per GP update) |
+| `celestrak.visual` | 156 | Captured once |
+| `celestrak.cosmos-2251-debris` | 585 | Captured once |
+| `swpc.kp` | 1 | Latest row moved from 02:29 to 02:33; values unchanged |
+| `swpc.wind` | 1 | Active row moved from 02:26 to 02:31; speed, density and temperature changed |
+| `swpc.mag` | 1 | Active row moved from 02:24 to 02:31; `bt` and `bz` changed |
+| `jpl.cad` | 8 | None |
+| `jpl.scout` | 26 | Only `tEphem` and two minor fields of two candidates |
+| `ll2.upcoming` | 10 | See `captures.jsonl` |
+
+In RTSW files the newest row is not active (an `ACE` or `IMAP` row precedes the active `SOLAR1` row). `-9999` appears in `rtsw_mag_1m.json`; no trailing NUL bytes appeared.
 
 ## Sources
 - CelesTrak, Usage Policy: https://celestrak.org/usage-policy.php

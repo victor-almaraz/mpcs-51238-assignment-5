@@ -17,7 +17,7 @@ Clerk sign-in, Clerk as a Supabase third-party auth provider, the Supabase clien
 ## Clerk–Supabase integration
 1. Clerk Dashboard → Integrations → Supabase → Activate. Copy the Clerk domain.
 2. Supabase Dashboard → Authentication → Sign In / Providers → Third-Party Auth → Add provider → Clerk. Paste the domain.
-3. For the local Supabase CLI, add to `supabase/config.toml`:
+3. For a local Supabase CLI instance (optional), add to `supabase/config.toml`:
    ```toml
    [auth.third_party.clerk]
    enabled = true
@@ -66,7 +66,7 @@ export function serverClient() {
 | Key | Format | Location | Behavior |
 |---|---|---|---|
 | Publishable | `sb_publishable_...` | Browser; Vercel `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Subject to RLS |
-| Secret | `sb_secret_...` | Railway `SUPABASE_SECRET_KEY` only | Bypasses RLS; rejected when sent from a browser |
+| Secret | `sb_secret_...` | Edge Function (injected `SUPABASE_SECRET_KEYS`) and `worker/.env` only | Bypasses RLS; rejected when sent from a browser |
 | Clerk publishable | `pk_...` | Vercel `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Public |
 | Clerk secret | `sk_...` | Vercel `CLERK_SECRET_KEY` | Server only |
 

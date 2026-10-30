@@ -1,7 +1,7 @@
 # Testing
 
 ## Scope
-Automated tests run with `node:test` and the manual deployment checklist. Page-side tests live in `tests/`; worker tests live in `worker/test/`.
+Automated tests run with `node:test` and the manual deployment checklist. Page-side tests live in `tests/`; worker tests live in `worker/test/`; SQL tests live in `supabase/tests/`.
 
 ## Commands
 ```bash
@@ -11,7 +11,8 @@ cd worker && npm test    # node --test test/*.test.js
 Tests construct no `AudioContext`, no WebGL context and no network connection. They use fakes.
 
 ## Worker fixture tests
-Fixtures in `worker/test/fixtures/` are saved responses: two calls per source, a few minutes apart, plus:
+Fixtures in `worker/test/fixtures/` are saved responses: two calls per source, a few minutes apart (one call per CelesTrak group, whose GP data changes once every 2 hours), plus derived fixtures. `captures.jsonl` records the URL, time and status of each capture and the origin of each derived fixture.
+
 
 | Fixture | Purpose |
 |---|---|
@@ -32,10 +33,12 @@ The tests run the pipeline with a fake fetch and a fake store that implements `u
 5. Every run inserts exactly one `runs` row with the right `ok` and `rows_changed`.
 6. A CelesTrak 403 sets `halted`, and no further fetch is scheduled.
 7. LL2 429 waits `Retry-After`; other failures back off exponentially up to `maxBackoffSec`.
-8. An invalid registry exits at boot with a message naming the entry.
+8. An invalid registry fails the invocation with a message naming the entry.
+9. A claim already taken by an overlapping invocation skips the entry.
+10. The due check runs a 60 s source on consecutive one-minute ticks with up to 15 s of jitter.
 
 ## SQL tests
-`supabase/tests/upsert.sql` runs against a local Supabase instance (`supabase start`) and checks the RPC on enter, unchanged, update, exit and re-enter, and checks that `anon` cannot read `projects` or execute the RPC.
+`supabase/tests/upsert.sql` runs in the Supabase SQL editor inside `begin; ... rollback;`, raises an exception on the first failed assertion, and checks the RPC on enter, unchanged, update, exit and re-enter, and checks that `anon` cannot read `projects` or execute the RPC.
 
 ## Page tests
 | Area | Assertions |
@@ -90,14 +93,14 @@ Table checks parse the Markdown tables; they compare values, not formatting.
 `tests/trace-replay.test.js` reads a console export (`.jsonl`), feeds its `CHANGE` records through the binding runtime with fake instruments, and compares the produced `AUDIO` records with those in the file. Export a trace from a session that behaved as intended and commit it under `tests/fixtures/traces/`.
 
 ## Manual checklist
-1. `railway logs` shows no errors for 10 minutes, and `runs` gains rows for each source on schedule.
+1. The `harvest` function logs show no errors for 10 minutes, and `runs` gains rows for each source on schedule.
 2. In a private window, `/listen` updates without a refresh, and `/console` shows changes arriving.
 3. A classmate signs in for the first time, sees the starter projects in the Projects list, opens `Example: Station chord`, presses Run, hears sound and sees the preview update.
-4. The classmate's projects are invisible to another account (check through the UI and through `select` in the Supabase MCP server as that user).
-5. Stop the worker in Railway. After three intervals the status bar shows stale for SWPC. Point one registry URL at a 404 and redeploy; the source shows down.
-6. Through the Supabase MCP server, confirm that `sky_objects` is in `supabase_realtime`, that `anon` and `authenticated` hold `select`, and that the read policy exists.
+4. The classmate's projects are invisible to another account (check through the UI and through `select` in the SQL editor after `set local role authenticated; set local request.jwt.claims = '{"sub":"<other user id>"}';`).
+5. Stop the worker with `select cron.unschedule('harvest');`. After three intervals the status bar shows stale for SWPC. Reschedule it, point one registry URL at a 404 and redeploy the function; the source shows down.
+6. In the SQL editor, confirm that `sky_objects` is in `supabase_realtime`, that `anon` and `authenticated` hold `select`, and that the read policy exists.
 7. With `prefers-reduced-motion` on, trails and pulses are off.
 
 ## Sources
 - Node.js, Test runner: https://nodejs.org/api/test.html
-- Supabase CLI, local development: https://supabase.com/docs/guides/local-development
+- Supabase docs, Testing your database: https://supabase.com/docs/guides/database/testing
