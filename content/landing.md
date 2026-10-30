@@ -5,7 +5,7 @@ description: Music and images played by live space data.
 
 # Sphärenmusik
 
-*Sphärenmusik* is German for "music of the spheres". For two thousand years, astronomers and musicians held that the motions of the heavens and the intervals of music obey the same numbers. Sphärenmusik takes that idea literally: it plays the sky as it is right now, from satellites in orbit, the solar wind, asteroids passing Earth and rocket launches.
+*Sphärenmusik* is German for "music of the spheres". From antiquity to the seventeenth century, astronomers and musicians held that the motions of the heavens and the intervals of music obey the same numbers. Sphärenmusik takes that idea literally: it plays the sky as it is right now, from satellites in orbit, the solar wind, asteroids passing Earth and rocket launches.
 
 
 ## The music of the spheres
@@ -18,19 +18,19 @@ The idea passed through the whole of ancient and medieval thought:
 | Plato, *Republic*, Book X (the Myth of Er) | A siren stands on each heavenly sphere and sings one note; together the notes make a single harmony. |
 | Plato, *Timaeus* | The soul of the world is built from the ratios of the musical scale. |
 | Boethius, *De institutione musica* (about 510 CE) | Music has three kinds: *musica mundana*, the harmony of the cosmos; *musica humana*, the harmony of body and soul; *musica instrumentalis*, the music people play and hear. |
-| Johannes Kepler, *Harmonices Mundi* (1619) | Each planet sings a melody whose range follows its speed at its nearest and farthest points from the Sun. The same book states Kepler's third law of planetary motion. |
+| Johannes Kepler, *Harmonices Mundi* (1619) | Each planet sings a melody. The ratio of its fastest to its slowest motion, seen from the Sun, sets the melody's range; Earth's spans a semitone, mi to fa. The same book states Kepler's third law of planetary motion. |
 
 The planets make no sound: space carries none. The old theory was wrong as physics. It was right about something else: the sky is full of periodic motion, and periodic motion is what music is made of.
 
 ## Four sister sciences: the quadrivium
-"As the eyes are framed for astronomy, so the ears are framed for harmony," Plato has Socrates say, "and these are sister sciences, as the Pythagoreans say." The four mathematical arts of antiquity were studied together because each is number seen from a different side. Nicomachus of Gerasa (2nd century CE) arranged them as follows:
+"As the eyes are framed for astronomy so the ears are framed for the movements of harmony," Plato has Socrates say, "and these are in some sort kindred sciences." He credits the idea to the Pythagoreans. The four mathematical arts of antiquity were studied together because each is number seen from a different side. Nicomachus of Gerasa (2nd century CE) arranged them as follows:
 
 | | At rest | In motion |
 |---|---|---|
 | **Number** (discrete quantity) | Arithmetic: number in itself | Music: number in relation, as ratio and interval |
 | **Magnitude** (continuous quantity) | Geometry: magnitude at rest | Astronomy: magnitude in motion |
 
-Boethius named these four arts the *quadrivium*, "the four ways". Joined to the *trivium* of grammar, logic and rhetoric, they formed the seven liberal arts taught in medieval schools and universities. Music sat next to astronomy in the curriculum: both are the study of proportion unfolding in time.
+Boethius named these four arts the *quadrivium*, "the four ways". Joined to the *trivium* of grammar, logic and rhetoric, they formed the seven liberal arts taught in medieval schools and universities. Music sat next to astronomy in the curriculum: both study proportion in motion.
 
 ## What Sphärenmusik does
 Sphärenmusik is a working quadrivium. Live measurements arrive as numbers (arithmetic). Orbits are propagated and drawn as positions on a map or on the sky (geometry). Their motions are read as rhythms and cycles (astronomy). A short script turns those numbers into pitches, intervals and timbres (music).
@@ -59,14 +59,14 @@ sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440),
 });
 ```
-Five lines give every crewed space station one sustained note, tuned by how fast it orbits.
+These five lines give every object in CelesTrak's space-stations group one sustained note, tuned by how fast it orbits.
 
 
 ## What is real
 The data is real and live: when the solar wind speeds up, the piece changes within minutes. The sound is a composition: every mapping from data to music is a choice made in a script, and anyone can read, change or write it. Sphärenmusik claims no hidden sound in the sky. Like Kepler's planetary melodies, it is a way of listening to the numbers.
 
 ## Further reading
-- Plato, *Republic* 530d and 616b–617d; *Timaeus* 35b–36b.
+- Plato, *Republic* 530d and 616b–617d, translated by Paul Shorey; *Timaeus* 35b–36b.
 - Boethius, *De institutione musica*, Book I, chapter 2.
 - Nicomachus of Gerasa, *Introduction to Arithmetic*, Book I, chapter 3.
 - Johannes Kepler, *Harmonices Mundi*, Book V.
