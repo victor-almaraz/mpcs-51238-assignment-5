@@ -1,0 +1,285 @@
+// Audio host (doc/bindings.md, Audio host): starts the engine on Run and keeps it in sync with
+// the IR. The engine module is injected (`src/audio-host/engine-imports.js` in the page, fakes in
+// tests), so this module never imports src/audio/ itself.
+
+import { createBindingRuntime } from '../bind/runtime.js';
+import { buildModConfig } from '../bind/mod-config.js';
+import { canonicalJson } from '../bind/canonical.js';
+import { createTracer } from '../bind/tracer.js';
+import { irToWidgets, chainsOf, slotsOf, changedIds } from './widgets.js';
+
+export const PUMP_MS = 25;
+export const LOOKAHEAD_S = 0.1;
+
+export const NOTICES = Object.freeze({
+  fault: 'Audio fault — output muted and reset',
+  duck: 'Level reduced — sustained loud output',
+  /** @param {string} type @param {string} owner */
+  fxFault: (type, owner) => `Effect ${type} on ${owner} was reset and bypassed.`,
+});
+
+/**
+ * @typedef {object} EngineModule
+ * @property {() => Promise<any>} ensureRunning
+ * @property {(ctx: any, opts: { realtime: boolean, masterGain: number }) => Promise<any>} buildMasterBus
+ * @property {new (ctx: any, bus: any, opts: any) => any} Engine
+ *
+ * @typedef {object} Notice
+ * @property {'fault' | 'duck' | 'fxFault' | 'engineFault'} kind
+ * @property {'assertive' | 'polite'} live   live region (doc/audio/audio-safety.md, Safety UI)
+ * @property {string} message
+ *
+ * @typedef {object} HostOptions
+ * @property {EngineModule} engineModule
+ * @property {any} sky
+ * @property {(record: any) => void} [trace]
+ * @property {(notice: Notice) => void} [notify]
+ * @property {{ setInterval: Function, clearInterval: Function }} [timers]
+ * @property {() => number} [now]       monotonic ms
+ * @property {() => number} [wallNow]   epoch ms
+ * @property {(desaturate: number) => void} [onVisualReaction]
+ * @property {(ownerId: string, ir: any) => string} [ownerLabel]  name of an instrument in notices
+ * @property {any} [orbit]  @property {any} [audio]  @property {any} [local]
+ * @property {any} [fxParamDef]  @property {any} [groupSource]
+ */
+
+/**
+ * @param {HostOptions} options
+ */
+export function createAudioHost(options) {
+  const { engineModule, sky } = options;
+  if (!engineModule || !sky) throw new Error('createAudioHost: engineModule and sky are required');
+  const trace = options.trace ?? (() => {});
+  const notify = options.notify ?? (() => {});
+  const timers = options.timers ?? { setInterval: globalThis.setInterval.bind(globalThis), clearInterval: globalThis.clearInterval.bind(globalThis) };
+  const now = options.now ?? (() => globalThis.performance.now());
+  const wallNow = options.wallNow ?? Date.now;
+  const onVisualReaction = options.onVisualReaction ?? (() => {});
+  const ownerLabel = options.ownerLabel ?? ((id) => id);
+  const emit = createTracer(trace, wallNow);
+
+  let ctx = null;
+  let bus = null;
+  let engine = null;
+  let engineSeed = null;
+  let pumpTimer = null;
+  let pumpFailing = false;
+  /** @type {any} */ let ir = null;
+  /** @type {ReturnType<typeof createBindingRuntime> | null} */ let runtime = null;
+  let reactions = { detuneCents: 0, muted: [], desaturate: 0 };
+  /** Faulted slot ids; each is reported once and un-bypassed on the next reload or Run. */
+  const faulted = new Set();
+
+  const followed = (keep = null) => {
+    /** @type {Record<string, Record<string, number>>} */
+    const out = {};
+    for (const p of runtime ? runtime.paramValues() : []) {
+      if (keep && !keep.has(p.binding)) continue;
+      (out[p.inst] ??= {})[p.param] = p.value;
+    }
+    return out;
+  };
+
+  function onSafety(e) {
+    const type = typeof e === 'string' ? e : e && typeof e.type === 'string' ? e.type : 'unknown';
+    if (type === 'fault') {
+      emit('SAFETY', 'master-bus', 'fault', { event: 'fault' }, { level: 'error' });
+      notify({ kind: 'fault', live: 'assertive', message: NOTICES.fault });
+      stopBindings();
+    } else if (type === 'duck') {
+      emit('SAFETY', 'master-bus', 'duck', { event: 'duck' }, { level: 'warn' });
+      notify({ kind: 'duck', live: 'polite', message: NOTICES.duck });
+    } else {
+      emit('SAFETY', 'master-bus', type, { event: type }, { level: 'info' });
+    }
+  }
+
+  function onFxFault(owner, slotId) {
+    if (faulted.has(slotId)) return;
+    faulted.add(slotId);
+    const type = (ir && slotsOf(ir).get(slotId)?.slot.type) ?? 'unknown';
+    emit('SAFETY', 'engine', 'fxFault', { event: 'fxFault', owner, slot: slotId, type }, { level: 'warn' });
+    notify({ kind: 'fxFault', live: 'polite', message: NOTICES.fxFault(type, ownerLabel(owner, ir)) });
+  }
+
+  async function build(seed) {
+    if (!bus) bus = await engineModule.buildMasterBus(ctx, { realtime: true, masterGain: 0 });
+    if (engine && typeof engine.dispose === 'function') engine.dispose();
+    engine = new engineModule.Engine(ctx, bus, {
+      seed,
+      realtime: true,
+      lookahead: () => LOOKAHEAD_S,
+      ks: bus && bus.worklets ? bus.worklets.ks : undefined,
+      onFault: (detail) => {
+        emit('SAFETY', 'engine', 'fault', { event: 'fault', detail: detail ?? null }, { level: 'error' });
+        notify({ kind: 'engineFault', live: 'assertive', message: NOTICES.fault });
+      },
+      onError: (err) => {
+        emit('SAFETY', 'engine', 'error', { event: 'error', message: err instanceof Error ? err.message : String(err) }, { level: 'error' });
+      },
+    });
+    engineSeed = seed;
+    if (bus && typeof bus.setHandler === 'function') bus.setHandler(onSafety);
+    else emit('SAFETY', 'master-bus', 'noHandler', { message: 'master bus has no setHandler; fault and duck notices are unavailable' }, { level: 'warn' });
+    engine.onFxFault(onFxFault);
+    if (pumpTimer === null) {
+      pumpTimer = timers.setInterval(() => {
+        try {
+          engine.pump(ctx.currentTime + LOOKAHEAD_S);
+          pumpFailing = false;
+        } catch (err) {
+          if (!pumpFailing) emit('SAFETY', 'engine', 'error', { event: 'pump', message: err instanceof Error ? err.message : String(err) }, { level: 'error' });
+          pumpFailing = true;
+        }
+      }, PUMP_MS);
+    }
+  }
+
+  function applyReactions(state) {
+    reactions = { detuneCents: state.detuneCents, muted: [...state.muted], desaturate: state.desaturate };
+    if (engine && ir) engine.sync(irToWidgets(ir, reactions, followed()));
+    onVisualReaction(state.desaturate);
+  }
+
+  function makeRuntime(pieceIr) {
+    return createBindingRuntime({
+      ir: pieceIr, engine, sky, trace,
+      clock: {
+        now, wallNow,
+        audioTime: () => ctx.currentTime,
+        setInterval: (fn, ms) => timers.setInterval(fn, ms),
+        clearInterval: (id) => timers.clearInterval(id),
+      },
+      orbit: options.orbit, audio: options.audio, local: options.local,
+      fxParamDef: options.fxParamDef, groupSource: options.groupSource,
+      onReactions: applyReactions,
+    });
+  }
+
+  /** Clears faulted slots: a `bypass` message with the IR's state ends a fault. */
+  function clearFaults(pieceIr) {
+    const slots = slotsOf(pieceIr);
+    for (const id of faulted) {
+      const s = slots.get(id);
+      if (s && !s.slot.bypass) engine.setFxBypass(id, false);
+    }
+    faulted.clear();
+  }
+
+  function stopBindings() {
+    if (runtime) runtime.stop();
+    runtime = null;
+  }
+
+  const host = {
+    /**
+     * Starts the piece. Call synchronously inside the Run click handler: `ensureRunning()` runs
+     * before the first await, which keeps user activation.
+     * @param {any} pieceIr validated IR
+     */
+    async run(pieceIr) {
+      const ready = engineModule.ensureRunning();
+      const c = await ready;
+      if (c !== ctx) { ctx = c; bus = null; engine = null; }
+      const seed = pieceIr.seed ?? 1;
+      if (!engine || engineSeed !== seed) await build(seed);
+      stopBindings();
+      const prev = ir;
+      ir = pieceIr;
+      reactions = { detuneCents: 0, muted: [], desaturate: 0 };
+      onVisualReaction(0);
+      if (prev) {
+        const chains = chainsOf(ir);
+        for (const [owner, slots] of chainsOf(prev)) if (!chains.has(owner) && slots.length) engine.setFx(owner, []);
+      }
+      engine.sync(irToWidgets(ir, reactions));
+      engine.setTempo(ir.tempo ?? 120);
+      for (const i of ir.instruments) engine.setFx(i.id, i.fx ?? []);
+      engine.setFx('master', ir.master?.fx ?? []);
+      const mc = buildModConfig(ir);
+      engine.setLfos(mc.lfos);
+      engine.setMods(mc.routes);
+      clearFaults(ir);
+      runtime = makeRuntime(ir);
+      runtime.start();
+      emit('RELOAD', 'audio-host', 'run', { instruments: ir.instruments.map((i) => i.id), bindings: (ir.bindings ?? []).map((b) => b.id) });
+    },
+
+    /**
+     * Hot reload (doc/piece-dsl.md, Hot reload, steps 2–8). Returns the changed ids.
+     * @param {any} next validated IR
+     * @returns {{ changed: string[] }}
+     */
+    reload(next) {
+      if (!engine || !runtime || !ir) { ir = next; return { changed: [] }; }
+      const prev = ir;
+      const changed = [];
+
+      // Followed values survive for bindings that do not change.
+      const prevBindings = new Map((prev.bindings ?? []).map((b) => [b.id, canonicalJson(b)]));
+      const keep = new Set((next.bindings ?? []).filter((b) => prevBindings.get(b.id) === canonicalJson(b)).map((b) => b.id));
+      const values = followed(keep);
+
+      // Instruments (without their chains, which setFx handles).
+      changed.push(...changedIds(prev.instruments, next.instruments, ({ fx, ...rest }) => rest));
+      const nextChains = chainsOf(next);
+      const prevChains = chainsOf(prev);
+      for (const [owner, slots] of prevChains) if (!nextChains.has(owner) && slots.length) engine.setFx(owner, []);
+      ir = next;
+      engine.sync(irToWidgets(next, reactions, values));
+      if ((prev.tempo ?? 120) !== (next.tempo ?? 120)) engine.setTempo(next.tempo ?? 120);
+
+      // Effect chains whose slot list changed.
+      for (const [owner, slots] of nextChains) {
+        const before = prevChains.get(owner) ?? [];
+        if (canonicalJson(before) !== canonicalJson(slots)) {
+          engine.setFx(owner, slots);
+          changed.push(...changedIds(before, slots));
+        }
+      }
+
+      // Modulation.
+      const a = buildModConfig(prev);
+      const b = buildModConfig(next);
+      if (canonicalJson(a.lfos) !== canonicalJson(b.lfos) || canonicalJson(a.routes) !== canonicalJson(b.routes)) {
+        engine.setLfos(b.lfos);
+        engine.setMods(b.routes);
+        changed.push(...changedIds(prev.lfos ?? [], next.lfos ?? []));
+        if (canonicalJson(a.routes) !== canonicalJson(b.routes)) changed.push('mods');
+      }
+      clearFaults(next);
+
+      // Bindings, then layers (the renderer rebuilds them).
+      changed.push(...runtime.reload(next).bindings);
+      changed.push(...changedIds(prev.layers ?? [], next.layers ?? []));
+      const unique = [...new Set(changed)];
+      emit('RELOAD', 'audio-host', 'reload', { changed: unique });
+      return { changed: unique };
+    },
+
+    /** Stops the piece: releases every binding and removes the instruments with a fade. */
+    stop() {
+      stopBindings();
+      if (engine) engine.sync([]);
+    },
+
+    /** Stops the piece and the pump, and disposes the engine. */
+    dispose() {
+      host.stop();
+      if (pumpTimer !== null) timers.clearInterval(pumpTimer);
+      pumpTimer = null;
+      if (engine && typeof engine.dispose === 'function') engine.dispose();
+      engine = null;
+    },
+
+    /** Forwards a propagator post (2 Hz) to the runtime. */
+    orbitTick() { if (runtime) runtime.orbitTick(); },
+
+    get runtime() { return runtime; },
+    get engine() { return engine; },
+    get ctx() { return ctx; },
+    get ir() { return ir; },
+    get reactions() { return { ...reactions, muted: [...reactions.muted] }; },
+  };
+  return host;
+}

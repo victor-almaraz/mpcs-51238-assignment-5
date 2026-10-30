@@ -11,6 +11,16 @@ Apply each IR binding and data-driven modulation source to sky events as bounded
 - **Output:** `noteOn`, `noteOff`, `setParam`, voice-control, effect and modulation calls; layer property values for the renderer; trace records.
 - **Errors:** a call that throws is caught, traced at level `error` with the binding id, and the binding is disabled until the next reload. The rest of the piece keeps running.
 
+## Modules
+| Module | Exports |
+|---|---|
+| `src/expr/` | `evaluate(node, obj, ctx)`, `collectDeps(node)`, `quantize`, `rand01` |
+| `src/bind/` | `createBindingRuntime(options)`, `buildModConfig(ir)`, `computeReactionState(...)`, `evaluateLayerProps(...)` |
+| `src/audio-host/` | `createAudioHost(options)`, `irToWidgets(ir, ...)` |
+| `src/audio-host/engine-imports.js` | The only module that imports the user's engine: `ensureRunning`, `buildMasterBus`, `Engine` |
+
+Every other module receives the engine, the sky store, the clock and the `trace(record)` function by injection, so tests run with the fakes in `tests/fakes.js`.
+
 ## Audio host
 `src/audio-host/` starts the engine and keeps it in sync with the IR. It follows the lifecycle of assignment 2's `src/state/session.js`:
 1. On the Run click, call `ensureRunning()` synchronously inside the gesture handler, then `buildMasterBus(ctx, { realtime: true, masterGain: 0 })`.
@@ -27,6 +37,9 @@ Apply each IR binding and data-driven modulation source to sky events as bounded
 6. Call `engine.setTempo(ir.tempo)`, then `engine.setFx(id, instrument.fx)` for every instrument and `engine.setFx('master', ir.master.fx)` (`audio/effects.md`).
 7. Call `engine.setLfos` and `engine.setMods` with the modulation configuration (Effects and modulation).
 8. Freshness reactions `mute` and `only` set `muted` on widgets and call `engine.sync` again; the engine applies the gain change with smoothing.
+9. Every `engine.sync` passes the current value of each followed parameter in `params`, so a sync for a reaction or a hot reload does not reset a followed parameter to its IR value.
+
+On a hot reload the host passes the full widget list to `engine.sync`, calls `setTempo` when the tempo changed, `setFx` for each chain whose slot list changed (and `setFx(id, [])` for a removed instrument with a chain, before the sync), and `setLfos` and `setMods` when either list changed. It then rebinds changed bindings and emits one `RELOAD` record with the changed ids. Stop releases every binding and calls `engine.sync([])`. A safety-stage `fault` stops the bindings; nothing restarts until the next Run.
 
 The master level, master fade-in, safety limiter and duck are engine behavior. Effect chains sit before the safety stage, so the safety stage applies to effect output.
 
@@ -40,13 +53,20 @@ For a `voices` binding:
 3. For each object that leaves the selected set or exits: `noteOff(startedPitch, ctx.currentTime, tag)`.
 4. For each selected object that updates: evaluate `pitch`, `pan` and `voiceMods`. If pitch changed by more than 0.01 semitones, call `setVoicePitch(tag, pitch, 150)`. Without `setVoicePitch`, release and restart the voice and trace `fallback`.
 
+- A selected object whose `pitch` is `null` stays selected without sounding; an update with a non-null pitch starts it. A sounding voice whose pitch becomes `null` keeps its pitch.
+- Objects whose `select.by` value is not a finite number sort last. Ties sort by id.
+- Every `noteOff` for a sustained voice uses `max(ctx.currentTime, startTime + 0.005)`, because `noteOff` releases only voices that started before its time and `ctx.currentTime` does not advance within one task.
+- Velocity is rounded and clamped to 1–127 (default 64 when `null`), pitch to 0–127, pan to −1 to 1. `AUDIO` records carry the clamped value and the requested value (`pitchRequested`).
+- Voice options that reference other groups or `orbit` nodes are re-evaluated for every sounding voice on those events and on each orbit post.
+
 Caps: 16 voices per instrument, 4 for granular, 64 in total (`audio/audio-engine-core.md`). The validator enforces per-binding caps. When several bindings target one instrument, the engine's voice stealing applies and the trace records `stolen`.
 
 ## Triggers
 For a `trigger` binding:
-1. An event of the binding's `event` kind in its group arrives, and `when` evaluates to `true` (or is `null`).
-2. A token bucket with capacity `ceil(maxPerSecond)` and refill rate `maxPerSecond` admits the event. An event that finds the bucket empty is dropped, not queued, and traced as `dropped`.
-3. Evaluate `pitch` and `velocity`. Call `noteOn(pitch, velocity, ctx.currentTime, tag)` and schedule `noteOff(pitch, ctx.currentTime + durationMs / 1000, tag)`.
+1. An event of the binding's `event` kind in its group arrives, and `when` evaluates to `true` (or is `null`). `enter` events with `initial: true` (the store's first load of a followed group) never fire a trigger; voices treat them as enters.
+2. Evaluate `pitch` and `velocity`. A `null` pitch does not fire and takes no token.
+3. A token bucket with capacity `ceil(maxPerSecond)`, starting full, and refill rate `maxPerSecond` admits the event. An event that finds the bucket empty is dropped, not queued, and traced as `dropped`.
+4. Call `noteOn(pitch, velocity, ctx.currentTime, tag)` and `noteOff(pitch, ctx.currentTime + durationMs / 1000, tag)`; `noteOff` accepts a future time.
 
 A full-group CelesTrak refresh can emit hundreds of `update` events at once. The bucket keeps the audible result bounded.
 
@@ -55,7 +75,9 @@ For a `param` binding:
 1. Re-evaluate `expr` on every event that can affect it: events in groups the expression references, and every SWPC update for `swpc` nodes.
 2. Feed the value into a one-pole smoother with time constant `smoothMs / 3`, so the value settles within about `smoothMs`.
 3. Every 33 ms (30 Hz), call `setParam(param, smoothedValue)` while the smoother is moving. `setParam` clamps through `coerceParam`, and the engine smooths again over 10 ms.
-4. Trace the requested value and `getParams()[param]` after the call.
+4. Trace one `AUDIO` `setParam` record when the smoother starts moving toward a new value and one when it settles, each with `requested` (the expression result), `sent` (the smoothed value) and `applied` (`getParams()[param]` after the call).
+
+The smoother starts from `getParams()[param]` (for an effect parameter, the slot's IR value) and snaps to the target once within 0.1% of the step, about 2.3 × `smoothMs` after it. The loop runs every 34 ms, the first whole millisecond above 1000 / 30, so it stays within 30 calls per second.
 
 ## Effect parameters
 - A `follow` on an effect parameter (`slot.<param>.follow`) behaves like a `param` binding and calls `engine.setFxParam(slotId, param, value)` at up to 30 Hz.
@@ -89,6 +111,8 @@ The runtime converts the IR's `lfos` and `mods` to the engine configuration (`au
 - `mute` and `only` change widget `muted` flags.
 - `desaturate` is a visual action (`visuals.md`).
 - Several active reactions combine: `detuneCents` takes the largest value; mutes take the union.
+- `'*'` matches the sources of the piece's `groups`. A group key matches the source of that group.
+- The runtime reports the combined state (`detuneCents`, `muted`, `desaturate`) to the host, which syncs widgets, and to the renderer.
 
 ## Instrument contracts
 The engine's instruments implement:
@@ -123,9 +147,20 @@ interface VoiceControl {
 | `setVoiceMod` | No per-voice modulation |
 
 ## Fakes
-`tests/fakes/fake-instrument.js` implements `Instrument` and `VoiceControl`, records every call as `[method, ...args]`, and throws `CapExceeded` when more than its cap of voices sound at once. `tests/fakes/fake-engine.js` implements `sync`, `get`, `pump`, `EngineFx` and `EngineMod`, records every call, and enforces the effect and modulation limits by throwing the documented errors. Binding tests use these fakes and never construct an `AudioContext`.
+`tests/fakes.js` exports:
+- `FakeInstrument`: implements `Instrument` and `VoiceControl` (each extension can be left out), records every call as `[method, ...args]`, and throws `CapExceeded` when more than its cap of voices sound at once.
+- `FakeEngine`: implements `sync`, `get`, `pump`, `EngineFx` and `EngineMod`, records every call, and enforces the effect and modulation limits by throwing `FxLimitError`, `ModLimitError` and `ModTargetError`.
+- `FakeAudioParam`, `createFakeClock()` (manual timers, wall and audio time) and `createFakeSky()` (the `Sky` interface with methods that emit events).
+
+Binding tests use these fakes and never construct an `AudioContext`.
+
+## Trace replay
+A console export under `tests/fixtures/traces/<name>.jsonl` is paired with `<name>.ir.json`, the IR that was running. `tests/trace-replay.test.js` rebuilds objects from the `CHANGE` records (`data.diff.after`, with `initial` passed through), feeds them through the runtime with fakes, and compares the `AUDIO` records by `event` and `data`.
 
 ## Open items
+- `piece-dsl.md` does not list the effect-follow binding kinds. The runtime follows `src/dsl/ir.schema.json`: `fxParam { slot, param, expr, smoothMs }` and `fxBypass { slot, expr }`. A `param` binding whose `inst` is a slot id is treated the same way.
+- `audio.voice(inst).env()`, `audio.level` and `audio.spectrum` need an engine interface that is not listed here (a per-voice envelope value by source tag, and an analyser tap per instrument). Until it exists they evaluate to `null` and layers use their defaults.
+- Verify the argument of the `bus.setHandler` callback; the host accepts a string or `{ type }`.
 - Verify with the user that the engine treats `source` as an opaque string. Assignment 2 passes only `'file'` and `'live'`.
 
 ## Sources
