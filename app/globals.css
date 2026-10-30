@@ -1,1 +1,72 @@
 @import "tailwindcss";
+
+/* Design tokens (doc/ui.md, Style). Dark is the default theme. */
+:root {
+  --bg: #1b1d1f;
+  --panel: #222426;
+  --panel-2: #2a2c2f;
+  --line: #3a3d41;
+  --fg: #d7d9dc;
+  --fg-muted: #9a9ea4;
+  --accent: #4fc3a1;
+  --stale: #e0a43a;
+  --down: #e5534b;
+  --focus: #6ea8fe;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f6f6f5;
+  --panel: #ffffff;
+  --panel-2: #efefee;
+  --line: #d6d6d3;
+  --fg: #1f2124;
+  --fg-muted: #5e6268;
+  --accent: #127a5e;
+  --stale: #8a5a00;
+  --down: #b42318;
+  --focus: #1f5fbf;
+  color-scheme: light;
+}
+
+@theme {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-stale: var(--stale);
+  --color-down: var(--down);
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
+/* Guide prose (doc/guide.md) */
+.prose-guide { line-height: 1.6; max-width: 46rem; }
+.prose-guide h1 { font-size: 1.6rem; font-weight: 600; margin: 0 0 1rem; }
+.prose-guide h2 { font-size: 1.2rem; font-weight: 600; margin: 2rem 0 0.75rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--line); }
+.prose-guide h3 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+.prose-guide p, .prose-guide ul, .prose-guide ol, .prose-guide table, .prose-guide pre { margin: 0 0 1rem; }
+.prose-guide ul { list-style: disc; padding-left: 1.5rem; }
+.prose-guide ol { list-style: decimal; padding-left: 1.5rem; }
+.prose-guide a { color: var(--focus); text-decoration: underline; text-underline-offset: 2px; }
+.prose-guide code { font-family: var(--font-mono); font-size: 0.9em; background: var(--panel-2); padding: 0 0.25rem; border-radius: 2px; }
+.prose-guide pre { font-family: var(--font-mono); background: var(--panel); border: 1px solid var(--line); padding: 0.75rem 1rem; overflow-x: auto; border-radius: 4px; }
+.prose-guide pre code { background: none; padding: 0; }
+.prose-guide table { border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
+.prose-guide th, .prose-guide td { border: 1px solid var(--line); padding: 0.3rem 0.6rem; text-align: left; vertical-align: top; }
+.prose-guide th { background: var(--panel-2); font-weight: 600; }
+.prose-guide tr:target { outline: 2px solid var(--focus); }
+.prose-guide .try-it { margin-top: -0.5rem; }
+.prose-guide .try-it a { display: inline-block; font-family: var(--font-mono); font-size: 0.85rem; text-decoration: none; color: var(--bg); background: var(--accent); padding: 0.15rem 0.6rem; border-radius: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
