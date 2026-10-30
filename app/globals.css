@@ -70,3 +70,11 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Landing page (doc/ui.md, Landing) */
+.prose-landing { max-width: 48rem; }
+.prose-hero h1 { font-size: 2.25rem; letter-spacing: -0.01em; }
+.prose-hero p { font-size: 1.05rem; color: var(--fg); }
+.prose-quadrivium table { display: table; width: 100%; max-width: 40rem; font-size: 0.95rem; }
+.prose-quadrivium th, .prose-quadrivium td { padding: 0.75rem 1rem; }
+.prose-quadrivium tbody td:not(:first-child) { background: var(--panel); }

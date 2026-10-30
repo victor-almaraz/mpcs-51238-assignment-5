@@ -31,7 +31,7 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 
 | Section | Heading | Content | Visual |
 |---|---|---|---|
-| Hero | `# Sphärenmusik` | What the name means; one sentence on what the piece does | Live orbit view: `celestrak.stations` propagated by the SGP4 worker on the `earth` projection, slow and without flashes; static with reduced motion |
+| Hero | `# Sphärenmusik` | What the name means; one sentence on what the piece does | Live orbit map: `celestrak.stations` propagated in the page with `satellite.js` every 2 s and drawn on a 2D canvas in the `map` projection's equirectangular geometry, with a graticule, the night side shaded from the subsolar point, and 45-minute ground-track trails; the ISS is labelled. Elements come from the live strip's snapshot. Drawn once per snapshot with reduced motion |
 | Actions | | Listen now (`/listen`), Start composing (`/sign-in`; Open projects when signed in), Learn the piece script (`/learn`) | Buttons |
 | Live strip | | Kp, solar wind speed, stations in orbit, next launch name and time, each with its freshness glyph and label | Monospace strip, status-bar style |
 | Spheres | The music of the spheres | Pythagorean ratios; Plato, Boethius and Kepler; the physics caveat | A string divided at 2:1, 3:2 and 4:3, drawn as SVG with a text alternative |
@@ -41,6 +41,8 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 | Honesty | What is real | Live data, composed mapping, no claim of sound in the sky | None |
 | Reading | Further reading | Primary sources and one sourcebook | List |
 
+- The hero map does not use the WebGL renderer, so the landing page loads no shaders or Web Workers.
+- Polling, propagation and drawing pause while the tab is hidden.
 - The live strip reads `sky_objects` and `source_status` by REST through the publishable key on load and every 60 s; it opens no Realtime channel, so landing visitors use no Realtime messages. States: loading (`…` with "connecting"), fresh, stale and down as in States; a failed read shows "Live data unavailable" and keeps the rest of the page.
 - The landing page starts no audio and creates no `AudioContext`. Sound starts only on `/listen` after a click.
 - Visual safety applies (`visuals.md`): the orbit view has no flashes, honors reduced motion and pauses when the tab is hidden.

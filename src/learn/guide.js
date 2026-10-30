@@ -11,7 +11,6 @@ import remarkRehype from 'remark-rehype';
 import { visit } from 'unist-util-visit';
 import { parse as parseYaml } from 'yaml';
 
-export const GUIDE_DIR = join(process.cwd(), 'content', 'learn');
 
 const SLUG = /^[a-z0-9-]+$/;
 
@@ -50,13 +49,13 @@ export function parsePage(slug, markdown) {
 }
 
 /** Every page in content/learn/, sorted by `order`. */
-export function loadGuide(dir = GUIDE_DIR) {
-  const pages = readdirSync(dir)
+export function loadGuide() {
+  const pages = readdirSync(join(process.cwd(), 'content', 'learn'))
     .filter((f) => f.endsWith('.md'))
     .map((f) => {
       const slug = f.slice(0, -3);
       if (!SLUG.test(slug)) throw new Error(`content/learn/${f}: file name must be a lowercase slug`);
-      return parsePage(slug, readFileSync(join(dir, f), 'utf8'));
+      return parsePage(slug, readFileSync(join(process.cwd(), 'content', 'learn', f), 'utf8'));
     });
   return pages.sort((a, b) => a.order - b.order);
 }
@@ -110,25 +109,30 @@ function rehypeCodeAnchors() {
   };
 }
 
-/** Render one page to HTML. */
-export async function renderPage(page, markdown) {
+/** Render Markdown to HTML with the guide pipeline. `slug` names the page for Try it links. */
+export async function renderMarkdown(markdown, { slug, codeAnchors = false }) {
   const file = await remark()
     .use(remarkFrontmatter)
     .use(remarkGfm)
-    .use(remarkTryIt, { slug: page.slug })
+    .use(remarkTryIt, { slug })
     .use(remarkGuideLinks)
     .use(remarkRehype)
     .use(rehypeSlug)
-    .use(page.slug === 'troubleshooting' ? rehypeCodeAnchors : () => undefined)
+    .use(codeAnchors ? rehypeCodeAnchors : () => undefined)
     .use(rehypeStringify)
     .process(markdown);
   return String(file);
 }
 
-export function readPageSource(slug, dir = GUIDE_DIR) {
+/** Render one page to HTML. */
+export function renderPage(page, markdown) {
+  return renderMarkdown(markdown, { slug: page.slug, codeAnchors: page.slug === 'troubleshooting' });
+}
+
+export function readPageSource(slug) {
   if (!SLUG.test(slug)) return null;
   try {
-    return readFileSync(join(dir, `${slug}.md`), 'utf8');
+    return readFileSync(join(process.cwd(), 'content', 'learn', `${slug}.md`), 'utf8');
   } catch {
     return null;
   }
