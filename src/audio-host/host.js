@@ -10,6 +10,8 @@ import { irToWidgets, chainsOf, slotsOf, changedIds } from './widgets.js';
 
 export const PUMP_MS = 25;
 export const LOOKAHEAD_S = 0.1;
+/** Delay between fading out a replaced engine and disposing it (audio-engine-core.md, Teardown). */
+export const ENGINE_SWAP_MS = 50;
 
 export const NOTICES = Object.freeze({
   fault: 'Audio fault — output muted and reset',
@@ -34,7 +36,9 @@ export const NOTICES = Object.freeze({
  * @property {any} sky
  * @property {(record: any) => void} [trace]
  * @property {(notice: Notice) => void} [notify]
- * @property {{ setInterval: Function, clearInterval: Function }} [timers]
+ * @property {{ setInterval: Function, clearInterval: Function, setTimeout?: Function }} [timers]
+ * @property {() => number | null} [masterLevel]  linear master gain for `bus.fadeIn`, or null while
+ *           muted; the host fades the master in after the engine exists and after every resume
  * @property {() => number} [now]       monotonic ms
  * @property {() => number} [wallNow]   epoch ms
  * @property {(desaturate: number) => void} [onVisualReaction]
@@ -56,7 +60,15 @@ export function createAudioHost(options) {
   const wallNow = options.wallNow ?? Date.now;
   const onVisualReaction = options.onVisualReaction ?? (() => {});
   const ownerLabel = options.ownerLabel ?? ((id) => id);
+  const masterLevel = options.masterLevel ?? (() => null);
+  const sleep = (/** @type {number} */ ms) => new Promise((resolve) => (timers.setTimeout ?? globalThis.setTimeout)(resolve, ms));
   const emit = createTracer(trace, wallNow);
+  /** Engine-backed audio signals for layer properties (doc/audio/audio-engine-core.md, Analysis taps). */
+  const audio = options.audio ?? {
+    level: (/** @type {string} */ id) => (engine && typeof engine.level === 'function' ? engine.level(id) : null),
+    spectrum: (/** @type {string} */ id, /** @type {number} */ bands) => (engine && typeof engine.spectrum === 'function' ? engine.spectrum(id, bands) : null),
+    env: (/** @type {string} */ id, /** @type {string} */ tag) => (engine && typeof engine.voiceEnv === 'function' ? engine.voiceEnv(id, tag) : null),
+  };
 
   let ctx = null;
   let bus = null;
@@ -64,6 +76,9 @@ export function createAudioHost(options) {
   let engineSeed = null;
   let pumpTimer = null;
   let pumpFailing = false;
+  /** True while run() resumes the context, so its statechange does not fade in twice. */
+  let starting = false;
+  let lastState = null;
   /** @type {any} */ let ir = null;
   /** @type {ReturnType<typeof createBindingRuntime> | null} */ let runtime = null;
   let reactions = { detuneCents: 0, muted: [], desaturate: 0 };
@@ -102,9 +117,38 @@ export function createAudioHost(options) {
     notify({ kind: 'fxFault', live: 'polite', message: NOTICES.fxFault(type, ownerLabel(owner, ir)) });
   }
 
+  /** A realtime bus starts with masterGain at 0: ramp it to the master level (audio-safety.md). */
+  function fadeIn() {
+    const level = masterLevel();
+    if (bus && typeof bus.fadeIn === 'function' && level !== null && Number.isFinite(level)) bus.fadeIn(level);
+  }
+
+  /** Fades the master in after a resume the host did not start (an OS interruption ends). */
+  function watchContext(c) {
+    lastState = c.state ?? null;
+    if (typeof c.addEventListener !== 'function') return;
+    c.addEventListener('statechange', () => {
+      if (c !== ctx) return;
+      const prev = lastState;
+      lastState = c.state;
+      if (c.state === 'running' && prev !== 'running' && !starting && engine) fadeIn();
+    });
+  }
+
   async function build(seed) {
     if (!bus) bus = await engineModule.buildMasterBus(ctx, { realtime: true, masterGain: 0 });
-    if (engine && typeof engine.dispose === 'function') engine.dispose();
+    if (engine) {
+      // A seed change replaces the engine: release and fade the old one, then dispose it.
+      const old = engine;
+      engine = null;
+      const t = ctx.currentTime;
+      try {
+        if (typeof old.releaseAll === 'function') old.releaseAll(t);
+        if (typeof old.fadeOutAll === 'function') old.fadeOutAll(t);
+      } catch { /* already torn down */ }
+      await sleep(ENGINE_SWAP_MS);
+      if (typeof old.dispose === 'function') old.dispose();
+    }
     engine = new engineModule.Engine(ctx, bus, {
       seed,
       realtime: true,
@@ -124,6 +168,7 @@ export function createAudioHost(options) {
     engine.onFxFault(onFxFault);
     if (pumpTimer === null) {
       pumpTimer = timers.setInterval(() => {
+        if (!engine) return;
         try {
           engine.pump(ctx.currentTime + LOOKAHEAD_S);
           pumpFailing = false;
@@ -150,7 +195,7 @@ export function createAudioHost(options) {
         setInterval: (fn, ms) => timers.setInterval(fn, ms),
         clearInterval: (id) => timers.clearInterval(id),
       },
-      orbit: options.orbit, audio: options.audio, local: options.local,
+      orbit: options.orbit, audio, local: options.local,
       fxParamDef: options.fxParamDef, groupSource: options.groupSource,
       onReactions: applyReactions,
     });
@@ -178,11 +223,22 @@ export function createAudioHost(options) {
      * @param {any} pieceIr validated IR
      */
     async run(pieceIr) {
-      const ready = engineModule.ensureRunning();
-      const c = await ready;
-      if (c !== ctx) { ctx = c; bus = null; engine = null; }
+      const wasRunning = !!ctx && ctx.state === 'running';
+      starting = true;
+      let c;
+      try {
+        c = await engineModule.ensureRunning();
+      } finally {
+        starting = false;
+      }
+      const fresh = c !== ctx;
+      if (fresh) { ctx = c; bus = null; engine = null; watchContext(c); }
+      lastState = c.state ?? lastState;
       const seed = pieceIr.seed ?? 1;
+      const hadEngine = !!engine;
       if (!engine || engineSeed !== seed) await build(seed);
+      // After the engine exists, and after every resume (doc/audio/audio-safety.md, Fades).
+      if (!hadEngine || !wasRunning) fadeIn();
       stopBindings();
       const prev = ir;
       ir = pieceIr;

@@ -101,15 +101,19 @@ export class FakeInstrument {
 }
 
 const FX_SLOTS_PER_CHAIN = 8;
+const FX_INSERT_CHAINS = 16;
 const FX_REVERBS = 4;
 const MOD_LFOS = 16;
 const MOD_ROUTES = 32;
 const MOD_ROUTES_PER_TARGET = 4;
+const MOD_RETRIGGER_PER_INSTRUMENT = 2;
 
 /**
- * Fake engine: `sync`, `get`, `pump`, EngineFx and EngineMod. Records every call in `calls`.
- * Options: `instrument(widget)` returns the FakeInstrument for a new widget; `targets` is a
- * set of valid modulation targets (default: any `<instrument or slot id>.<name>`).
+ * Fake engine: `sync`, `get`, `pump`, `releaseAll`, `fadeOutAll`, `panic`, `dispose`, EngineFx,
+ * EngineMod and the analysis taps (doc/audio/audio-engine-core.md, Engine interface). Records
+ * every call in `calls`. Options: `instrument(widget)` returns the FakeInstrument for a new widget;
+ * `targets` is a set of valid modulation targets (default: any `<instrument or slot id>.<name>`);
+ * `levels`, `spectra` and `envs` (Maps) hold the values the taps return.
  */
 export class FakeEngine {
   constructor(opts = {}) {
@@ -128,6 +132,10 @@ export class FakeEngine {
     this.tempo = 120;
     this.faultHandlers = [];
     this.opts = opts.engineOptions ?? null;
+    this.levels = opts.levels ?? new Map();
+    this.spectra = opts.spectra ?? new Map();
+    this.envs = opts.envs ?? new Map();
+    this.disposed = false;
   }
 
   sync(widgets) {
@@ -152,6 +160,44 @@ export class FakeEngine {
 
   pump(until) { this.calls.push(['pump', until]); }
 
+  releaseAll(t) {
+    this.calls.push(['releaseAll', t]);
+    for (const inst of this.instruments.values()) inst.allNotesOff(t);
+  }
+
+  fadeOutAll(t) { this.calls.push(['fadeOutAll', t]); }
+
+  /** Releases every voice and resets every chain (the real engine resets 30 ms later). */
+  panic(t) {
+    this.calls.push(['panic', t]);
+    for (const inst of this.instruments.values()) inst.allNotesOff(t);
+  }
+
+  dispose() { this.calls.push(['dispose']); this.disposed = true; }
+
+  /** RMS level 0–1 of an instrument, or null for an unknown id. */
+  level(id) {
+    this.calls.push(['level', id]);
+    if (!this.instruments.has(id)) return null;
+    return this.levels.get(id) ?? 0;
+  }
+
+  /** `bands` (rounded, clamped to 4–32) values 0–1, or null for an unknown id. */
+  spectrum(id, bands) {
+    this.calls.push(['spectrum', id, bands]);
+    if (!this.instruments.has(id)) return null;
+    const n = Math.min(32, Math.max(4, Math.round(Number.isFinite(bands) ? bands : 4)));
+    const v = this.spectra.get(id);
+    return Array.from({ length: n }, (_, i) => (v ? v[i] ?? 0 : 0));
+  }
+
+  /** Envelope 0–1 of the voice tagged `source`, or null. */
+  voiceEnv(id, source) {
+    this.calls.push(['voiceEnv', id, source]);
+    if (!this.instruments.has(id)) return null;
+    return this.envs.get(`${id}|${source}`) ?? null;
+  }
+
   setTempo(bpm) {
     this.calls.push(['setTempo', bpm]);
     if (!(bpm >= 20 && bpm <= 300)) throw new FxLimitError('tempo');
@@ -163,6 +209,7 @@ export class FakeEngine {
     if (slots.length > FX_SLOTS_PER_CHAIN) throw new FxLimitError('slots');
     const next = new Map(this.chains);
     if (slots.length === 0) next.delete(owner); else next.set(owner, structuredClone(slots));
+    if ([...next.keys()].filter((o) => o !== 'master').length > FX_INSERT_CHAINS) throw new FxLimitError('insert chains');
     const all = [...next.values()].flat();
     if (all.filter((s) => s.type === 'reverb').length > FX_REVERBS) throw new FxLimitError('reverbs');
     const ids = all.map((s) => s.id);
@@ -213,11 +260,21 @@ export class FakeEngine {
     this.calls.push(['setMods', structuredClone(routes)]);
     if (routes.length > MOD_ROUTES) throw new ModLimitError('routes');
     const perTarget = new Map();
+    const retrig = new Map();
     for (const r of routes) {
       if (!this.validTarget(r.target)) throw new ModTargetError(r.target);
       if (!(r.depth >= -1 && r.depth <= 1)) throw new ModLimitError('depth');
       perTarget.set(r.target, (perTarget.get(r.target) ?? 0) + 1);
       if (perTarget.get(r.target) > MOD_ROUTES_PER_TARGET) throw new ModLimitError('routes_per_target');
+      // Retrigger LFOs count per instrument; effect targets do not count (doc/audio/modulation.md).
+      const owner = r.target.split('.')[0];
+      const lfo = this.lfos.find((l) => l.id === r.source);
+      if (lfo && lfo.retrigger && this.instruments.has(owner)) {
+        const set = retrig.get(owner) ?? new Set();
+        set.add(r.source);
+        retrig.set(owner, set);
+        if (set.size > MOD_RETRIGGER_PER_INSTRUMENT) throw new ModLimitError('retrigger');
+      }
     }
     this.routes = structuredClone(routes);
   }
@@ -227,7 +284,22 @@ export class FakeEngine {
     if (Number.isFinite(value)) this.modValues.set(sourceId, Math.min(Math.max(value, -1), 1));
   }
 
-  modulatedValue() { return null; }
+  /**
+   * The base value of a valid target (routes in the fake do not move it); null for an unknown
+   * target, as in the real engine.
+   */
+  modulatedValue(target) {
+    if (typeof target !== 'string' || !this.validTarget(target)) return null;
+    const [owner, name] = target.split('.');
+    const inst = this.instruments.get(owner);
+    if (inst) {
+      const v = inst.getParams()[name];
+      return typeof v === 'number' ? v : null;
+    }
+    const slot = this.findSlot(owner);
+    const v = slot?.params?.[name];
+    return typeof v === 'number' ? v : null;
+  }
 
   callsOf(method) { return this.calls.filter((c) => c[0] === method); }
 }

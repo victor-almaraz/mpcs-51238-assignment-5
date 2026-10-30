@@ -10,7 +10,7 @@ Clerk sign-in, Clerk as a Supabase third-party auth provider, the Supabase clien
 
 ## Clerk setup
 1. Install `@clerk/nextjs`. Wrap the root layout in `<ClerkProvider>`.
-2. Create `proxy.ts` at the project root exporting `clerkMiddleware()`. In Next.js 16, `proxy.ts` replaces `middleware.ts`.
+2. Create `proxy.ts` at the project root exporting `clerkMiddleware()` with `{ signInUrl: '/sign-in', signUpUrl: '/sign-up' }`, and pass the same URLs to `<ClerkProvider>`, so protected routes redirect to the app's own sign-in page rather than the Clerk-hosted one. In Next.js 16, `proxy.ts` replaces `middleware.ts`.
 3. Public routes: `/`, `/listen`, `/console`, `/learn(.*)`, `/try`, `/sign-in(.*)`, `/sign-up(.*)`. All other routes call `auth.protect()`.
 4. Server components and route handlers check `auth()` again. `proxy.ts` is a routing layer, not the security boundary; RLS is.
 

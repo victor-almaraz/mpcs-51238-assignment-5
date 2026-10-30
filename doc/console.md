@@ -77,13 +77,15 @@ createTraceBus({ capacity, now });   // separate bus with the same methods; test
 | Modulation | One row per routed target: base value, modulated value (`modulatedValue`, refreshed every 100 ms), and each route with its source and depth, for example `f1.decay 6.0 s → 7.4 s ← lfo0 sine 0.03 Hz (0.2)`. Data sources show their class (`vlfo`, `random-walk`, `step`), their expression's latest raw and posted values, and for VLFOs the orbit period and `time-scaled ×n` when applicable. |
 | Effects | Each chain in order with slot type, bypass state and fault state |
 
-Controls: pause, resume, follow-live toggle, clear. Replayed records show the label `REPLAY ×<speed>`; synthetic records show `SYNTHETIC`.
+Controls: pause, resume, follow-live toggle, clear. Pause freezes the displayed list; records keep entering the bus. Follow live scrolls to the newest record; scrolling up turns it off. Clear empties the bus. Replayed records show the label `REPLAY ×<speed>`; synthetic records show `SYNTHETIC`.
 
 ## Export
 "Download trace" writes the buffer as JSON Lines (`.jsonl`), one record per line. `tests/trace-replay.test.js` accepts an exported file as a fixture (`testing.md`).
 
 ## Access
 - `/console` is public. It shows sources, runs and events for every group, without signing in.
+- On load, `/console` reads the last 200 `changes` rows by REST, so recent events of every group appear without a Realtime subscription. Live events come from a sky store that follows the groups ticked in the console's group list; debris groups (`celestrak.cosmos-2251-debris`) start unticked because of their message cost (`database.md`, Free-tier message budget).
+- The Sources panel reads `runs` by REST with `source_status` (every 30 s): last run, rows changed and duration come from the newest `runs` row of each registry id, and last error from its newest failed run.
 - Binding, audio and visual records exist only in the tab that plays a project, and only for that project.
 
 ## Accessibility

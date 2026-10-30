@@ -56,6 +56,7 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 
 ## Projects (`/projects`)
 - Table with columns name, groups followed, last edited, last run. Row actions: Open, Run, Duplicate, Delete.
+- Last edited is `projects.updated_at`; every save sets it. `projects` has no last-run column, so last run is recorded per browser in `localStorage` (`sphaerenmusik.lastRun.<id>`) when Run starts the project, and reads `—` on other devices.
 - "New project" offers Blank and each starter project as a template.
 - On first sign-in the list contains the starter projects (Starter projects).
 - Delete sets `deleted_at` and removes the row from the table with a toast "Project deleted" and an Undo button for 10 s. The `prune-projects` job deletes rows a day after `deleted_at`.
@@ -100,17 +101,31 @@ Behavior:
 - Saving rebuilds the IR and hot-reloads the running piece (`piece-dsl.md`). A failed build focuses Problems and leaves the running piece unchanged.
 - Autosave writes `source` and `ir` to `projects` 2 s after the last edit. Save state: `Saved`, `Saving…`, `Unsaved changes`, `Offline`.
 - Hot reload never starts audio; only Run does.
+- The preview toolbar holds Run, Stop, Panic, the master volume and the level meter with its Limit badge (`audio/audio-safety.md`, Safety UI). The master volume starts at `audio.masterDb` and cannot exceed `audio.maxMasterDb`.
+- The sky store follows the groups of the last successful build; after a save they equal the project's `project_subscriptions`.
+- Save writes `local_only = true` when the IR has `localOnly` (`piece-dsl.md`, Escape hatch).
+
+### Status bar
+| Item | Content |
+|---|---|
+| Freshness | One glyph and label per registry id of the followed groups, or of every known source when no group is followed; the tooltip carries "stale since HH:MM" or "down since HH:MM" in `data.timeZone` |
+| Audio | `■ stopped`, `… starting`, `▶ playing`, `Muted` after Panic, `Fault` after a safety fault |
+| Voices | Sounding voices out of 64 |
+| Level | Post-limiter peak in dBFS, `−∞` when silent |
+| Save | `Saved`, `Saving…`, `Unsaved changes`, `Offline`; `Scratch` in Try mode |
 
 ## Running (`/projects/[id]/run`)
 - The preview fills the window. Chrome hides after 3 s without pointer movement.
 - Overlays toggle independently: console (`C`), sounding voices (`N`), status bar (`S`).
-- `Escape` returns to the editor.
+- `Escape` returns to the editor, which stops the piece. Panic stays available as a button in the chrome.
 - Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin listening" click starts audio, and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
 - Freshness is shown in the status bar and is also audible and visible through the project's reactions.
 
 ## Settings (`/settings`)
 - A searchable list grouped by category, with a toggle to an editable `settings.json` view. Both views edit the same object, validated on every change.
 - Account uses Clerk `<UserProfile />`.
+- Changes save to `user_settings.settings` 1 s after the last valid edit. The `settings.json` view keeps unparsable text local and shows the parse error until the text parses.
+- `editor.keymap: "vim"` needs `@replit/codemirror-vim`, which is not installed; until it is, the editor uses the default keymap and the settings view says so.
 
 ## States
 | State | Presentation |
@@ -123,7 +138,7 @@ Behavior:
 | Down | `○`, the source name and "down since HH:MM"; the console Sources panel shows the last error |
 
 ## Command palette
-Opened with `Mod-Shift-P` or `Mod-K`. Commands:
+Opened with `Mod-Shift-P` or `Mod-K`. Typing filters commands by fuzzy match on the title (consecutive and word-start matches rank first). Commands that do not apply to the current screen are hidden; on screens without a piece only navigation commands remain. Commands:
 
 | Command | Action |
 |---|---|

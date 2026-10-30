@@ -27,6 +27,8 @@ Every other module receives the engine, the sky store, the clock and the `trace(
 2. Create `new Engine(ctx, bus, { seed, realtime: true, lookahead: () => 0.1, ks: bus.worklets.ks, onFault, onError })`.
 3. Register `bus.setHandler` for safety events (fault, duck) and show them as specified in `audio/audio-safety.md`.
 4. Call `engine.pump(ctx.currentTime + 0.1)` every 25 ms (granular schedules grains ahead).
+   - A realtime bus starts with `masterGain` at 0. The host calls `bus.fadeIn(level)` once the engine exists and after every resume of the context (a Run that resumes a suspended context, or a `statechange` back to `running`), with `level` from its `masterLevel` option (`src/audio-host/master.js`); `null` while muted after Panic skips the fade.
+   - A seed change replaces the engine: the host calls `releaseAll(t)` and `fadeOutAll(t)` on the old engine, disposes it 50 ms later, then constructs the new one on the same bus.
 5. Map IR instruments to engine widgets and call `engine.sync(widgets)` on start and after each hot reload:
    ```js
    const widgets = ir.instruments.map((i) => ({
@@ -39,7 +41,7 @@ Every other module receives the engine, the sky store, the clock and the `trace(
 8. Freshness reactions `mute` and `only` set `muted` on widgets and call `engine.sync` again; the engine applies the gain change with smoothing.
 9. Every `engine.sync` passes the current value of each followed parameter in `params`, so a sync for a reaction or a hot reload does not reset a followed parameter to its IR value.
 
-On a hot reload the host passes the full widget list to `engine.sync`, calls `setTempo` when the tempo changed, `setFx` for each chain whose slot list changed (and `setFx(id, [])` for a removed instrument with a chain, before the sync), and `setLfos` and `setMods` when either list changed. It then rebinds changed bindings and emits one `RELOAD` record with the changed ids. Stop releases every binding and calls `engine.sync([])`. A safety-stage `fault` stops the bindings; nothing restarts until the next Run.
+On a hot reload the host passes the full widget list to `engine.sync`, calls `setTempo` when the tempo changed, `setFx` for each chain whose slot list changed (and `setFx(id, [])` for a removed instrument with a chain, before the sync), and `setLfos` and `setMods` when either list changed. It then rebinds changed bindings and emits one `RELOAD` record with the changed ids. Stop releases every binding and calls `engine.sync([])`. Panic (`src/audio-host/master.js`) calls `engine.panic(t)`, which releases every voice and resets every effect chain after the voice fade, then Stop, and ramps the master to 0 over 10 ms. A safety-stage `fault` stops the bindings; nothing restarts until the next Run.
 
 The master level, master fade-in, safety limiter and duck are engine behavior. Effect chains sit before the safety stage, so the safety stage applies to effect output.
 
