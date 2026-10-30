@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "generate": "node scripts/build-sandbox.mjs && node scripts/gen-builder-dts.mjs && node scripts/build-starters.mjs",
+    "generate:check": "node scripts/build-sandbox.mjs --check && node scripts/gen-builder-dts.mjs --check && node scripts/build-starters.mjs --check",
+    "build": "npm run generate && next build",
     "start": "next start",
     "test": "node --test tests/*.test.js tests/audio/*.test.js"
   },

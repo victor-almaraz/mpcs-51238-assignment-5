@@ -38,14 +38,21 @@ Objects **enter** a group when they first appear, **update** when any field chan
 | Field | Meaning | Typical range |
 |---|---|---|
 | `name` | Object name, for example `ISS (ZARYA)` | |
+| `objectId` | International designator: launch year, launch number and piece, for example `1998-067A` | |
 | `noradId` | Catalog number | |
 | `meanMotion` | Orbits per day | 1–16 |
 | `inclination` | Tilt of the orbit to the equator, degrees | 0–180 |
 | `raan` | Direction of the orbit's ascending node, degrees | 0–360 |
-| `eccentricity` | 0 is circular; larger is more elongated | 0–0.1 for most |
+| `eccentricity` | 0 is circular; larger is more elongated | 0–0.2 |
 | `argPericenter` | Direction of the lowest point, degrees | 0–360 |
 | `meanAnomaly` | Position along the orbit at `epoch`, degrees | 0–360 |
 | `bstar` | Drag term | near 0 |
+| `meanMotionDot` | Rate of change of `meanMotion`, orbits per day² | near 0 |
+| `meanMotionDdot` | Second derivative of `meanMotion` | near 0 |
+| `revAtEpoch` | Orbits completed since launch, counted at `epoch` | 0–100,000 |
+| `elementSetNo` | Element set number | |
+| `ephemerisType` | Propagation model code; 0 for every object in these groups | 0 |
+| `classification` | `U` (unclassified) | |
 | `epoch` | Time the elements describe | |
 
 ### Space weather (`swpc.*`)
@@ -55,11 +62,16 @@ Read space weather with `sky.swpc(path)`.
 |---|---|---|
 | `kp.kp` | Kp index of geomagnetic activity; 5 and above is a storm | 0–9 |
 | `kp.kpEstimated` | Estimated Kp for the current minute | 0–9 |
+| `kp.timeTag` | Time of the reading | |
 | `wind.speed` | Solar wind speed, km/s | 300–800 |
 | `wind.density` | Proton density, per cm³ | 1–20 |
 | `wind.temperature` | Proton temperature, K | 10,000–500,000 |
+| `wind.spacecraft` | Spacecraft that measured the reading, for example `SOLAR1` | |
+| `wind.timeTag` | Time of the reading | |
 | `mag.bt` | Total field strength, nT | 1–20 |
 | `mag.bz` | North–south field component, nT; negative (southward) values drive aurora | −20–20 |
+| `mag.spacecraft` | Spacecraft that measured the reading | |
+| `mag.timeTag` | Time of the reading | |
 
 ### Close approaches (`jpl.cad`)
 | Field | Meaning | Typical range |
@@ -78,11 +90,12 @@ Read space weather with `sky.swpc(path)`.
 | `objectName` | Temporary designation | |
 | `neoScore` | Likelihood of being a near-Earth object | 0–100 |
 | `phaScore` | Likelihood of being potentially hazardous | 0–100 |
-| `nObs` | Number of observations | 3–50 |
-| `arc` | Observation span, days | 0–5 |
+| `nObs` | Number of observations | 3–70 |
+| `arc` | Observation span, days; under 3 for new candidates, thousands for objects observed long ago | 0–2,500 |
 | `h` | Absolute magnitude | 15–32 |
 | `vInf` | Speed, km/s | 1–40 |
-| `rating` | Scout's rating string | |
+| `rating` | Scout's rating, an integer; 0 for most candidates. Scout does not document its scale. | |
+| `lastRun` | Time Scout last computed the candidate | |
 
 ### Launches (`ll2.upcoming`)
 | Field | Meaning |

@@ -67,3 +67,22 @@ Audio signals are drawn when you hear the sound, corrected for output latency. T
 
 ## Custom shaders
 `layer.shader(glsl, props)` draws a fragment shader. A piece with a shader runs in your editor only: it cannot be saved as shareable or shared. The flash limit applies to shader output.
+
+The shader is GLSL ES 3.00 source that defines one function:
+
+```glsl
+void mainImage(out vec4 color, in vec2 coord) {
+  vec2 uv = coord / uResolution;
+  color = vec4(uv, 0.5 + 0.5 * sin(uTime * 0.2), 1.0);
+}
+```
+
+| Name | Meaning |
+|---|---|
+| `coord` | Pixel position, in device pixels from the bottom-left corner |
+| `color` | Output colour, red, green, blue and alpha from 0 to 1, not premultiplied |
+| `uTime` | Seconds since the picture started |
+| `uResolution` | Canvas size in device pixels |
+| `uOpacity` | The layer's `opacity`; the output is multiplied by it |
+
+Do not write `#version` or `precision` lines; Sphärenmusik adds them. A shader that fails to compile turns its layer off and shows the compiler message in the **Console**.

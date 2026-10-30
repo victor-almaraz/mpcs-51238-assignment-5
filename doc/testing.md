@@ -5,7 +5,8 @@ Automated tests run with `node:test` and the manual deployment checklist. Page-s
 
 ## Commands
 ```bash
-npm test                 # node --test tests/*.test.js
+npm test                 # node --test tests/*.test.js tests/audio/*.test.js
+npm run generate:check   # generated files (sandbox bundle, builder.d.ts, starter IR) are current
 cd worker && npm test    # node --test test/*.test.js
 ```
 Tests construct no `AudioContext`, no WebGL context and no network connection. They use fakes.

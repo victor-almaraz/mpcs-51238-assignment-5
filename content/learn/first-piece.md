@@ -5,7 +5,7 @@ order: 1
 
 # Your first piece
 
-This page builds a piece in which every crewed space station holds one note, with its pitch set by how fast it orbits.
+This page builds a piece in which every object in the space-stations group (the ISS, its modules and other stations) holds one note, with its pitch set by how fast it orbits.
 
 ## Create a project
 1. Open **Projects** and select **New project** → **Blank**.

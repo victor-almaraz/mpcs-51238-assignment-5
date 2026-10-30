@@ -53,7 +53,7 @@ Free-plan limits relevant to this project:
 The worker's writes keep the project active. Set a usage notification under Organization → Usage; the Free plan has no spend, so exceeding a quota starts a grace period instead of a charge. Open the deployed page at least once a week until grades are returned. The Usage page shows Realtime messages; check it daily during testing.
 
 ## Vercel
-1. Import the GitHub repository. Framework preset: Next.js. Root directory: repository root.
+1. Import the GitHub repository. Framework preset: Next.js. Root directory: repository root. Build command: `npm run build`, which runs `npm run generate` (sandbox bundle, `builder.d.ts`, starter IR) before `next build`.
 2. Set the environment variables for Production and Preview.
 3. Each push to `main` deploys production; each pull request deploys a preview.
 4. Confirm that the Vercel production domain is an allowed origin in the Clerk instance.
