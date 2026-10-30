@@ -63,7 +63,7 @@ Audio signals are drawn when you hear the sound, corrected for output latency. T
 
 ## Safety
 - The picture never flashes more than three times per second over an area large enough to affect people with photosensitive epilepsy. When a piece would exceed this, Sphärenmusik slows the change and records a `SAFETY` event in the console.
-- With reduced motion enabled in the operating system or in Settings, trails, pulses, fades and camera movement are off, and data changes the picture at most once per second.
+- With reduced motion enabled in the operating system or in Settings, trails, pulses, fades, aurora drift and camera movement are off, and data changes the picture at most once per second.
 
 ## Custom shaders
 `layer.shader(glsl, props)` draws a fragment shader. A piece with a shader runs in your editor only: it cannot be saved as shareable or shared. The flash limit applies to shader output.

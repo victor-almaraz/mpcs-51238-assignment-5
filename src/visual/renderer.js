@@ -1,0 +1,754 @@
+/**
+ * WebGL2 renderer (doc/visuals.md, Renderer and Interface). Pure logic lives
+ * in scene.js, layer-state.js, projection.js and flash-guard.js; this module
+ * owns the GL context, buffers and frame loop.
+ */
+import { diffLayers, PropResolver, ValueGate, isExprNode } from './layer-state.js';
+import { buildSprites, buildSegments, objectScreenPosition, maxProp, SPRITE_STRIDE, SEGMENT_STRIDE } from './scene.js';
+import { orbitalCamera, fitRadiusKm, cameraAzimuth, earthDisc, mapRect, projectMap, projectSky, skyRadius, PROJECTIONS } from './projection.js';
+import { createFlashGuard, limitStep, GRID_W, GRID_H } from './flash-guard.js';
+import { isReducedMotion, watchSystemReducedMotion, clampPixelRatio, REDUCED_MOTION_STEP_MS } from './motion.js';
+import { parseHex, isHexColor, COLORMAPS, mixRgb } from './color.js';
+import { summaryLines, UNAVAILABLE_STATUS } from './summary.js';
+import * as S from './shaders.js';
+
+const DEG = Math.PI / 180;
+const ATLAS_COLS = 16;
+const ATLAS_CELL = 64;
+const FIT_INTERVAL_MS = 1000;
+const DESAT_RATE_PER_SEC = 1;
+const EMPTY_POSITIONS = { ids: [], data: new Float32Array(0), stride: 8, index: new Map() };
+
+/**
+ * @typedef {{
+ *   sky?: any,
+ *   propagator?: import('./propagator.js').Propagator | null,
+ *   trace?: (record: any) => void,
+ *   pixelRatio?: number,
+ *   reducedMotion?: 'system' | 'on',
+ *   maxFlashesPerSecond?: number,
+ *   observer?: { lat: number, lon: number },
+ *   audioClock?: (() => number | null) | null,
+ *   frameValues?: ((audioTime: number) => any) | null,
+ *   now?: () => number,
+ *   raf?: (fn: FrameRequestCallback) => number,
+ *   cancelRaf?: (id: number) => void,
+ * }} RendererOptions
+ */
+
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {RendererOptions} [options]
+ */
+export function createRenderer(canvas, options = {}) {
+  const trace = safeTrace(options.trace);
+  const gl = /** @type {WebGL2RenderingContext | null} */ (
+    canvas.getContext?.('webgl2', { alpha: false, antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: false }) ?? null
+  );
+  if (!gl) {
+    trace(record('renderer', 'fallback', 'warn', { reason: 'webgl2' }));
+    return unavailableRenderer(options);
+  }
+  return new Renderer(canvas, gl, options);
+}
+
+/** @param {RendererOptions} options */
+function unavailableRenderer(options) {
+  let groups = /** @type {string[]} */ ([]);
+  let explicit = false;
+  const noop = () => {};
+  return {
+    available: false,
+    statusText: UNAVAILABLE_STATUS,
+    /** @param {any[]} layers */
+    setLayers(layers) { if (!explicit) groups = (layers ?? []).map((l) => l?.group).filter(Boolean); },
+    /** @param {string[]} g */
+    setGroups(g) { groups = Array.isArray(g) ? [...g] : []; explicit = true; },
+    summaryLines() { return options.sky ? summaryLines(groups, options.sky) : []; },
+    setView: noop, setLayerValues: noop, setBackground: noop, setDesaturate: noop, setSettings: noop,
+    start: noop, stop: noop, highlight: noop, dispose: noop,
+  };
+}
+
+/**
+ * A trace function that never throws into the frame loop.
+ * @param {((record: any) => void) | undefined} fn
+ */
+export function safeTrace(fn) {
+  if (!fn) return () => {};
+  return (/** @type {any} */ rec) => {
+    try { fn(rec); } catch (err) { console.error('trace rejected a visual record', err); }
+  };
+}
+
+/**
+ * @param {string} component @param {string} event @param {string} level @param {any} data @param {string} [traceId]
+ */
+function record(component, event, level, data, traceId) {
+  return { t: new Date().toISOString(), traceId: traceId ?? `visual-${component}-${Date.now()}`, stage: 'VISUAL', component, event, level, data };
+}
+
+class Renderer {
+  /**
+   * @param {HTMLCanvasElement} canvas @param {WebGL2RenderingContext} gl @param {RendererOptions} o
+   */
+  constructor(canvas, gl, o) {
+    this.available = true;
+    this.statusText = '';
+    this.canvas = canvas;
+    this.gl = gl;
+    this.sky = o.sky ?? null;
+    this.propagator = o.propagator ?? null;
+    this.trace = safeTrace(o.trace);
+    this.now = o.now ?? (() => Date.now());
+    this.raf = o.raf ?? ((fn) => requestAnimationFrame(fn));
+    this.cancelRaf = o.cancelRaf ?? ((id) => cancelAnimationFrame(id));
+    this.audioClock = o.audioClock ?? null;
+    this.frameValues = o.frameValues ?? null;
+    this.settings = {
+      pixelRatio: clampPixelRatio(o.pixelRatio ?? 1),
+      reducedMotion: o.reducedMotion ?? 'system',
+      maxFlashesPerSecond: o.maxFlashesPerSecond ?? 3,
+      observer: o.observer ?? { lat: 41.79, lon: -87.6 },
+    };
+    this.systemReduced = false;
+    this.unwatchMotion = watchSystemReducedMotion((r) => { this.systemReduced = r; });
+    /** @type {Map<string, import('./layer-state.js').LayerState>} */
+    this.layers = new Map();
+    /** @type {import('./layer-state.js').LayerState[]} */
+    this.order = [];
+    this.view = { projection: 'orbital', background: '#05070c' };
+    this.backgroundExpr = false;
+    this.background = '#05070c';
+    this.heldBackground = this.background;
+    this.pushed = {};
+    this.resolver = new PropResolver();
+    this.gate = new ValueGate(REDUCED_MOTION_STEP_MS);
+    this.guard = createFlashGuard({ maxFlashesPerSecond: this.settings.maxFlashesPerSecond, encoding: 'linear', trace: this.trace });
+    this.desatTarget = 0;
+    this.desat = 0;
+    /** @type {string | null} */
+    this.highlighted = null;
+    /** @type {Map<string, number>} */
+    this.lastEventMs = new Map();
+    /** @type {Map<string, number>} aurora drift phase per layer */
+    this.auroraPhase = new Map();
+    this.pathKey = '';
+    this.fitKm = fitRadiusKm([]);
+    this.lastFitAt = -Infinity;
+    this.startedAt = this.now();
+    this.lastFrameAt = 0;
+    this.rafId = 0;
+    this.running = false;
+    this.lost = false;
+    /** @type {Map<string, WebGLProgram | null>} */
+    this.userPrograms = new Map();
+    this.glyphs = new Map([['+', 0]]);
+    this.glyphDirty = true;
+    this.guardPixels = new Uint8Array(GRID_W * GRID_H * 4);
+    this.scratch = new Float32Array(8);
+    this.unsubSky = this.sky ? ['enter', 'update', 'exit'].map((t) => this.sky.on(t, (e) => this.onSkyEvent(e))) : [];
+    this.onLost = (/** @type {Event} */ e) => {
+      e.preventDefault();
+      this.lost = true;
+      this.trace(record('renderer', 'contextLost', 'error', {}));
+    };
+    this.onRestored = () => { this.lost = false; this.initGl(); this.glyphDirty = true; };
+    canvas.addEventListener?.('webglcontextlost', this.onLost);
+    canvas.addEventListener?.('webglcontextrestored', this.onRestored);
+    this.initGl();
+  }
+
+  // ---- public API ----
+
+  /** @param {{ projection?: string, background?: unknown }} view */
+  setView(view) {
+    const projection = PROJECTIONS.includes(/** @type {string} */ (view?.projection)) ? /** @type {string} */ (view.projection) : 'orbital';
+    this.view = { projection, background: /** @type {any} */ (view?.background) };
+    this.backgroundExpr = isExprNode(view?.background);
+    if (isHexColor(view?.background)) this.background = /** @type {string} */ (view.background).toLowerCase();
+    this.pathKey = '';
+  }
+
+  /** @param {any[]} entries */
+  setLayers(entries) {
+    const d = diffLayers(this.layers, entries);
+    for (const e of d.errors) this.trace(record('renderer', 'layerError', 'error', e));
+    for (const id of [...d.changed, ...d.removed]) {
+      this.resolver.forget(id);
+      const prog = this.userPrograms.get(id);
+      if (prog) this.gl.deleteProgram(prog);
+      this.userPrograms.delete(id);
+    }
+    this.layers = new Map(d.layers.map((l) => [l.id, l]));
+    this.order = d.layers;
+    for (const l of this.order) if (l.type === 'shader' && !this.userPrograms.has(l.id)) this.compileUser(l);
+    this.pathKey = '';
+  }
+
+  /** @param {any} values LayerValues */
+  setLayerValues(values) {
+    this.pushed = values && typeof values === 'object' ? values : {};
+  }
+
+  /** @param {unknown} color */
+  setBackground(color) {
+    if (isHexColor(color)) this.background = /** @type {string} */ (color).toLowerCase();
+  }
+
+  /** @param {number} amount */
+  setDesaturate(amount) {
+    this.desatTarget = Number.isFinite(amount) ? Math.min(1, Math.max(0, amount)) : 0;
+  }
+
+  /** @param {Partial<{ pixelRatio: number, reducedMotion: 'system' | 'on', maxFlashesPerSecond: number, observer: { lat: number, lon: number } }>} p */
+  setSettings(p) {
+    if (p.pixelRatio !== undefined) this.settings.pixelRatio = clampPixelRatio(p.pixelRatio);
+    if (p.reducedMotion !== undefined) this.settings.reducedMotion = p.reducedMotion;
+    if (p.maxFlashesPerSecond !== undefined) {
+      this.settings.maxFlashesPerSecond = p.maxFlashesPerSecond;
+      this.guard.setMaxFlashes(p.maxFlashesPerSecond);
+    }
+    if (p.observer) this.settings.observer = p.observer;
+  }
+
+  /** @param {string | null} objectId */
+  highlight(objectId) { this.highlighted = objectId; }
+
+  /** Followed groups, used by the text summary. @param {string[]} groups */
+  setGroups(groups) { this.groups = Array.isArray(groups) ? [...groups] : []; }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this.lastFrameAt = 0;
+    const loop = (/** @type {number} */ t) => {
+      if (!this.running) return;
+      try { this.frame(t); } catch (err) {
+        this.trace(record('renderer', 'frameError', 'error', { message: err instanceof Error ? err.message : String(err) }));
+      }
+      this.rafId = this.raf(loop);
+    };
+    this.rafId = this.raf(loop);
+  }
+
+  stop() {
+    this.running = false;
+    if (this.rafId) this.cancelRaf(this.rafId);
+    this.rafId = 0;
+  }
+
+  summaryLines() {
+    const groups = this.groups ?? this.order.map((l) => l.group).filter((g) => g !== null);
+    return this.sky ? summaryLines(groups, this.sky) : [];
+  }
+
+  dispose() {
+    this.stop();
+    for (const u of this.unsubSky) u();
+    this.unwatchMotion();
+    this.canvas.removeEventListener?.('webglcontextlost', this.onLost);
+    this.canvas.removeEventListener?.('webglcontextrestored', this.onRestored);
+    const gl = this.gl;
+    for (const p of this.userPrograms.values()) if (p) gl.deleteProgram(p);
+    for (const p of Object.values(this.prog ?? {})) gl.deleteProgram(p);
+    for (const b of Object.values(this.buf ?? {})) gl.deleteBuffer(b);
+    for (const t of [...(this.targets ?? []), this.guardTarget]) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    gl.deleteTexture(this.atlas);
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+
+  // ---- events ----
+
+  /** @param {any} e SkyEvent */
+  onSkyEvent(e) {
+    const obj = e?.obj;
+    if (!obj) return;
+    if (e.type === 'exit') this.lastEventMs.delete(obj.id);
+    else this.lastEventMs.set(obj.id, this.now());
+    for (const l of this.order) {
+      if (l.group !== obj.group) continue;
+      this.trace({
+        t: new Date(this.now()).toISOString(), traceId: e.traceId, stage: 'VISUAL', component: `layer.${l.id}`, event: e.type, level: 'info',
+        data: { layer: l.id, objectId: obj.id },
+      });
+    }
+  }
+
+  // ---- GL setup ----
+
+  initGl() {
+    const gl = this.gl;
+    this.prog = {
+      sprite: this.program(S.SPRITE_VS, S.SPRITE_FS),
+      segment: this.program(S.SEGMENT_VS, S.SEGMENT_FS),
+      field: this.program(S.FULLSCREEN_VS, S.FIELD_FS),
+      aurora: this.program(S.FULLSCREEN_VS, S.AURORA_FS),
+      composite: this.program(S.FULLSCREEN_VS, S.COMPOSITE_FS),
+      copy: this.program(S.FULLSCREEN_VS, S.COPY_FS),
+      guard: this.program(S.FULLSCREEN_VS, S.GUARD_FS),
+    };
+    this.buf = { quad: gl.createBuffer(), sprite: gl.createBuffer(), segment: gl.createBuffer() };
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf.quad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    this.vao = { sprite: this.spriteVao(), segment: this.segmentVao(), empty: gl.createVertexArray() };
+    this.atlas = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.atlas);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(1));
+    this.glyphDirty = true;
+    this.targets = [];
+    this.size = { w: 0, h: 0 };
+    this.guardTarget = this.target(GRID_W, GRID_H);
+    for (const l of this.order) if (l.type === 'shader') this.compileUser(l);
+  }
+
+  /** @param {string} vs @param {string} fs */
+  program(vs, fs) {
+    const gl = this.gl;
+    const p = /** @type {WebGLProgram} */ (gl.createProgram());
+    for (const [type, src] of [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]]) {
+      const s = /** @type {WebGLShader} */ (gl.createShader(/** @type {number} */ (type)));
+      gl.shaderSource(s, /** @type {string} */ (src));
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        const log = gl.getShaderInfoLog(s) ?? '';
+        gl.deleteShader(s);
+        gl.deleteProgram(p);
+        throw new ShaderError(log);
+      }
+      gl.attachShader(p, s);
+      gl.deleteShader(s);
+    }
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      const log = gl.getProgramInfoLog(p) ?? '';
+      gl.deleteProgram(p);
+      throw new ShaderError(log);
+    }
+    return p;
+  }
+
+  /** @param {import('./layer-state.js').LayerState} l */
+  compileUser(l) {
+    try {
+      this.userPrograms.set(l.id, this.program(S.FULLSCREEN_VS, S.userShaderSource(/** @type {string} */ (l.glsl))));
+    } catch (err) {
+      this.userPrograms.set(l.id, null);
+      this.trace(record(`layer.${l.id}`, 'shaderError', 'error', { layer: l.id, log: err instanceof Error ? err.message : String(err) }));
+    }
+  }
+
+  spriteVao() {
+    const gl = this.gl;
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf.quad);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf.sprite);
+    const st = SPRITE_STRIDE * 4;
+    /** @type {[number, number, number][]} location, size, offset (floats) */
+    const attrs = [[1, 2, 0], [2, 1, 2], [3, 1, 3], [4, 4, 4], [5, 1, 8]];
+    for (const [loc, size, off] of attrs) {
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, st, off * 4);
+      gl.vertexAttribDivisor(loc, 1);
+    }
+    gl.bindVertexArray(null);
+    return vao;
+  }
+
+  segmentVao() {
+    const gl = this.gl;
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf.quad);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf.segment);
+    const st = SEGMENT_STRIDE * 4;
+    for (const [loc, size, off] of [[1, 4, 0], [2, 1, 4], [3, 4, 5]]) {
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, st, off * 4);
+      gl.vertexAttribDivisor(loc, 1);
+    }
+    gl.bindVertexArray(null);
+    return vao;
+  }
+
+  /** @param {number} w @param {number} h */
+  target(w, h) {
+    const gl = this.gl;
+    const tex = /** @type {WebGLTexture} */ (gl.createTexture());
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fbo = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer());
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { tex, fbo, w, h };
+  }
+
+  resize() {
+    const ratio = this.settings.pixelRatio;
+    const cssW = this.canvas.clientWidth || this.canvas.width || 1;
+    const cssH = this.canvas.clientHeight || this.canvas.height || 1;
+    const w = Math.max(1, Math.round(cssW * ratio));
+    const h = Math.max(1, Math.round(cssH * ratio));
+    if (w === this.size.w && h === this.size.h) return;
+    const gl = this.gl;
+    this.canvas.width = w;
+    this.canvas.height = h;
+    for (const t of this.targets) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    // scene, output A, output B
+    this.targets = [this.target(w, h), this.target(w, h), this.target(w, h)];
+    this.outIndex = 1;
+    this.size = { w, h };
+    this.primed = false;
+  }
+
+  // ---- frame ----
+
+  /** @param {number} perfMs */
+  frame(perfMs) {
+    if (this.lost) return;
+    const gl = this.gl;
+    const nowMs = this.now();
+    const dt = this.lastFrameAt ? (perfMs - this.lastFrameAt) / 1000 : 1 / 60;
+    this.lastFrameAt = perfMs;
+    this.resize();
+    const { w, h } = this.size;
+    const reduced = isReducedMotion(this.settings.reducedMotion, this.systemReduced);
+    const holding = this.guard.limiting;
+
+    let frameVals = null;
+    const audioTime = this.audioClock ? this.audioClock() : null;
+    if (this.frameValues && audioTime !== null && Number.isFinite(audioTime)) {
+      try { frameVals = this.frameValues(/** @type {number} */ (audioTime)); } catch (err) {
+        this.trace(record('renderer', 'frameValuesError', 'error', { message: err instanceof Error ? err.message : String(err) }));
+      }
+    }
+    const sources = this.gate.offer({ pushed: this.pushed, frame: frameVals, background: this.background }, perfMs, reduced);
+
+    const positions = this.propagator?.positions(nowMs) ?? EMPTY_POSITIONS;
+    const simMs = /** @type {any} */ (this.propagator)?.simTime?.(nowMs) ?? nowMs;
+    const projection = this.view.projection;
+    if (projection === 'orbital' && nowMs - this.lastFitAt >= FIT_INTERVAL_MS) {
+      this.fitKm = fitRadiusKm(positions.data);
+      this.lastFitAt = nowMs;
+    }
+    const cam = projection === 'orbital'
+      ? orbitalCamera({ width: w, height: h, fitRadiusKm: this.fitKm, azimuthRad: cameraAzimuth(nowMs - this.startedAt, reduced) })
+      : undefined;
+    const view = { width: w, height: h, cam };
+    const ctx = { simMs, observer: this.settings.observer, scratch: this.scratch };
+
+    // Background, held while the guard intervenes when it is an expression.
+    if (!(holding && this.backgroundExpr)) this.heldBackground = sources.background;
+    const bg = parseHex(this.heldBackground) ?? [0, 0, 0];
+
+    const [scene, outA, outB] = this.targets;
+    const out = this.outIndex === 1 ? outA : outB;
+    const prev = this.outIndex === 1 ? outB : outA;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(bg[0], bg[1], bg[2], 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+    this.drawDecorations(projection, view, bg);
+
+    /** @type {Map<string, any[]>} */
+    const groupCache = new Map();
+    const objectsOf = (/** @type {string} */ g) => {
+      if (!groupCache.has(g)) groupCache.set(g, this.sky?.get(g) ?? []);
+      return /** @type {any[]} */ (groupCache.get(g));
+    };
+    const pathRequests = [];
+    const simNow = simMs;
+
+    for (const layer of this.order) {
+      const resolve = (/** @type {string | null} */ id) => this.resolver.resolve(layer, id, { frame: sources.frame, pushed: sources.pushed, reducedMotion: reduced, holdColors: holding });
+      if (layer.type === 'points' || layer.type === 'rings' || layer.type === 'glyph') {
+        const objects = objectsOf(/** @type {string} */ (layer.group));
+        if (layer.type === 'points' && String(layer.group).startsWith('celestrak.')) {
+          const byId = new Map(objects.map((o) => [o.id, o]));
+          const maxTrail = maxProp(objects, resolve, 'trail', 60);
+          if (maxTrail > 0) {
+            const key = `trail:${layer.id}`;
+            pathRequests.push({ key, group: layer.group, fromSec: -(maxTrail + 5), toSec: 0, stepSec: Math.max(1, maxTrail / 60) });
+            this.drawPaths(key, objects, projection, view, simNow, (id) => {
+              const p = resolve(id);
+              const trail = /** @type {number} */ (p.trail);
+              return trail > 0 ? { fromSec: -trail, toSec: 0, color: /** @type {string} */ (p.color), opacity: /** @type {number} */ (p.opacity), fadeSec: trail } : null;
+            }, (id) => {
+              const obj = byId.get(id);
+              return obj ? objectScreenPosition(obj, positions, projection, view, ctx) : null;
+            });
+          }
+        }
+        const sprites = buildSprites({
+          layer, objects, positions, projection, view, ctx, resolve, pixelRatio: this.settings.pixelRatio, nowMs,
+          lastEventMs: this.lastEventMs, glyphIndex: (ch) => this.glyphIndex(ch),
+        });
+        this.drawSprites(layer.type === 'points' ? 0 : layer.type === 'rings' ? 1 : 2, sprites.data, sprites.count);
+      } else if (layer.type === 'lines') {
+        const objects = objectsOf(/** @type {string} */ (layer.group));
+        if (!String(layer.group).startsWith('celestrak.')) continue;
+        const maxSpan = maxProp(objects, resolve, 'span', 10);
+        const key = `lines:${layer.id}`;
+        pathRequests.push({ key, group: layer.group, fromSec: -maxSpan * 30, toSec: maxSpan * 30, stepSec: 60 });
+        this.drawPaths(key, objects, projection, view, simNow, (id) => {
+          const p = resolve(id);
+          const half = /** @type {number} */ (p.span) * 30;
+          return { fromSec: -half, toSec: half, color: /** @type {string} */ (p.color), opacity: /** @type {number} */ (p.opacity) };
+        });
+      } else if (layer.type === 'field') {
+        this.drawField(resolve(null), w, h);
+      } else if (layer.type === 'aurora') {
+        this.drawAurora(resolve(null), projection, w, h, perfMs, dt, reduced, layer.id);
+      } else if (layer.type === 'shader') {
+        this.drawUser(layer, resolve(null), w, h, perfMs);
+      }
+    }
+
+    if (this.highlighted) this.drawHighlight(positions, projection, view, ctx);
+
+    const key = JSON.stringify(pathRequests);
+    if (key !== this.pathKey) { this.pathKey = key; this.propagator?.setPaths(pathRequests); }
+
+    // Composite: desaturate and limit change, into the output target.
+    const desatStep = reduced ? 1 : DESAT_RATE_PER_SEC * dt;
+    this.desat += Math.max(-desatStep, Math.min(desatStep, this.desatTarget - this.desat));
+    gl.disable(gl.BLEND);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, out.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.prog.composite);
+    this.bindTex(this.prog.composite, 'uScene', scene.tex, 0);
+    this.bindTex(this.prog.composite, 'uPrev', prev.tex, 1);
+    this.u2(this.prog.composite, 'uRes', w, h);
+    this.u1(this.prog.composite, 'uDesat', this.desat);
+    this.u1(this.prog.composite, 'uStep', this.guard.limiting && this.primed ? limitStep(dt) : -1);
+    this.fullscreen();
+
+    // Present.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.prog.copy);
+    this.bindTex(this.prog.copy, 'uSrc', out.tex, 0);
+    this.u2(this.prog.copy, 'uRes', w, h);
+    this.fullscreen();
+
+    // Flash guard readback of the final output.
+    const gt = this.guardTarget;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, gt.fbo);
+    gl.viewport(0, 0, gt.w, gt.h);
+    gl.useProgram(this.prog.guard);
+    this.bindTex(this.prog.guard, 'uSrc', out.tex, 0);
+    this.u2(this.prog.guard, 'uGrid', gt.w, gt.h);
+    this.fullscreen();
+    gl.readPixels(0, 0, gt.w, gt.h, gl.RGBA, gl.UNSIGNED_BYTE, this.guardPixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.guard.frame(this.guardPixels, perfMs);
+
+    this.outIndex = this.outIndex === 1 ? 2 : 1;
+    this.primed = true;
+  }
+
+  // ---- drawing ----
+
+  /** @param {number} kind @param {Float32Array} data @param {number} count */
+  drawSprites(kind, data, count) {
+    if (!count) return;
+    const gl = this.gl;
+    if (kind === 2 && this.glyphDirty) this.buildAtlas();
+    gl.useProgram(this.prog.sprite);
+    this.u2(this.prog.sprite, 'uRes', this.size.w, this.size.h);
+    gl.uniform1i(gl.getUniformLocation(this.prog.sprite, 'uKind'), kind);
+    this.bindTex(this.prog.sprite, 'uAtlas', this.atlas, 0);
+    this.u1(this.prog.sprite, 'uAtlasCols', ATLAS_COLS);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf.sprite);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    gl.bindVertexArray(this.vao.sprite);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+    gl.bindVertexArray(null);
+  }
+
+  /** @param {Float32Array} data @param {number} count */
+  drawSegmentData(data, count) {
+    if (!count) return;
+    const gl = this.gl;
+    gl.useProgram(this.prog.segment);
+    this.u2(this.prog.segment, 'uRes', this.size.w, this.size.h);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf.segment);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    gl.bindVertexArray(this.vao.segment);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+    gl.bindVertexArray(null);
+  }
+
+  /**
+   * @param {string} key @param {any[]} objects @param {string} projection @param {any} view @param {number} simNow
+   * @param {(id: string) => any} window @param {(id: string) => any} [head]
+   */
+  drawPaths(key, objects, projection, view, simNow, window, head) {
+    const paths = this.propagator?.paths(key) ?? null;
+    if (!paths) return;
+    const seg = buildSegments({
+      paths, objects, projection, view, simNowMs: simNow, pathSimMs: paths.simMs ?? simNow, window, head, pixelRatio: this.settings.pixelRatio,
+    });
+    this.drawSegmentData(seg.data, seg.count);
+  }
+
+  /** Earth disc in `orbital`, graticule in `map`, elevation circles in `sky`. */
+  drawDecorations(projection, view, bg) {
+    const { width: w, height: h } = view;
+    const line = mixRgb(bg, [1, 1, 1], 0.12);
+    const r = this.settings.pixelRatio;
+    if (projection === 'orbital') {
+      const d = earthDisc(view.cam);
+      const fill = mixRgb(bg, [0.35, 0.5, 0.75], 0.18);
+      this.drawSprites(0, new Float32Array([d.x, d.y, d.r * 2, 0, fill[0], fill[1], fill[2], 1, 0]), 1);
+      this.drawSprites(1, new Float32Array([d.x, d.y, d.r, r, line[0], line[1], line[2], 1, 0]), 1);
+      return;
+    }
+    /** @type {number[]} */
+    const segs = [];
+    const push = (a, b) => { if (a && b) segs.push(a.x, a.y, b.x, b.y, r, line[0], line[1], line[2], 1); };
+    if (projection === 'map') {
+      for (let lon = -180; lon <= 180; lon += 30) push(projectMap(90 * DEG, lon * DEG, w, h), projectMap(-90 * DEG, lon * DEG, w, h));
+      for (let lat = -90; lat <= 90; lat += 30) push(projectMap(lat * DEG, -Math.PI, w, h), projectMap(lat * DEG, Math.PI, w, h));
+    } else {
+      for (const el of [0, 30, 60]) {
+        const n = 96;
+        for (let i = 0; i < n; i++) push(projectSky((i / n) * 2 * Math.PI, el * DEG, w, h), projectSky(((i + 1) / n) * 2 * Math.PI, el * DEG, w, h));
+      }
+    }
+    this.drawSegmentData(new Float32Array(segs), segs.length / SEGMENT_STRIDE);
+  }
+
+  /** @param {Record<string, any>} p @param {number} w @param {number} h */
+  drawField(p, w, h) {
+    const gl = this.gl;
+    const prog = this.prog.field;
+    gl.useProgram(prog);
+    const stops = (COLORMAPS[p.colormap] ?? COLORMAPS.night).flatMap((hex) => /** @type {number[]} */ (parseHex(hex)));
+    gl.uniform3fv(gl.getUniformLocation(prog, 'uStops'), new Float32Array(stops));
+    this.u2(prog, 'uRes', w, h);
+    this.u1(prog, 'uValue', p.value);
+    this.u1(prog, 'uOpacity', p.opacity);
+    this.fullscreen();
+  }
+
+  /**
+   * @param {Record<string, any>} p @param {string} projection @param {number} w @param {number} h
+   * @param {number} perfMs @param {number} dt @param {boolean} reduced @param {string} id
+   */
+  drawAurora(p, projection, w, h, perfMs, dt, reduced, id) {
+    if (!(p.intensity > 0) || !(p.opacity > 0)) return;
+    const phase = (this.auroraPhase.get(id) ?? 0) + (reduced ? 0 : p.drift * 0.05 * Math.min(dt, 0.1));
+    this.auroraPhase.set(id, phase % 1000);
+    const gl = this.gl;
+    const prog = this.prog.aurora;
+    gl.useProgram(prog);
+    const rect = mapRect(w, h);
+    gl.uniform1i(gl.getUniformLocation(prog, 'uMode'), projection === 'map' ? 1 : projection === 'sky' ? 2 : 0);
+    gl.uniform4f(gl.getUniformLocation(prog, 'uRect'), rect.x, rect.y, rect.w, rect.h);
+    this.u1(prog, 'uSkyR', skyRadius(w, h));
+    this.u2(prog, 'uRes', w, h);
+    this.u1(prog, 'uPhase', phase);
+    this.u1(prog, 'uIntensity', p.intensity);
+    this.u1(prog, 'uOpacity', p.opacity);
+    this.fullscreen();
+  }
+
+  /** @param {import('./layer-state.js').LayerState} layer @param {Record<string, any>} p @param {number} w @param {number} h @param {number} perfMs */
+  drawUser(layer, p, w, h, perfMs) {
+    const prog = this.userPrograms.get(layer.id);
+    if (!prog || !(p.opacity > 0)) return;
+    this.gl.useProgram(prog);
+    this.u1(prog, 'uTime', (this.now() - this.startedAt) / 1000);
+    this.u2(prog, 'uResolution', w, h);
+    this.u1(prog, 'uOpacity', p.opacity);
+    this.fullscreen();
+  }
+
+  drawHighlight(positions, projection, view, ctx) {
+    const id = /** @type {string} */ (this.highlighted);
+    const group = id.slice(0, id.lastIndexOf(':'));
+    const obj = (this.sky?.get(group) ?? []).find((o) => o.id === id);
+    if (!obj) return;
+    const pos = objectScreenPosition(obj, positions, projection, view, ctx);
+    if (!pos) return;
+    const r = this.settings.pixelRatio;
+    this.drawSprites(1, new Float32Array([pos.x, pos.y, 10 * r, 1.5 * r, 1, 1, 1, 0.9, 0]), 1);
+  }
+
+  fullscreen() {
+    const gl = this.gl;
+    gl.bindVertexArray(this.vao.empty);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindVertexArray(null);
+  }
+
+  /** @param {string} ch */
+  glyphIndex(ch) {
+    let i = this.glyphs.get(ch);
+    if (i !== undefined) return i;
+    if (this.glyphs.size >= ATLAS_COLS * ATLAS_COLS) return 0;
+    i = this.glyphs.size;
+    this.glyphs.set(ch, i);
+    this.glyphDirty = true;
+    return i;
+  }
+
+  buildAtlas() {
+    this.glyphDirty = false;
+    const size = ATLAS_COLS * ATLAS_CELL;
+    const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size, size) : Object.assign(document.createElement('canvas'), { width: size, height: size });
+    const g = /** @type {CanvasRenderingContext2D} */ (c.getContext('2d'));
+    g.clearRect(0, 0, size, size);
+    g.fillStyle = '#fff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `${Math.round(ATLAS_CELL * 0.8)}px ui-monospace, monospace`;
+    for (const [ch, i] of this.glyphs) {
+      g.fillText(ch, (i % ATLAS_COLS + 0.5) * ATLAS_CELL, (Math.floor(i / ATLAS_COLS) + 0.5) * ATLAS_CELL);
+    }
+    const img = g.getImageData(0, 0, size, size);
+    // Alpha into the red channel; row 0 of the texture is the top of the image.
+    const red = new Uint8Array(size * size);
+    for (let i = 0; i < red.length; i++) red[i] = img.data[i * 4 + 3];
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.atlas);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, size, size, 0, gl.RED, gl.UNSIGNED_BYTE, red);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+
+  /** @param {WebGLProgram} p @param {string} name @param {WebGLTexture | null} tex @param {number} unit */
+  bindTex(p, name, tex, unit) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(gl.getUniformLocation(p, name), unit);
+  }
+
+  /** @param {WebGLProgram} p @param {string} name @param {number} x */
+  u1(p, name, x) { this.gl.uniform1f(this.gl.getUniformLocation(p, name), x); }
+
+  /** @param {WebGLProgram} p @param {string} name @param {number} x @param {number} y */
+  u2(p, name, x, y) { this.gl.uniform2f(this.gl.getUniformLocation(p, name), x, y); }
+}
+
+class ShaderError extends Error {}
+
