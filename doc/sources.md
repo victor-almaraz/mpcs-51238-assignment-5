@@ -189,7 +189,7 @@ The page footer and console show: "Orbital data: CelesTrak. Space weather: NOAA 
 | `swpc.mag` | 1 | Active row moved from 02:24 to 02:31; `bt` and `bz` changed |
 | `jpl.cad` | 8 | None |
 | `jpl.scout` | 26 | Only `tEphem` and two minor fields of two candidates |
-| `ll2.upcoming` | 10 | See `captures.jsonl` |
+| `ll2.upcoming` | 10 | None (`mode=normal`) |
 
 In RTSW files the newest row is not active (an `ACE` or `IMAP` row precedes the active `SOLAR1` row). `-9999` appears in `rtsw_mag_1m.json`; no trailing NUL bytes appeared.
 
