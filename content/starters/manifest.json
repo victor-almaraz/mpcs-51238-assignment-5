@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "starters": [
+    { "slug": "station-chord", "name": "Example: Station chord" },
+    { "slug": "solar-wind",    "name": "Example: Solar wind" },
+    { "slug": "scout-bells",   "name": "Example: Scout bells" }
+  ]
+}
