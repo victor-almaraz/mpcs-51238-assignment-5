@@ -1,0 +1,303 @@
+# Database
+
+## Scope
+Tables, the upsert RPC, grants, row-level security (RLS), the Realtime publication, retention jobs and the free-tier message budget. All of it ships as SQL files in `supabase/migrations/`.
+
+## Tables
+| Table | Writer | Readers | Purpose |
+|---|---|---|---|
+| `sky_objects` | Worker | Everyone | Current state of every object |
+| `changes` | Worker (RPC) | Everyone | Log of enter, update and exit events; replay source |
+| `runs` | Worker | Everyone | One row per fetch |
+| `source_status` | Worker | Everyone | Schedule state and last outcome per registry id |
+| `source_samples` | Worker | Everyone | Last raw response per registry id |
+| `projects` | Owner | Owner | Script source and compiled IR |
+| `project_subscriptions` | Owner | Owner | Groups each project follows |
+| `user_settings` | Owner | Owner | Settings JSON |
+
+## DDL
+```sql
+create extension if not exists pg_cron;
+
+create table public.sky_objects (
+  id          text primary key,
+  source      text not null,
+  group_key   text not null,
+  fields      jsonb not null,
+  hash        text not null,
+  trace_id    uuid not null,
+  updated_at  timestamptz not null default now(),
+  removed_at  timestamptz
+);
+create index sky_objects_group_live on public.sky_objects (group_key) where removed_at is null;
+
+create table public.changes (
+  id          bigint generated always as identity primary key,
+  trace_id    uuid not null,
+  source      text not null,
+  group_key   text not null,
+  object_id   text not null,
+  kind        text not null check (kind in ('enter', 'update', 'exit')),
+  diff        jsonb not null,
+  at          timestamptz not null default now()
+);
+create index changes_group_at on public.changes (group_key, at);
+
+create table public.runs (
+  id            bigint generated always as identity primary key,
+  source_id     text not null,
+  started_at    timestamptz not null,
+  finished_at   timestamptz not null,
+  ok            boolean not null,
+  rows_changed  integer not null default 0,
+  http_status   integer,
+  error         text
+);
+create index runs_source_started on public.runs (source_id, started_at desc);
+
+create table public.source_status (
+  source_id        text primary key,
+  interval_sec     integer not null,
+  last_attempt_at  timestamptz,
+  last_success_at  timestamptz,
+  last_ok          boolean,
+  halted           boolean not null default false,
+  failures         integer not null default 0,
+  next_attempt_at  timestamptz
+);
+
+create table public.source_samples (
+  source_id    text primary key,
+  fetched_at   timestamptz not null,
+  http_status  integer not null,
+  body         text not null check (length(body) <= 65536)
+);
+
+create table public.projects (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     text not null default (auth.jwt() ->> 'sub'),
+  name        text not null check (length(name) between 1 and 120),
+  source      text not null default '' check (length(source) <= 200000),
+  ir          jsonb,
+  ir_version  integer not null default 1,
+  local_only  boolean not null default false,
+  starter_slug text,
+  deleted_at  timestamptz,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index projects_user on public.projects (user_id) where deleted_at is null;
+create unique index projects_user_starter on public.projects (user_id, starter_slug) where starter_slug is not null;
+
+create table public.project_subscriptions (
+  project_id  uuid not null references public.projects (id) on delete cascade,
+  user_id     text not null default (auth.jwt() ->> 'sub'),
+  group_key   text not null,
+  primary key (project_id, group_key)
+);
+create index project_subscriptions_user on public.project_subscriptions (user_id);
+
+create table public.user_settings (
+  user_id     text primary key default (auth.jwt() ->> 'sub'),
+  settings    jsonb not null default '{}',
+  starters_version integer not null default 0,
+  updated_at  timestamptz not null default now()
+);
+```
+Clerk user ids (`user_...`) are not UUIDs. Every `user_id` column is `text` and is compared with `auth.jwt() ->> 'sub'`. `auth.uid()` is not used.
+
+## Upsert RPC
+All CTEs in one statement read the same snapshot, so `prev` holds the values before the write. `incoming` calls a volatile function, so Postgres materializes it once and each row keeps one trace id. The trace id is written to both `sky_objects` and `changes`, so every Realtime payload carries it.
+```sql
+create or replace function public.upsert_sky_objects(
+  p_source text, p_group text, p_rows jsonb, p_full boolean)
+returns table (out_object_id text, out_kind text, out_trace_id uuid)
+language sql security definer set search_path = '' as $$
+  with incoming as (
+    select r ->> 'id' as id, r -> 'fields' as fields, r ->> 'hash' as hash,
+           gen_random_uuid() as trace_id
+    from jsonb_array_elements(p_rows) as r
+  ),
+  prev as (
+    select t.id, t.fields, t.removed_at
+    from public.sky_objects t
+    where t.group_key = p_group
+  ),
+  up as (
+    insert into public.sky_objects as t (id, source, group_key, fields, hash, trace_id)
+    select i.id, p_source, p_group, i.fields, i.hash, i.trace_id from incoming i
+    on conflict (id) do update
+      set fields = excluded.fields, hash = excluded.hash, trace_id = excluded.trace_id,
+          updated_at = now(), removed_at = null
+      where t.hash is distinct from excluded.hash or t.removed_at is not null
+    returning t.id, t.fields, t.trace_id
+  ),
+  gone as (
+    update public.sky_objects t
+      set removed_at = now(), updated_at = now(), trace_id = gen_random_uuid()
+    where p_full and t.group_key = p_group and t.removed_at is null
+      and not exists (select 1 from incoming i where i.id = t.id)
+    returning t.id, t.fields, t.trace_id
+  ),
+  ch as (
+    insert into public.changes (trace_id, source, group_key, object_id, kind, diff)
+    select up.trace_id, p_source, p_group, up.id,
+           case when p.id is null or p.removed_at is not null then 'enter' else 'update' end,
+           jsonb_build_object('before', p.fields, 'after', up.fields)
+    from up left join prev p on p.id = up.id
+    union all
+    select g.trace_id, p_source, p_group, g.id, 'exit',
+           jsonb_build_object('before', g.fields, 'after', null)
+    from gone g
+    returning object_id, kind, trace_id
+  )
+  select object_id, kind, trace_id from ch;
+$$;
+
+revoke execute on function public.upsert_sky_objects(text, text, jsonb, boolean)
+  from public, anon, authenticated;
+grant execute on function public.upsert_sky_objects(text, text, jsonb, boolean)
+  to service_role;
+```
+`p_full` is the registry entry's `full` value.
+
+## Starter seeding RPC
+Runs as the calling user (`security invoker`), so the RLS policies on `projects`, `project_subscriptions` and `user_settings` apply.
+```sql
+create or replace function public.seed_starters(p_version integer, p_projects jsonb)
+returns integer
+language plpgsql security invoker set search_path = '' as $$
+declare
+  v_user text := auth.jwt() ->> 'sub';
+  v_have integer;
+  r jsonb;
+  v_id uuid;
+  n integer := 0;
+begin
+  insert into public.user_settings (user_id) values (v_user) on conflict (user_id) do nothing;
+  select starters_version into v_have from public.user_settings where user_id = v_user for update;
+  if v_have >= p_version then return 0; end if;
+  for r in select * from jsonb_array_elements(p_projects) loop
+    insert into public.projects (user_id, name, source, ir, starter_slug)
+    values (v_user, r ->> 'name', r ->> 'source', r -> 'ir', r ->> 'slug')
+    on conflict (user_id, starter_slug) where starter_slug is not null do nothing
+    returning id into v_id;
+    if v_id is not null then
+      insert into public.project_subscriptions (project_id, user_id, group_key)
+      select v_id, v_user, g from jsonb_array_elements_text(r -> 'ir' -> 'groups') as g;
+      n := n + 1;
+    end if;
+    v_id := null;
+  end loop;
+  update public.user_settings set starters_version = p_version, updated_at = now() where user_id = v_user;
+  return n;
+end $$;
+revoke execute on function public.seed_starters(integer, jsonb) from public, anon;
+grant execute on function public.seed_starters(integer, jsonb) to authenticated;
+```
+The unique index `projects_user_starter` covers deleted rows until `prune-projects` removes them; a starter deleted before a manifest `version` increase is recreated only if the prune job has already removed its row.
+
+## Grants and RLS
+Postgres checks grants before policies. A missing grant returns error `42501`. A missing or failing policy returns zero rows, and Realtime delivers nothing.
+```sql
+alter table public.sky_objects           enable row level security;
+alter table public.changes               enable row level security;
+alter table public.runs                  enable row level security;
+alter table public.source_status         enable row level security;
+alter table public.source_samples        enable row level security;
+alter table public.projects              enable row level security;
+alter table public.project_subscriptions enable row level security;
+alter table public.user_settings         enable row level security;
+
+revoke all on all tables in schema public from anon, authenticated;
+
+-- Public sky data
+grant select on public.sky_objects, public.changes, public.runs,
+                public.source_status, public.source_samples to anon, authenticated;
+create policy sky_objects_read    on public.sky_objects    for select to anon, authenticated using (true);
+create policy changes_read        on public.changes        for select to anon, authenticated using (true);
+create policy runs_read           on public.runs           for select to anon, authenticated using (true);
+create policy source_status_read  on public.source_status  for select to anon, authenticated using (true);
+create policy source_samples_read on public.source_samples for select to anon, authenticated using (true);
+
+-- Owner data
+grant select, insert, update, delete
+  on public.projects, public.project_subscriptions, public.user_settings to authenticated;
+
+create policy projects_select on public.projects for select to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id);
+create policy projects_insert on public.projects for insert to authenticated
+  with check ((select auth.jwt() ->> 'sub') = user_id);
+create policy projects_update on public.projects for update to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id)
+  with check ((select auth.jwt() ->> 'sub') = user_id);
+create policy projects_delete on public.projects for delete to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id);
+
+create policy subs_select on public.project_subscriptions for select to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id);
+create policy subs_insert on public.project_subscriptions for insert to authenticated
+  with check (
+    (select auth.jwt() ->> 'sub') = user_id
+    and exists (select 1 from public.projects p
+                where p.id = project_id and p.user_id = (select auth.jwt() ->> 'sub')));
+create policy subs_delete on public.project_subscriptions for delete to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id);
+
+create policy settings_select on public.user_settings for select to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id);
+create policy settings_insert on public.user_settings for insert to authenticated
+  with check ((select auth.jwt() ->> 'sub') = user_id);
+create policy settings_update on public.user_settings for update to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id)
+  with check ((select auth.jwt() ->> 'sub') = user_id);
+```
+The `subs_insert` check prevents a user from attaching subscriptions to another user's project.
+
+## Realtime publication
+```sql
+alter publication supabase_realtime add table public.sky_objects;
+```
+Realtime delivers a row change only when all three conditions hold:
+1. The table is in `supabase_realtime`.
+2. The client's role (`anon` or `authenticated`) has `select` on the table.
+3. An RLS policy lets that role read the row.
+
+If any one is missing, the channel subscribes without error and receives nothing.
+
+Delivery rules:
+- Clients subscribe with the filter `group_key=in.(g1,g2,...)` (up to 100 values).
+- `DELETE` events are not filtered by RLS. The schema never deletes sky rows that clients watch; it sets `removed_at`, which arrives as an `UPDATE`.
+- `source_status` is not in the publication. The page reads it by REST every 30 s (`sky-contract.md`).
+
+## Retention
+```sql
+select cron.schedule('prune-changes', '17 * * * *',
+  $$delete from public.changes where at < now() - interval '7 days'$$);
+select cron.schedule('prune-runs', '23 * * * *',
+  $$delete from public.runs where started_at < now() - interval '3 days'$$);
+select cron.schedule('prune-removed', '41 3 * * *',
+  $$delete from public.sky_objects where removed_at < now() - interval '1 day'$$);
+select cron.schedule('prune-projects', '53 3 * * *',
+  $$delete from public.projects where deleted_at < now() - interval '1 day'$$);
+```
+Rows removed by `prune-removed` already carry `removed_at`, so clients have received their exit before the delete.
+
+## Free-tier message budget
+Realtime counts one message per change per subscribed client.
+
+| Stream | Changes per month | Messages per client-month |
+|---|---|---|
+| `swpc.kp`, `swpc.wind`, `swpc.mag` (1 per minute each) | 129,600 | 129,600 |
+| `celestrak.stations` and `celestrak.gps-ops` (about 61 objects, 12 updates per day) | about 22,000 | about 22,000 |
+| `jpl.*`, `ll2.upcoming` | under 2,000 | under 2,000 |
+| Total, client following every group above | | about 154,000 |
+
+The 2,000,000-message Free quota covers about 13 continuously open client-months. Debris groups add roughly 12 messages per object per day per client; a group of 1,000 objects adds about 360,000 messages per client-month. The page closes its Realtime channel 60 s after the tab becomes hidden and resubscribes, with a fresh select, when it becomes visible.
+
+## Sources
+- Supabase docs, Postgres Changes: https://supabase.com/docs/guides/realtime/postgres-changes
+- Supabase docs, Row Level Security: https://supabase.com/docs/guides/database/postgres/row-level-security
+- Supabase docs, Realtime Limits: https://supabase.com/docs/guides/realtime/limits
+- Supabase docs, Cron: https://supabase.com/docs/guides/cron
+- Clerk docs, Integrate Supabase with Clerk: https://clerk.com/docs/guides/development/integrations/databases/supabase
