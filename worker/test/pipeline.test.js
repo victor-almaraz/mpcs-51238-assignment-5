@@ -12,9 +12,9 @@ const entry = (id) => registry.find((e) => e.id === id);
 const UA = 'Sphaerenmusik/0.1.0 (test@example.test)';
 
 function setup(routes, start = '2026-10-30T03:00:00Z') {
-  const store = fakeStore();
-  const log = silentLog();
   const now = clock(start);
+  const store = fakeStore({ now });
+  const log = silentLog();
   const fetch = fakeFetch(routes);
   const deps = { registry, isEnabled: () => true, store, fetch, userAgent: UA, log, now };
   return { store, log, now, fetch, deps };

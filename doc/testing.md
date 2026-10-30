@@ -12,7 +12,7 @@ cd worker && npm test    # node --test test/*.test.js
 Tests construct no `AudioContext`, no WebGL context and no network connection. They use fakes.
 
 ## Worker fixture tests
-Fixtures in `worker/test/fixtures/` are saved responses: two calls per source, a few minutes apart (one call per CelesTrak group, whose GP data changes once every 2 hours), plus derived fixtures. `captures.jsonl` records the URL, time and status of each capture and the origin of each derived fixture.
+Fixtures in `worker/test/fixtures/` are saved responses: two calls per source, a few minutes apart (CelesTrak groups 2 h 17 min apart, after a GP update), plus derived fixtures. `captures.jsonl` records the URL, time and status of each capture and the origin of each derived fixture.
 
 
 | Fixture | Purpose |

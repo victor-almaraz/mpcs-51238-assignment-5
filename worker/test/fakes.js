@@ -2,8 +2,11 @@ import { readFileSync } from 'node:fs';
 
 export const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
-/** In-memory store with the semantics of upsert_sky_objects and claim_source (doc/database.md). */
-export function fakeStore() {
+/**
+ * In-memory store with the semantics of upsert_sky_objects and claim_source (doc/database.md).
+ * `now` stands in for the database clock, so claims agree with the test clock.
+ */
+export function fakeStore({ now = Date.now } = {}) {
   const objects = new Map(); // id → { group, fields, hash, removedAt }
   const status = new Map();
   const runs = [];
@@ -17,7 +20,7 @@ export function fakeStore() {
     },
     async claim(sourceId, intervalSec, prev) {
       const st = status.get(sourceId);
-      const at = new Date().toISOString();
+      const at = new Date(now()).toISOString();
       if (!st) {
         status.set(sourceId, { source_id: sourceId, interval_sec: intervalSec, last_attempt_at: at, halted: false, failures: 0 });
         return true;

@@ -176,14 +176,14 @@ type SkyObject = {
 The page footer and console show: "Orbital data: CelesTrak. Space weather: NOAA SWPC. Close approaches and Scout: NASA/JPL CNEOS. Launches: The Space Devs, Launch Library 2."
 
 ## Saved responses
-`worker/test/fixtures/captures.jsonl` lists each saved response with its URL, time, status and size, and names the source of each derived fixture. Observations from two captures five minutes apart on 2026-10-30:
+`worker/test/fixtures/captures.jsonl` lists each saved response with its URL, time, status and size, and names the source of each derived fixture. Observations from two captures on 2026-10-30: five minutes apart for SWPC, JPL and LL2; 2 h 17 min apart for CelesTrak, to stay within one download per GP update:
 
 | Source | Objects | Change between captures |
 |---|---|---|
-| `celestrak.stations` | 20 | None; the second request returned HTTP 200 with an identical body, not 403 |
-| `celestrak.gps-ops` | 32 | Captured once (one download per GP update) |
-| `celestrak.visual` | 156 | Captured once |
-| `celestrak.cosmos-2251-debris` | 585 | Captured once |
+| `celestrak.stations` | 20 | None. A request five minutes after the first also returned HTTP 200 with an identical body, not 403 |
+| `celestrak.gps-ops` | 32 | None |
+| `celestrak.visual` | 156 | None |
+| `celestrak.cosmos-2251-debris` | 585 | None |
 | `swpc.kp` | 1 | Latest row moved from 02:29 to 02:33; values unchanged |
 | `swpc.wind` | 1 | Active row moved from 02:26 to 02:31; speed, density and temperature changed |
 | `swpc.mag` | 1 | Active row moved from 02:24 to 02:31; `bt` and `bz` changed |
@@ -191,7 +191,7 @@ The page footer and console show: "Orbital data: CelesTrak. Space weather: NOAA 
 | `jpl.scout` | 26 | Only `tEphem` and two minor fields of two candidates |
 | `ll2.upcoming` | 10 | None (`mode=normal`) |
 
-In RTSW files the newest row is not active (an `ACE` or `IMAP` row precedes the active `SOLAR1` row). `-9999` appears in `rtsw_mag_1m.json`; no trailing NUL bytes appeared.
+No CelesTrak group published new elements between 02:33 and 04:50 UTC, so the second captures equal the first: a group's elements change less often than the 2-hour GP cycle. In RTSW files the newest row is not active (an `ACE` or `IMAP` row precedes the active `SOLAR1` row). `-9999` appears in `rtsw_mag_1m.json`; no trailing NUL bytes appeared.
 
 ## Sources
 - CelesTrak, Usage Policy: https://celestrak.org/usage-policy.php

@@ -7,7 +7,6 @@
 {"file":"swpc-mag-1.json","url":"https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json","fetchedAt":"2026-10-30T02:33:09Z","status":200,"contentType":"application/json","retryAfter":"","bytes":1351457}
 {"file":"jpl-cad-1.json","url":"https://ssd-api.jpl.nasa.gov/cad.api?dist-max=10LD&date-min=now&date-max=%2B60","fetchedAt":"2026-10-30T02:33:09Z","status":200,"contentType":"application/json","retryAfter":"","bytes":1599}
 {"file":"jpl-scout-1.json","url":"https://ssd-api.jpl.nasa.gov/scout.api","fetchedAt":"2026-10-30T02:33:50Z","status":200,"contentType":"application/json","retryAfter":"","bytes":9734}
-{"file":"celestrak-stations-2.json","url":"https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP=stations","fetchedAt":"2026-10-30T02:38:14Z","status":200,"contentType":"application/json; charset=UTF-8","retryAfter":"","bytes":8451}
 {"file":"swpc-kp-2.json","url":"https://services.swpc.noaa.gov/json/planetary_k_index_1m.json","fetchedAt":"2026-10-30T02:38:14Z","status":200,"contentType":"application/json","retryAfter":"","bytes":27925}
 {"file":"swpc-wind-2.json","url":"https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json","fetchedAt":"2026-10-30T02:38:14Z","status":200,"contentType":"application/json","retryAfter":"","bytes":2248948}
 {"file":"swpc-mag-2.json","url":"https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json","fetchedAt":"2026-10-30T02:38:15Z","status":200,"contentType":"application/json","retryAfter":"","bytes":1352739}
@@ -21,3 +20,9 @@
 {"file": "ll2-429.json", "derivedFrom": "hand-written throttle body", "status": 429, "retryAfter": "1200"}
 {"file": "celestrak-403.txt", "derivedFrom": "hand-written; wording not captured from CelesTrak", "status": 403, "retryAfter": ""}
 {"file": "celestrak-no-data.txt", "derivedFrom": "hand-written", "status": 200, "retryAfter": ""}
+{"file":"ll2-upcoming-1.json","url":"https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=10&mode=normal","fetchedAt":"2026-10-30T02:39:08Z","status":200,"contentType":"application/json","retryAfter":"","bytes":87300}
+{"file":"ll2-upcoming-2.json","url":"https://ll.thespacedevs.com/2.3.0/launches/upcoming/?limit=10&mode=normal","fetchedAt":"2026-10-30T02:43:13Z","status":200,"contentType":"application/json","retryAfter":"","bytes":87300}
+{"file":"celestrak-stations-2.json","url":"https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP=stations","fetchedAt":"2026-10-30T04:50:00Z","status":200,"contentType":"application/json; charset=UTF-8","retryAfter":"","bytes":8451}
+{"file":"celestrak-gps-ops-2.json","url":"https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP=gps-ops","fetchedAt":"2026-10-30T04:50:01Z","status":200,"contentType":"application/json; charset=UTF-8","retryAfter":"","bytes":13245}
+{"file":"celestrak-visual-2.json","url":"https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP=visual","fetchedAt":"2026-10-30T04:50:01Z","status":200,"contentType":"application/json; charset=UTF-8","retryAfter":"","bytes":65195}
+{"file":"celestrak-cosmos-2251-debris-2.json","url":"https://celestrak.org/NORAD/elements/gp.php?FORMAT=json&GROUP=cosmos-2251-debris","fetchedAt":"2026-10-30T04:50:02Z","status":200,"contentType":"application/json; charset=UTF-8","retryAfter":"","bytes":248656}
