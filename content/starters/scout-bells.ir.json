@@ -1,0 +1,105 @@
+{
+  "irVersion": 1,
+  "seed": 1,
+  "tempo": 120,
+  "scale": {
+    "root": "E",
+    "mode": "phrygian"
+  },
+  "instruments": [
+    {
+      "id": "i0",
+      "type": "fm",
+      "volumeDb": -16,
+      "octave": 0,
+      "cents": 0,
+      "params": {
+        "ratio": 3.5,
+        "index": 6,
+        "indexDecay": 2
+      },
+      "fx": [
+        {
+          "id": "f0",
+          "type": "delay",
+          "params": {
+            "time": 700,
+            "feedback": 0.4,
+            "mix": 0.3
+          },
+          "bypass": false
+        }
+      ]
+    }
+  ],
+  "master": {
+    "fx": []
+  },
+  "lfos": [],
+  "mods": [],
+  "bindings": [
+    {
+      "id": "b0",
+      "kind": "trigger",
+      "inst": "i0",
+      "group": "jpl.scout",
+      "select": null,
+      "event": "enter",
+      "when": null,
+      "pitch": {
+        "op": "quantize",
+        "args": [
+          {
+            "op": "rand",
+            "args": [
+              72,
+              88
+            ]
+          }
+        ]
+      },
+      "velocity": {
+        "op": "map",
+        "args": [
+          {
+            "op": "field",
+            "args": [
+              "neoScore"
+            ]
+          },
+          0,
+          100,
+          40,
+          110,
+          "lin"
+        ]
+      },
+      "durationMs": 250,
+      "maxPerSecond": 1
+    }
+  ],
+  "reactions": [],
+  "view": {
+    "projection": "orbital",
+    "background": "#000000"
+  },
+  "layers": [
+    {
+      "id": "l0",
+      "type": "glyph",
+      "group": "jpl.scout",
+      "select": null,
+      "props": {
+        "char": "+",
+        "size": 16,
+        "color": "#90cdf4",
+        "fade": 20,
+        "opacity": 1
+      }
+    }
+  ],
+  "groups": [
+    "jpl.scout"
+  ],
+  "localOnly": false
+}

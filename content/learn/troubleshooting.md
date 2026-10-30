@@ -26,13 +26,14 @@ Most groups change every few minutes to hours ([Sky data](sky-data)). Use **Repl
 | `type_error` (warning) | The type checker found a mismatch, such as a misspelled option or field, or a text value where a number belongs | Read the message on the underlined code; the piece still runs |
 | `runtime_error` | The script threw an error while running | Read the message; often a misspelled function name |
 | `timeout` | The script ran longer than 1.5 s | Remove loops that do not end |
-| `unknown_option` | An instrument or effect option does not exist | Check the parameter names in the [Reference](reference) |
-| `not_numeric` | `follow` or `mod` on a parameter that takes a list or a choice | Use the constructor for `harmonics`; use `follow` with an index for choices |
+| `unknown_option` | An instrument, effect or layer option does not exist | Check the parameter names in the [Reference](reference) |
+| `not_numeric` | `follow` on a parameter that takes a list, such as `harmonics` | Set `harmonics` in the constructor |
 | `not_modulatable` | `mod` on a choice parameter or `harmonics` | Use `follow` |
 | `unknown_group` | The group name does not exist | Check [Sky data](sky-data) |
 | `unknown_field` (warning) | No object in the group has this field | Check the field name |
 | `granular_sample` | Granular `source: 'sample'` | Pieces cannot load audio files; use `saw`, `noise` or `chord` |
 | `slot_reused` | One effect placed in two chains | Create a second effect |
+| `slot_unplaced` | `follow` or `mod` on an effect that is in no chain | Pass the effect to `inst.fx(...)` or `master.fx(...)` |
 | `lfo_rate_range` | An LFO `rate` expression does not end in `.map(...)` or `.clamp(...)` | End the expression with one of them |
 | `audio_outside_layer` | `audio.*` used outside a layer property | Use audio signals in layers only |
 | `fn_in_layer` | `fn()` in a layer property | Use built-in expression steps |
@@ -42,6 +43,7 @@ Most groups change every few minutes to hours ([Sky data](sky-data)). Use **Repl
 | `orbit_no_object` | `orbit(...)` outside a voice, trigger or layer | Use `sky.orbit(objectId, quantity)` |
 | `limit_<item>` | A limit is exceeded, for example `limit_reverbs` | See Limits in the [Reference](reference) |
 | `ir_too_large` | The compiled piece exceeds 256 KB | Use fewer layers or bindings |
+| `ir_version_unsupported` | The piece was saved by a newer version of Sphärenmusik | Reload the page to load the current version |
 | `local_only` (warning) | The piece uses `fn` or `layer.shader` | The piece runs in your editor and cannot be shared |
 
 ## Effect reset

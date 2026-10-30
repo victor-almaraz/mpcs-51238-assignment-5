@@ -37,7 +37,7 @@ verb.decay.mod(breathe, { depth: 0.2 });
 echo.time.mod(shimmer, { depth: 0.05 });
 echo.feedback.mod(sky.swpc('kp.kp').map(0, 9, -1, 1), { depth: 0.4 });
 grit.drive.mod(sky.swpc('mag.bz').map(-20, 20, 1, -1), { depth: 0.3 });
-stations.cutoff.mod(breathe, { depth: 0.1 });
+neo.cutoff.mod(breathe, { depth: 0.1 });
 
 sky.group('celestrak.stations').voices(stations, {
   pitch: field('meanMotion').octaveInto(110, 440).quantize(),
@@ -92,14 +92,16 @@ layer.aurora({ intensity: sky.swpc('kp.kp').map(3, 9, 0, 1) });
 | `cents` | −100 to 100. Default 0. |
 | Any `PARAM_DEFS[type]` name | Initial parameter value, clamped by `coerceParam` |
 
-The builders and handle properties are generated from `PARAM_DEFS` (`audio/synthesis-conventions.md`). An unknown option name is a build error. Granular `source: 'sample'` is a build error; pieces cannot load audio files.
+The builders and handle properties are generated from `PARAM_DEFS` (`audio/synthesis-conventions.md`). An unknown option name is a build error (`unknown_option`). Granular `source: 'sample'` is a build error (`granular_sample`); pieces cannot load audio files. Numeric options outside their range move to the nearest end; a value of the wrong kind (text for a number, an unknown choice name) is a `runtime_error` naming the option.
 
 Each numeric parameter is a handle property with two methods:
 
 | Call | Effect |
 |---|---|
-| `inst.<param>.follow(expr, { smoothMs })` | Sets the parameter's base value from an expression. `smoothMs` default 250. |
-| `inst.<param>.mod(source, { depth, smoothMs })` | Adds a modulation route (Modulation). |
+| `inst.<param>.follow(expr, { smoothMs })` | Sets the parameter's base value from an expression. `smoothMs` default 250. A choice parameter receives the option index. |
+| `inst.<param>.mod(source, { depth, smoothMs })` | Adds a modulation route (Modulation). `depth` is required. |
+
+Array parameters (additive `harmonics`) are set in the constructor only and have no handle property.
 
 | Call | Effect |
 |---|---|
@@ -115,7 +117,7 @@ Each numeric parameter is a handle property with two methods:
 | `slot.<param>.mod(source, { depth, smoothMs })` | Adds a modulation route |
 | `slot.bypass.follow(expr)` | Bypasses the slot while `expr` is true |
 
-A slot belongs to one chain. Passing one slot handle to two chains is a build error.
+A slot belongs to one chain. Passing one slot handle to two chains is a build error (`slot_reused`). A slot with `follow` or `mod` that is in no chain is a build error (`slot_unplaced`).
 
 ### Modulation
 | Call | Returns |
@@ -133,7 +135,7 @@ An expression `rate` must end in `.map(...)` or `.clamp(...)`; that step's outpu
 | `group.top(n, field, order)` | Group handle restricted to the first `n` objects by `field`; `order` is `desc` (default) or `asc` |
 | `group.voices(inst, opts)` | Sustained-voice binding; `opts` is `{ pitch, velocity, pan, voiceMods }` or a function of the group's object proxy returning it |
 | `group.on(kind)` | Event handle; `kind` is `enter`, `update` or `exit` |
-| `event.when(expr)` | Event handle with a condition; `expr` is an expression or a function of the object proxy returning one |
+| `event.when(expr)` | Event handle with a condition; `expr` is an expression or a function of the object proxy returning one. A second `when` combines with the first by `and`. |
 | `event.trigger(inst, opts)` | Trigger binding; `opts` is `{ pitch, velocity, durationMs, maxPerSecond }` or a function of the object proxy returning it |
 | `group.count()` | Expression: number of live objects |
 | `group.mean(field)` | Expression: mean of a numeric field |
@@ -143,7 +145,7 @@ An expression `rate` must end in `.map(...)` or `.clamp(...)`; that step's outpu
 | `orbit(quantity, opts)` | Expression: a VLFO from the current object's orbital motion (Orbits) |
 | `sky.orbit(objectId, quantity, opts)` | Expression: a VLFO from one named object's orbital motion |
 
-Defaults: `velocity` 64, `durationMs` 250, `maxPerSecond` 2.
+Defaults: `velocity` 64, `pan` 0, `durationMs` 250, `maxPerSecond` 2. `pitch` is required. Constant pitches clamp to 0–127, velocities to 1–127 and pans to −1–1. A `top(...)` selection applies to voices, triggers (events of objects outside the selected set are ignored) and layers; `count`, `mean` and `spread` read the whole group.
 
 ### Orbits
 Orbital motion is a very-low-frequency oscillator (VLFO): periodic, continuous and computed for every instant from the object's orbital elements. Orbit expressions apply to `celestrak.*` objects only.
@@ -168,12 +170,14 @@ Orbital motion is a very-low-frequency oscillator (VLFO): periodic, continuous a
 - On a group without orbital elements, `orbit` is a build error with code `orbit_no_elements`.
 
 ```ts
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad  = additive({ volume: -12, attack: 1.5, release: 4 });
+const tone = filter({ cutoff: 3000 });
+pad.fx(tone);
 sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440),
   pan:   orbit('phaseCos'),                                  // circles the stereo field once per orbit
 });
-pad.cutoff.mod(sky.orbit('celestrak.stations:25544', 'sunlit'), { depth: 0.15, smoothMs: 4000 });
+tone.cutoff.mod(sky.orbit('celestrak.stations:25544', 'sunlit'), { depth: 0.15, smoothMs: 4000 });
 pad.vibratoDepth.follow(sky.orbit('celestrak.stations:25544', 'latitude').map(-1, 1, 0, 30));
 ```
 
@@ -205,11 +209,11 @@ sky.group('ll2.upcoming').on('update')
 - A property not in the group's field list is a type error. At build time it produces the same node as `field(name)` and the `unknown_field` warning.
 
 ## Types
-`src/dsl/builder.d.ts` declares the global builder API. Its types are generated from `PARAM_DEFS`, the effect registry, `src/visual/layer-defs.js` and `src/sky/groups.json`.
+`src/dsl/builder.d.ts` declares the global builder API. Its types are generated from `PARAM_DEFS`, the effect registry, `src/visual/layer-defs.js` and `src/sky/groups.json` by `scripts/gen-builder-dts.mjs` (`src/dsl/gen-dts.js`), which also writes `src/dsl/builder-dts.js` (the same text as a module) and `src/dsl/ts-lib-files.js` (the ES2022 library declarations) for the type-check worker. Generation depends only on the tables, so it is deterministic; `--check` fails when a generated file is out of date.
 
 | Type | Meaning |
 |---|---|
-| `Expr<T>` | An expression producing `T` (`number`, `string` or `boolean`). Steps are typed: `.map` exists on `Expr<number>`; `.eq` accepts a value of the same `T`; `.gt`, `.lt` return `Expr<boolean>`. |
+| `Expr<T, C>` | An expression producing `T` (`number`, `string` or `boolean`). Steps are typed: `.map` exists on `Expr<number>`; `.eq` accepts a value of the same `T`; `.gt`, `.lt` return `Expr<boolean>`. `C` lists the contexts the expression needs (Expression contexts). |
 | `Num` | `number \| Expr<number>`; accepted wherever a numeric value is expected |
 | `Pitch` | `Num`, in MIDI note numbers |
 | `GroupKey` | Union of the group keys in `groups.json` |
@@ -222,6 +226,18 @@ sky.group('ll2.upcoming').on('update')
 | `SwpcPath` | `'kp.kp' \| 'kp.kpEstimated' \| 'wind.speed' \| ...` |
 
 Each `groups.json` entry lists its fields with a type, `number`, `string` or `boolean`, which the generator reads. Types encode names, kinds and option values. Numeric ranges are not types; the validator and `coerceParam` enforce them.
+
+### Expression contexts
+Every expression type carries a context parameter `C`, the union of the contexts its nodes need: `'obj'` (a current object: `field`, `orbit`, `audio.voice(...).env()`), `'audio'` (a layer property: `audio.*`) and `'fn'` (a binding: `fn`). Each position accepts the contexts it provides:
+
+| Position | Accepts |
+|---|---|
+| `follow`, `mod` sources, LFO `rate` | `'fn'` |
+| Voice, trigger and `when` options | `'obj' \| 'fn'` |
+| Properties of group layers | `'obj' \| 'audio'` |
+| Properties of `field`, `aurora` and `shader` layers, `view.background` | `'audio'` |
+
+`orbit(...)` or `field(...)` in a `follow` is therefore a type error, as is `fn` in a layer property. The validator enforces the same rules with `orbit_no_object`, `audio_outside_layer` and `fn_in_layer`.
 
 ### Visuals
 `view.*`, `layer.*` and `audio.*` are defined in `visuals.md`.
@@ -243,6 +259,8 @@ An expression is a chain that starts from a source and applies steps.
 | `rand(lo, hi)` | Deterministic number in `[lo, hi)` seeded by the piece seed, binding id and object id |
 | `sky.swpc`, `sky.value`, `group.count/mean/spread` | See Sky |
 | `audio.*` | See `visuals.md`; valid in layer properties only |
+| `color(hex)`, `.mix(other, t)` | Colour (`#rrggbb`) and blend; see `visuals.md` |
+| `fn(source)` | Escape hatch; IR op `local` |
 
 | Step | Result |
 |---|---|
@@ -267,7 +285,27 @@ Evaluation rules:
 ```json
 { "op": "map", "args": [ { "op": "field", "args": ["vRel"] }, 5, 30, 36, 60, "lin" ] }
 ```
-Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings, booleans, `null` or nodes. The op set is exactly the sources and steps above (`field`, `num`, `rand`, `swpc`, `value`, `count`, `mean`, `spread`, `map`, `clamp`, `octaveInto`, `quantize`, `add`, `sub`, `mul`, `div`, `abs`, `neg`, `round`, `eq`, `gt`, `lt`, `and`, `or`, `not`, `level`, `spectrum`, `env`, `orbit`, `local`). `orbit` takes `[quantity, objectId | null, timeScale]`; `null` means the current object.
+Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings, booleans, `null` or nodes. A constant in an expression position is a plain number, string or boolean, not a node. The op set is exactly the sources and steps above (`field`, `num`, `rand`, `swpc`, `value`, `count`, `mean`, `spread`, `map`, `clamp`, `octaveInto`, `quantize`, `add`, `sub`, `mul`, `div`, `abs`, `neg`, `round`, `eq`, `gt`, `lt`, `and`, `or`, `not`, `level`, `spectrum`, `env`, `orbit`, `local`, `color`, `mix`). `src/dsl/validate.js` (`OPS`) lists each op's arguments:
+
+| Op | Arguments |
+|---|---|
+| `field` | `[name]` |
+| `num` | `[x]` |
+| `rand` | `[lo, hi]` |
+| `swpc` | `[path]`, for example `"kp.kp"` |
+| `value` | `[objectId, field]` |
+| `count` | `[group]` |
+| `mean`, `spread` | `[group, field]` |
+| `map` | `[x, inMin, inMax, outMin, outMax, curve]`; bounds are numbers |
+| `clamp`, `octaveInto` | `[x, lo, hi]`; bounds are numbers |
+| `quantize`, `abs`, `neg`, `round`, `not` | `[x]` |
+| `add`, `sub`, `mul`, `div`, `eq`, `gt`, `lt`, `and`, `or` | `[x, y]` |
+| `level`, `env` | `[instrumentId]` |
+| `spectrum` | `[instrumentId, bands]` |
+| `orbit` | `[quantity, objectId \| null, timeScale]`; `null` means the current object |
+| `local` | `[source]`, the `fn` source text |
+| `color` | `[hex]` |
+| `mix` | `[colour, colour, t]`; each colour is a hex string or a `color`/`mix` node |
 
 ### Document
 ```json
@@ -295,7 +333,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
     { "target": "f0.feedback",
       "source": { "expr": { "op": "map", "args": [ { "op": "swpc", "args": ["kp.kp"] }, 0, 9, -1, 1, "lin" ] } },
       "depth": 0.4, "smoothMs": 250 },
-    { "target": "i0.cutoff", "source": { "lfo": "lfo0" }, "depth": 0.1, "smoothMs": 250 }
+    { "target": "i0.vibratoDepth", "source": { "lfo": "lfo0" }, "depth": 0.1, "smoothMs": 250 }
   ],
   "bindings": [
     { "id": "b0", "kind": "voices", "inst": "i0", "group": "celestrak.stations",
@@ -304,7 +342,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
       "velocity": 64,
       "pan": { "op": "map", "args": [ { "op": "field", "args": ["raan"] }, 0, 360, -0.8, 0.8, "lin" ] },
       "voiceMods": {} },
-    { "id": "b1", "kind": "trigger", "inst": "i0", "group": "jpl.scout", "event": "enter",
+    { "id": "b1", "kind": "trigger", "inst": "i0", "group": "jpl.scout", "select": null, "event": "enter",
       "when": null, "pitch": 76, "velocity": 64, "durationMs": 250, "maxPerSecond": 1 },
     { "id": "b2", "kind": "param", "inst": "i0", "param": "vibratoDepth",
       "expr": { "op": "map", "args": [ { "op": "swpc", "args": ["kp.kp"] }, 0, 9, 2, 40, "lin" ] },
@@ -316,7 +354,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
   ],
   "view": { "projection": "orbital", "background": "#05070c" },
   "layers": [
-    { "id": "l0", "type": "points", "group": "celestrak.stations",
+    { "id": "l0", "type": "points", "group": "celestrak.stations", "select": null,
       "props": { "size": 3, "color": "#f6e05e", "opacity": 1, "trail": 600 } }
   ],
   "groups": ["celestrak.stations", "jpl.scout", "swpc.kp"],
@@ -327,7 +365,11 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 - `mods[].target` is `<instrument id>.<param>` or `<slot id>.<param>`. `source` is `{ "lfo": id }` or `{ "expr": node }`.
 - An LFO `rate` is a number, `{ "sync": name }` or `{ "expr": node, "min": hz, "max": hz }`.
 - `master` and each instrument's `fx` are always present; an empty chain is `[]`.
-- `select` is `null` or `{ "top": n, "by": field, "order": "asc" | "desc" }`.
+- `select` is `null` or `{ "top": n, "by": field, "order": "asc" | "desc" }`. Voices, triggers and layers carry it.
+- Binding kinds: `voices` and `trigger` as above; `param` `{ id, kind, inst, param, expr, smoothMs }` for `inst.<param>.follow`; `fxParam` `{ id, kind, slot, param, expr, smoothMs }` for `slot.<param>.follow`; `fxBypass` `{ id, kind, slot, expr }` for `slot.bypass.follow`.
+- Instrument `params` hold only the options the script sets: numbers, choice option names (`"sawtooth"`) and arrays (`harmonics`). Effect slot `params` hold numbers only, and a choice is its option index (`filter({ mode: 'highpass' })` stores `"mode": 1`), matching `FxSlotSpec` (`audio/effects.md`).
+- Layers: `{ id, type, group, select, props }`; `group` and `select` are `null` for `field` and `aurora`. `props` holds every property of the layer type, with defaults filled in. A shader layer is `{ id, type: "shader", group: null, select: null, glsl, props }`; its `props` are the shader's uniforms plus the declared shader properties.
+- `view` defaults to `{ "projection": "orbital", "background": "#000000" }`.
 - `groups` lists every group referenced by a binding, expression or layer, including `swpc.*` groups referenced by `sky.swpc`. On save, the page replaces the project's `project_subscriptions` rows with these values.
 
 ### Schema file
@@ -342,11 +384,13 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 | Triggers | `maxPerSecond` 0.1–20. `durationMs` 20–10000. |
 | Effects | At most 8 slots per chain and 4 `reverb` slots per piece. `type` is an effect registry key. Every param exists for the type. Each slot id appears in one chain. |
 | Modulation | At most 16 LFOs, 2 `retrigger` LFOs per instrument, 32 routes, 4 routes per target. `depth` −1 to 1. Targets exist and are modulatable (not `enum`, array or `mod: null`). LFO `rate` 0.01–20 Hz. `tempo` 20–300. |
-| Layers | At most 16. Props exist in `src/visual/layer-defs.js`. |
+| Layers | At most 16. Props exist in `src/visual/layer-defs.js` (`unknown_option`). Constant values lie in range and match the property type. |
 | Groups | Every group key exists in the source registry, copied to `src/sky/groups.json` at build time. |
 | Orbits | `orbit` and `sky.orbit` reference `celestrak.*` groups or objects; `quantity` is a listed quantity; `timeScale` 1–1000; at most 64 distinct (object, quantity, timeScale) orbit sources per piece. |
 | Expressions | Depth at most 32. Every `op` is known with the right argument count. `audio.*` ops appear only in layer props. |
-| Size | Serialized IR at most 256 KB. Script source at most 200,000 characters. |
+| Size | Serialized IR at most 256 KB. Script source at most 200,000 characters (`limit_source`). |
+| References | Every instrument, slot and LFO id a binding, route, reaction or expression names exists. `groups` lists exactly the referenced groups. |
+| Ranges | Every constant lies in its range: `tempo`, LFO `phase` and `smooth`, `depth`, `maxPerSecond`, `durationMs`, `timeScale`, constant pitch, velocity and pan, `detuneCents` −100–100, `desaturate` 0–1, parameter values. The builder clamps constants, so only a hand-made IR fails these. |
 
 ### Problem codes
 | Code | Severity | Condition |
@@ -354,13 +398,14 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 | `syntax_error` | error | The script does not parse as TypeScript |
 | `runtime_error` | error | The script throws while running |
 | `timeout` | error | No result within 1500 ms |
-| `unknown_option` | error | An option name is not a parameter of the instrument or effect type |
-| `not_numeric` | error | `follow` or `mod` on an array or enum parameter where a number is required |
+| `unknown_option` | error | An option name is not a parameter of the instrument or effect type, or a property of the layer type |
+| `not_numeric` | error | `follow` on an array parameter (additive `harmonics`); `follow` on a choice parameter is valid and sends the option index |
 | `not_modulatable` | error | `mod` on an enum, array or `mod: null` parameter |
 | `unknown_group` | error | A group key is not in `groups.json` |
 | `unknown_field` | warning | No object of the group's last snapshot has the field |
 | `granular_sample` | error | Granular `source: 'sample'` |
 | `slot_reused` | error | One effect slot in two chains |
+| `slot_unplaced` | error | `follow` or `mod` on an effect slot that is in no chain |
 | `lfo_rate_range` | error | An expression LFO rate does not end in `map` or `clamp` |
 | `audio_outside_layer` | error | An `audio.*` op outside layer properties |
 | `fn_in_layer` | error | `fn` in a layer property |
@@ -368,15 +413,21 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 | `orbit_no_elements` | error | `orbit` or `sky.orbit` on a group or object without orbital elements |
 | `orbit_quantity` | error | Unknown orbit quantity |
 | `orbit_no_object` | error | `orbit(...)` where no current object exists; use `sky.orbit(...)` |
-| `limit_<item>` | error | A count limit in the table above is exceeded; `<item>` is `instruments`, `bindings`, `voices`, `slots`, `reverbs`, `lfos`, `retrigger_lfos`, `routes`, `routes_per_target`, `layers`, `orbit_sources` |
+| `limit_<item>` | error | A count limit in the table above is exceeded; `<item>` is `instruments`, `bindings`, `voices`, `slots`, `reverbs`, `lfos`, `retrigger_lfos`, `routes`, `routes_per_target`, `layers`, `orbit_sources`, `source` |
 | `ir_too_large` | error | Serialized IR above 256 KB |
 | `ir_version_unsupported` | error | `irVersion` above the current version |
 | `local_only` | warning | The piece uses `fn` or `layer.shader` |
 | `type_error` | warning | The type checker reports an error; the message and position come from TypeScript |
+| `ir_schema` | error | Internal: the IR does not match `ir.schema.json`, a vocabulary or a range |
+| `ir_reference` | error | Internal: the IR names an id that does not exist, or `groups` does not match the references |
+
+The internal codes arise only from a hand-made or corrupted IR; the builder never produces them, and the guide does not list them.
 
 `src/dsl/problem-codes.js` is the single list of codes. The guide's troubleshooting page (`content/learn/troubleshooting.md`) documents every user-facing code; a test checks that both lists match.
 
-A problem is `{ "severity": "error" | "warning", "code": string, "path": string, "line": number | null, "message": string }`. `path` is a JSON Pointer into the IR. The builder records the script line of each builder call so problems point at source lines. Any error blocks Run and Save; warnings do not.
+A problem is `{ "severity": "error" | "warning", "code": string, "path": string, "line": number | null, "message": string }`. `path` is a JSON Pointer into the IR. The builder records the script line of each builder call against the pointer of the entry it creates (`/instruments/0`, `/bindings/3`, `/instruments/0/fx` for the `.fx()` call, `/instruments/0/fx/1/params` for the slot's constructor); a problem takes the line of the longest recorded pointer that prefixes its path. Any error blocks Run and Save; warnings do not.
+
+`unknown_field` checks a field name against the group's field list in `groups.json`; when the page passes the last snapshot of the group, a field present in any of its objects is also known.
 
 ## Versioning
 - `irVersion` is an integer. `src/dsl/migrations.js` exports `migrations[n]`, a pure function from version `n` to `n + 1`, each with its own test.
@@ -384,13 +435,16 @@ A problem is `{ "severity": "error" | "warning", "code": string, "path": string,
 - Renaming, removing or changing the unit of any IR field requires a version bump.
 
 ## Sandbox
-- The script runs in a dedicated Web Worker loaded from `/dsl-sandbox.js`. The page posts `{ source }` and receives `{ ir, problems }`.
-- The worker removes TypeScript syntax with Sucrase (`transforms: ['typescript']`), which performs no type checking, then evaluates the result. Sucrase preserves line numbers, so problem positions refer to the TypeScript source. A Sucrase parse error is the problem `syntax_error`.
+- The script runs in a dedicated Web Worker loaded from `/dsl-sandbox.js`. The page posts `{ source, defs, snapshot? }` and receives `{ ir, problems }`. `defs` is the normalized definition object (`src/dsl/load-defs.js`, Definition tables); `snapshot` optionally maps groups to their last objects for `unknown_field`. `ir` is `null` after `syntax_error`, `runtime_error` or `timeout`.
+- `public/dsl-sandbox.js` is generated by `scripts/build-sandbox.mjs` from `src/dsl/sandbox-entry.js`: a small CommonJS linker bundles the DSL modules and Sucrase into one script without `import` or `export`, which loads as a classic or a module worker. The bundle contains no definition tables, so it does not depend on the engine. `--check` fails when the file is out of date.
+- `src/dsl/run-sandbox.js` (`createSandbox`) is the page side: it keeps one worker, runs builds one at a time, and applies the timeout below.
+- The worker removes TypeScript syntax with Sucrase (`transforms: ['typescript']`), which performs no type checking, then evaluates the result with `new Function`, passing the builder API as parameters and shadowing `self`, `globalThis`, `postMessage` and the network globals. Sucrase preserves line numbers, so problem positions refer to the TypeScript source; the script carries `//# sourceURL=piece.ts`, and the builder reads script lines from stack frames of that name. A Sucrase parse error is the problem `syntax_error`.
 - The response for `/dsl-sandbox.js` carries its own policy, set in `next.config.ts` headers: `Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-eval'`. The worker can evaluate the script but has no network access.
 - Before evaluating the script, the worker also deletes `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `importScripts` and `indexedDB` from its global scope.
 - The page calls `worker.terminate()` if no response arrives within 1500 ms and reports problem `timeout`.
 - The script receives only the builder API. It cannot reach the page, the audio context, the database or the DOM.
 - Loading another user's piece runs only its IR. Its source runs only if opened in the editor and run.
+- In local-only mode the page posts `{ fn: { id, source, arg } }` for each `fn` evaluation and receives `{ fn: { id, value } }` or `{ fn: { id, error } }` (`createSandbox().evalFn`). Values other than finite numbers, text and booleans become `null`.
 
 ## Hot reload
 On save in the editor:
@@ -408,7 +462,23 @@ On save in the editor:
 - The virtual file system contains `piece.ts`, `builder.d.ts` and the ES2022 library declarations, bundled with the app. The worker fetches no files at runtime.
 - Compiler options: `strict: true`, `target: 'ES2022'`, `lib: ['ES2022']`, `noEmit: true`, `types: []`. No DOM types are present; scripts have no DOM.
 - The worker re-checks 300 ms after the last edit and returns diagnostics, completions and hover text. Each diagnostic becomes a `type_error` warning in Problems.
+- `src/dsl/typecheck.js` (`createChecker`) holds the checker; the compiler, `@typescript/vfs` and the library files are injected, so the starter build and the tests run it in Node. The worker exposes the `@valtown/codemirror-ts` worker methods (`initialize`, `updateFile`, `getLints`, `getAutocompletion`, `getHover`) and `check(source)` over a request–reply protocol `{ id, method, args }` → `{ id, result | error }`, and posts `{ event: 'problems', problems }` 300 ms after the last `updateFile` of `/piece.ts`. `src/dsl/typecheck-client.js` (`connectTypecheck`) wraps the worker in an object usable as the `worker` of `tsFacetWorker`.
 - Type errors do not block Run or Save. Build and validator errors do.
+
+## Definition tables
+The builder, the validator, the sandbox and the type generator receive the definition tables as an argument, never by import:
+
+| Module | Content |
+|---|---|
+| `src/dsl/engine-defs.js` | The only import of the user's engine tables: `PARAM_DEFS` and `TUNING_DEFS` from `src/audio/param-defs.js` (assumed path), the effect registry from `src/audio/fx/effects/registry.js` |
+| `src/dsl/layer-schema.js` | `LAYER_DEFS` from `src/visual/layer-defs.js` |
+| `src/dsl/sky-schema.js` | `src/sky/groups.json` |
+| `src/dsl/defs.js` | `normalizeDefs` merges the tables into one plain, structured-cloneable object |
+| `src/dsl/load-defs.js` | `DEFS`, the normalized tables of the running app |
+
+Reading of the engine tables: a synth `ParamDef` without `mod` is not modulatable; an effect `ParamDef` is modulatable unless `mod` is `null`; `mod.dir: 'down'` marks a lower-only parameter; a `ParamDef` with `options` is a choice; an array `default` marks an array parameter. Effect `ParamDef`s may name the parameter with `id` or `name`.
+
+The build scripts (`scripts/gen-builder-dts.mjs`, `scripts/build-starters.mjs`) accept `--defs <module>` to replace any table; `--defs tests/fixtures/dsl/engine-defs.js` supplies fixture engine tables built from `content/learn/reference.md`.
 
 ## Editor support
 The editor's completion, hover and inline problems come from the type-check worker (`ui.md`). Until the worker has loaded, completion reads `PARAM_DEFS`, the effect registry, `layer-defs.js` and `groups.json` directly. The user guide (`guide.md`) teaches the API to people.

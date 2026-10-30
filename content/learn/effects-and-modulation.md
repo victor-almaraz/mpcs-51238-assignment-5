@@ -98,7 +98,9 @@ A satellite's orbit is a wave: its latitude rises and falls once per orbit, it p
 `orbit(...)` reads the satellite a voice or layer is playing. `sky.orbit(objectId, quantity)` reads one named satellite anywhere in the script.
 
 ```ts piece
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad  = additive({ volume: -12, attack: 1.5, release: 4 });
+const tone = filter({ cutoff: 3000 });
+pad.fx(tone);
 
 sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440),
@@ -106,7 +108,7 @@ sky.group('celestrak.stations').voices(pad, {
 });
 
 const iss = 'celestrak.stations:25544';
-pad.cutoff.mod(sky.orbit(iss, 'sunlit'), { depth: 0.15, smoothMs: 4000 });   // darker in Earth's shadow
+tone.cutoff.mod(sky.orbit(iss, 'sunlit'), { depth: 0.15, smoothMs: 4000 });  // darker in Earth's shadow
 pad.vibratoDepth.follow(sky.orbit(iss, 'latitude').map(-1, 1, 0, 30));
 ```
 

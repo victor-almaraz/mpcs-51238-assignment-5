@@ -1,0 +1,232 @@
+{
+  "irVersion": 1,
+  "seed": 7,
+  "tempo": 72,
+  "scale": {
+    "root": "D",
+    "mode": "lydian"
+  },
+  "instruments": [
+    {
+      "id": "i0",
+      "type": "additive",
+      "volumeDb": -12,
+      "octave": 0,
+      "cents": 0,
+      "params": {
+        "attack": 1.5,
+        "release": 4,
+        "vibratoDepth": 6
+      },
+      "fx": [
+        {
+          "id": "f0",
+          "type": "delay",
+          "params": {
+            "time": 500,
+            "feedback": 0.4,
+            "mix": 0.25
+          },
+          "bypass": false
+        },
+        {
+          "id": "f1",
+          "type": "reverb",
+          "params": {
+            "size": 0.85,
+            "decay": 6,
+            "mix": 0.3
+          },
+          "bypass": false
+        }
+      ]
+    }
+  ],
+  "master": {
+    "fx": [
+      {
+        "id": "f2",
+        "type": "compressor",
+        "params": {
+          "threshold": -20,
+          "ratio": 3
+        },
+        "bypass": false
+      }
+    ]
+  },
+  "lfos": [
+    {
+      "id": "lfo0",
+      "shape": "sine",
+      "rate": 0.03,
+      "phase": 0,
+      "retrigger": false,
+      "smooth": 0
+    }
+  ],
+  "mods": [
+    {
+      "target": "f1.decay",
+      "source": {
+        "lfo": "lfo0"
+      },
+      "depth": 0.2,
+      "smoothMs": 250
+    },
+    {
+      "target": "f0.feedback",
+      "source": {
+        "expr": {
+          "op": "map",
+          "args": [
+            {
+              "op": "swpc",
+              "args": [
+                "kp.kp"
+              ]
+            },
+            0,
+            9,
+            -1,
+            1,
+            "lin"
+          ]
+        }
+      },
+      "depth": 0.4,
+      "smoothMs": 250
+    },
+    {
+      "target": "i0.vibratoDepth",
+      "source": {
+        "lfo": "lfo0"
+      },
+      "depth": 0.1,
+      "smoothMs": 250
+    }
+  ],
+  "bindings": [
+    {
+      "id": "b0",
+      "kind": "voices",
+      "inst": "i0",
+      "group": "celestrak.stations",
+      "select": null,
+      "pitch": {
+        "op": "quantize",
+        "args": [
+          {
+            "op": "octaveInto",
+            "args": [
+              {
+                "op": "field",
+                "args": [
+                  "meanMotion"
+                ]
+              },
+              110,
+              440
+            ]
+          }
+        ]
+      },
+      "velocity": 64,
+      "pan": {
+        "op": "map",
+        "args": [
+          {
+            "op": "field",
+            "args": [
+              "raan"
+            ]
+          },
+          0,
+          360,
+          -0.8,
+          0.8,
+          "lin"
+        ]
+      },
+      "voiceMods": {}
+    },
+    {
+      "id": "b1",
+      "kind": "trigger",
+      "inst": "i0",
+      "group": "jpl.scout",
+      "select": null,
+      "event": "enter",
+      "when": null,
+      "pitch": 76,
+      "velocity": 64,
+      "durationMs": 250,
+      "maxPerSecond": 1
+    },
+    {
+      "id": "b2",
+      "kind": "param",
+      "inst": "i0",
+      "param": "vibratoDepth",
+      "expr": {
+        "op": "map",
+        "args": [
+          {
+            "op": "swpc",
+            "args": [
+              "kp.kp"
+            ]
+          },
+          0,
+          9,
+          2,
+          40,
+          "lin"
+        ]
+      },
+      "smoothMs": 2000
+    }
+  ],
+  "reactions": [
+    {
+      "on": "stale",
+      "source": "*",
+      "actions": {
+        "detuneCents": 25
+      }
+    },
+    {
+      "on": "down",
+      "source": "*",
+      "actions": {
+        "only": [
+          "i0"
+        ]
+      }
+    }
+  ],
+  "view": {
+    "projection": "orbital",
+    "background": "#05070c"
+  },
+  "layers": [
+    {
+      "id": "l0",
+      "type": "points",
+      "group": "celestrak.stations",
+      "select": null,
+      "props": {
+        "size": 3,
+        "color": "#f6e05e",
+        "opacity": 1,
+        "trail": 600
+      }
+    }
+  ],
+  "groups": [
+    "celestrak.stations",
+    "jpl.scout",
+    "swpc.kp"
+  ],
+  "localOnly": false
+}

@@ -1,0 +1,133 @@
+{
+  "irVersion": 1,
+  "seed": 1,
+  "tempo": 120,
+  "scale": {
+    "root": "C",
+    "mode": "minor"
+  },
+  "instruments": [
+    {
+      "id": "i0",
+      "type": "subtractive",
+      "volumeDb": -14,
+      "octave": 0,
+      "cents": 0,
+      "params": {
+        "waveform": "sawtooth",
+        "attack": 2,
+        "release": 4,
+        "resonance": 6
+      },
+      "fx": [
+        {
+          "id": "f0",
+          "type": "delay",
+          "params": {
+            "time": 750,
+            "feedback": 0.45,
+            "mix": 0.25
+          },
+          "bypass": false
+        }
+      ]
+    }
+  ],
+  "master": {
+    "fx": []
+  },
+  "lfos": [
+    {
+      "id": "lfo0",
+      "shape": "sine",
+      "rate": 0.05,
+      "phase": 0,
+      "retrigger": false,
+      "smooth": 0
+    }
+  ],
+  "mods": [
+    {
+      "target": "i0.cutoff",
+      "source": {
+        "lfo": "lfo0"
+      },
+      "depth": 0.06,
+      "smoothMs": 250
+    }
+  ],
+  "bindings": [
+    {
+      "id": "b0",
+      "kind": "voices",
+      "inst": "i0",
+      "group": "swpc.wind",
+      "select": null,
+      "pitch": 36,
+      "velocity": 64,
+      "pan": 0,
+      "voiceMods": {}
+    },
+    {
+      "id": "b1",
+      "kind": "param",
+      "inst": "i0",
+      "param": "cutoff",
+      "expr": {
+        "op": "map",
+        "args": [
+          {
+            "op": "swpc",
+            "args": [
+              "wind.speed"
+            ]
+          },
+          300,
+          800,
+          200,
+          3000,
+          "log"
+        ]
+      },
+      "smoothMs": 3000
+    }
+  ],
+  "reactions": [],
+  "view": {
+    "projection": "map",
+    "background": "#000000"
+  },
+  "layers": [
+    {
+      "id": "l0",
+      "type": "aurora",
+      "group": null,
+      "select": null,
+      "props": {
+        "intensity": {
+          "op": "map",
+          "args": [
+            {
+              "op": "swpc",
+              "args": [
+                "kp.kp"
+              ]
+            },
+            2,
+            9,
+            0.1,
+            1,
+            "lin"
+          ]
+        },
+        "opacity": 1,
+        "drift": 0.2
+      }
+    }
+  ],
+  "groups": [
+    "swpc.kp",
+    "swpc.wind"
+  ],
+  "localOnly": false
+}

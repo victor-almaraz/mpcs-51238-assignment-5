@@ -1,0 +1,7 @@
+{
+  "unknown-option.ts": { "line": 1, "codes": [2353, 2561] },
+  "unknown-group.ts": { "line": 2, "codes": [2345] },
+  "unknown-proxy-field.ts": { "line": 2, "codes": [2339, 2551] },
+  "mod-on-enum.ts": { "line": 2, "codes": [2339] },
+  "orbit-without-object.ts": { "line": 2, "codes": [2345] }
+}
