@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // AGENTS.md is edited only on the user's instruction; stop `next dev` from writing to it.
+  agentRules: false,
   async headers() {
     return [
       {
