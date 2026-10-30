@@ -11,6 +11,24 @@ Record each step from a source run to audio and visual output, and display those
 - Records enter a ring buffer of 2,000 entries. When the buffer is full, the oldest record is dropped.
 - The bus is read-only for consumers. The console adds no Realtime subscriptions and does not affect playback.
 
+```js
+// default bus of the tab
+trace(record);                 // validates, stamps `t` when absent, freezes, stores, notifies; returns the stored record
+subscribe(fn);                 // fn(record) for every new record; returns unsubscribe
+records();                     // buffered records, oldest first
+chain(traceId);                // records of one trace id, in stage order, then time order
+clear();
+setCapacity(n);                // 500–5000 (settings `data.consoleBuffer`); drops the oldest records beyond n
+toJsonl();                     // buffer as JSON Lines
+newTraceId(prefix = '');       // prefix + UUID, for example `syn-…`
+
+createTraceBus({ capacity, now });   // separate bus with the same methods; tests use it
+```
+- `trace` throws `TypeError` for a record without a non-empty `traceId`, `component` or `event`, with an unknown `stage` or `level`, or with a `data` value that is not a plain object. `level` defaults to `info` and `data` to `{}`.
+- Stage order for `chain` is the order of the `stage` list below.
+- A subscriber that throws is removed from the bus and does not affect other subscribers.
+- `src/trace/jsonl.js` exports `toJsonl(records)`, `parseJsonl(text)` (validates each line and names the line number on error) and `eventsFromTrace(records)`, which rebuilds the `SkyEvent` sequence from `CHANGE` records for trace-replay tests.
+
 ## Trace record
 ```json
 {
@@ -32,12 +50,14 @@ Record each step from a source run to audio and visual output, and display those
 | `event` | Stage-specific name, for example `enter`, `dropped`, `setParam`, `fallback` |
 | `level` | `info`, `warn`, `error` |
 | `data` | Stage-specific payload |
+| `replay` | Optional; replay speed (1, 10, 100, 1000) on records caused by replayed events |
+| `synthetic` | Optional; `true` on records caused by synthetic events |
 
 ## Causal chain
 | Stage | Origin | Example `data` |
 |---|---|---|
 | `SOURCE` | `runs` row matched by `source` and time | `{ "source": "jpl.scout", "ok": true, "rowsChanged": 1, "ms": 412 }` |
-| `CHANGE` | `changes` row or Realtime payload | `{ "objectId": "jpl.scout:P21kQ3x", "kind": "enter", "diff": {...} }` |
+| `CHANGE` | `changes` row or Realtime payload | `{ "objectId": "jpl.scout:P21kQ3x", "group": "jpl.scout", "source": "jpl.scout", "kind": "enter", "diff": { "before": null, "after": {...} } }`; snapshot enters add `"initial": true` |
 | `REALTIME` | Sky store | `{ "table": "sky_objects", "latencyMs": 18 }` |
 | `BIND` | Binding runtime | `{ "binding": "b1", "result": "fired" }` |
 | `AUDIO` | Binding runtime, after the engine call | `{ "inst": "i3", "param": "cutoff", "requested": 18000, "applied": 16000 }` |

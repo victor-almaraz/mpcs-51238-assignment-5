@@ -1,0 +1,24 @@
+{
+  "id": "celestrak.stations:25544",
+  "source": "celestrak.stations",
+  "group": "celestrak.stations",
+  "fields": {
+    "name": "ISS (ZARYA)",
+    "objectId": "1998-067A",
+    "noradId": "25544",
+    "epoch": "2026-10-29T13:31:42.192192Z",
+    "meanMotion": 15.49100842,
+    "eccentricity": 0.00070497,
+    "inclination": 51.6333,
+    "raan": 355.1294,
+    "argPericenter": 324.3141,
+    "meanAnomaly": 35.7375,
+    "bstar": 0.00010764701,
+    "meanMotionDot": 0.00005507,
+    "meanMotionDdot": 0,
+    "ephemerisType": 0,
+    "classification": "U",
+    "elementSetNo": 999,
+    "revAtEpoch": 59258
+  }
+}

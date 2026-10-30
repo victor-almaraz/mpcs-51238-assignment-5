@@ -1,0 +1,174 @@
+{
+  "celestrak.stations": {
+    "source": "celestrak.stations",
+    "class": "step",
+    "orbit": true,
+    "fields": {
+      "name": {"type": "string", "unit": ""},
+      "objectId": {"type": "string", "unit": ""},
+      "noradId": {"type": "string", "unit": ""},
+      "epoch": {"type": "string", "unit": "ISO 8601 UTC"},
+      "meanMotion": {"type": "number", "unit": "rev/day"},
+      "eccentricity": {"type": "number", "unit": ""},
+      "inclination": {"type": "number", "unit": "deg"},
+      "raan": {"type": "number", "unit": "deg"},
+      "argPericenter": {"type": "number", "unit": "deg"},
+      "meanAnomaly": {"type": "number", "unit": "deg"},
+      "bstar": {"type": "number", "unit": ""},
+      "meanMotionDot": {"type": "number", "unit": ""},
+      "meanMotionDdot": {"type": "number", "unit": ""},
+      "ephemerisType": {"type": "number", "unit": ""},
+      "classification": {"type": "string", "unit": ""},
+      "elementSetNo": {"type": "number", "unit": ""},
+      "revAtEpoch": {"type": "number", "unit": ""}
+    }
+  },
+  "celestrak.gps-ops": {
+    "source": "celestrak.gps-ops",
+    "class": "step",
+    "orbit": true,
+    "fields": {
+      "name": {"type": "string", "unit": ""},
+      "objectId": {"type": "string", "unit": ""},
+      "noradId": {"type": "string", "unit": ""},
+      "epoch": {"type": "string", "unit": "ISO 8601 UTC"},
+      "meanMotion": {"type": "number", "unit": "rev/day"},
+      "eccentricity": {"type": "number", "unit": ""},
+      "inclination": {"type": "number", "unit": "deg"},
+      "raan": {"type": "number", "unit": "deg"},
+      "argPericenter": {"type": "number", "unit": "deg"},
+      "meanAnomaly": {"type": "number", "unit": "deg"},
+      "bstar": {"type": "number", "unit": ""},
+      "meanMotionDot": {"type": "number", "unit": ""},
+      "meanMotionDdot": {"type": "number", "unit": ""},
+      "ephemerisType": {"type": "number", "unit": ""},
+      "classification": {"type": "string", "unit": ""},
+      "elementSetNo": {"type": "number", "unit": ""},
+      "revAtEpoch": {"type": "number", "unit": ""}
+    }
+  },
+  "celestrak.visual": {
+    "source": "celestrak.visual",
+    "class": "step",
+    "orbit": true,
+    "fields": {
+      "name": {"type": "string", "unit": ""},
+      "objectId": {"type": "string", "unit": ""},
+      "noradId": {"type": "string", "unit": ""},
+      "epoch": {"type": "string", "unit": "ISO 8601 UTC"},
+      "meanMotion": {"type": "number", "unit": "rev/day"},
+      "eccentricity": {"type": "number", "unit": ""},
+      "inclination": {"type": "number", "unit": "deg"},
+      "raan": {"type": "number", "unit": "deg"},
+      "argPericenter": {"type": "number", "unit": "deg"},
+      "meanAnomaly": {"type": "number", "unit": "deg"},
+      "bstar": {"type": "number", "unit": ""},
+      "meanMotionDot": {"type": "number", "unit": ""},
+      "meanMotionDdot": {"type": "number", "unit": ""},
+      "ephemerisType": {"type": "number", "unit": ""},
+      "classification": {"type": "string", "unit": ""},
+      "elementSetNo": {"type": "number", "unit": ""},
+      "revAtEpoch": {"type": "number", "unit": ""}
+    }
+  },
+  "celestrak.cosmos-2251-debris": {
+    "source": "celestrak.cosmos-2251-debris",
+    "class": "step",
+    "orbit": true,
+    "fields": {
+      "name": {"type": "string", "unit": ""},
+      "objectId": {"type": "string", "unit": ""},
+      "noradId": {"type": "string", "unit": ""},
+      "epoch": {"type": "string", "unit": "ISO 8601 UTC"},
+      "meanMotion": {"type": "number", "unit": "rev/day"},
+      "eccentricity": {"type": "number", "unit": ""},
+      "inclination": {"type": "number", "unit": "deg"},
+      "raan": {"type": "number", "unit": "deg"},
+      "argPericenter": {"type": "number", "unit": "deg"},
+      "meanAnomaly": {"type": "number", "unit": "deg"},
+      "bstar": {"type": "number", "unit": ""},
+      "meanMotionDot": {"type": "number", "unit": ""},
+      "meanMotionDdot": {"type": "number", "unit": ""},
+      "ephemerisType": {"type": "number", "unit": ""},
+      "classification": {"type": "string", "unit": ""},
+      "elementSetNo": {"type": "number", "unit": ""},
+      "revAtEpoch": {"type": "number", "unit": ""}
+    }
+  },
+  "swpc.kp": {
+    "source": "swpc.kp",
+    "class": "random-walk",
+    "orbit": false,
+    "fields": {
+      "kp": {"type": "number", "unit": "0–9"},
+      "kpEstimated": {"type": "number", "unit": "0–9"},
+      "timeTag": {"type": "string", "unit": "ISO 8601 UTC"}
+    }
+  },
+  "swpc.wind": {
+    "source": "swpc.wind",
+    "class": "random-walk",
+    "orbit": false,
+    "fields": {
+      "speed": {"type": "number", "unit": "km/s"},
+      "density": {"type": "number", "unit": "p/cm³"},
+      "temperature": {"type": "number", "unit": "K"},
+      "spacecraft": {"type": "string", "unit": ""},
+      "timeTag": {"type": "string", "unit": "ISO 8601 UTC"}
+    }
+  },
+  "swpc.mag": {
+    "source": "swpc.mag",
+    "class": "random-walk",
+    "orbit": false,
+    "fields": {
+      "bt": {"type": "number", "unit": "nT"},
+      "bz": {"type": "number", "unit": "nT"},
+      "spacecraft": {"type": "string", "unit": ""},
+      "timeTag": {"type": "string", "unit": "ISO 8601 UTC"}
+    }
+  },
+  "jpl.cad": {
+    "source": "jpl.cad",
+    "class": "step",
+    "orbit": false,
+    "fields": {
+      "des": {"type": "string", "unit": ""},
+      "closeApproach": {"type": "string", "unit": "TDB calendar date"},
+      "distAu": {"type": "number", "unit": "au"},
+      "distLD": {"type": "number", "unit": "lunar distances"},
+      "vRel": {"type": "number", "unit": "km/s"},
+      "vInf": {"type": "number", "unit": "km/s"},
+      "h": {"type": "number", "unit": "mag"}
+    }
+  },
+  "jpl.scout": {
+    "source": "jpl.scout",
+    "class": "step",
+    "orbit": false,
+    "fields": {
+      "objectName": {"type": "string", "unit": ""},
+      "neoScore": {"type": "number", "unit": "0–100"},
+      "phaScore": {"type": "number", "unit": "0–100"},
+      "nObs": {"type": "number", "unit": ""},
+      "arc": {"type": "number", "unit": "days"},
+      "h": {"type": "number", "unit": "mag"},
+      "vInf": {"type": "number", "unit": "km/s"},
+      "rating": {"type": "number", "unit": ""},
+      "lastRun": {"type": "string", "unit": ""}
+    }
+  },
+  "ll2.upcoming": {
+    "source": "ll2.upcoming",
+    "class": "step",
+    "orbit": false,
+    "fields": {
+      "name": {"type": "string", "unit": ""},
+      "net": {"type": "string", "unit": ""},
+      "status": {"type": "string", "unit": ""},
+      "provider": {"type": "string", "unit": ""},
+      "padLat": {"type": "number", "unit": "deg"},
+      "padLon": {"type": "number", "unit": "deg"}
+    }
+  }
+}
