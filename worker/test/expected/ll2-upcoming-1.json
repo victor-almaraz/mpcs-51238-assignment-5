@@ -1,0 +1,132 @@
+[
+ {
+  "id": "ll2.upcoming:20d5676e-111b-40e3-8923-b218c3665ca2",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "GSLV Mk II | IRNSS-1L (NVS-03)",
+   "net": "2026-10-30T18:21:00Z",
+   "status": "Go",
+   "provider": "Indian Space Research Organization",
+   "padLat": 13.7199,
+   "padLon": 80.2304
+  }
+ },
+ {
+  "id": "ll2.upcoming:57ce0a39-d035-4f16-a418-bd6108f78199",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Falcon 9 Block 5 | Starlink Group 15-18",
+   "net": "2026-10-31T03:48:00Z",
+   "status": "Go",
+   "provider": "SpaceX",
+   "padLat": 34.632,
+   "padLon": -120.611
+  }
+ },
+ {
+  "id": "ll2.upcoming:426bd2a5-02dd-4fbd-9f4d-2b8439c3a1ff",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Electron | The Sea God Surveys (iQPS Launch 9)",
+   "net": "2026-11-02T08:45:00Z",
+   "status": "TBC",
+   "provider": "Rocket Lab",
+   "padLat": -39.260881,
+   "padLon": 177.865826
+  }
+ },
+ {
+  "id": "ll2.upcoming:f3f201cd-0ff9-4ff7-9aaa-1d22c399c75a",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Kinetica 2 | SpaceSail Polar Group TBD?",
+   "net": "2026-11-03T00:10:00Z",
+   "status": "Go",
+   "provider": "CAS Space",
+   "padLat": 40.81748,
+   "padLon": 100.21939
+  }
+ },
+ {
+  "id": "ll2.upcoming:54d471e8-695c-4fa7-a3cf-dbd8b389e8ae",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Falcon 9 Block 5 | USSF-432",
+   "net": "2026-11-03T01:42:00Z",
+   "status": "Go",
+   "provider": "SpaceX",
+   "padLat": 34.632,
+   "padLon": -120.611
+  }
+ },
+ {
+  "id": "ll2.upcoming:9e27a1ed-e81a-4918-b32b-0380cf3a9f8f",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Mir | Demo Flight",
+   "net": "2026-11-04T05:00:00Z",
+   "status": "TBC",
+   "provider": "Agency for Defense Development",
+   "padLat": 33.216667,
+   "padLon": 126.366667
+  }
+ },
+ {
+  "id": "ll2.upcoming:e91d1da2-819b-4523-95bf-39ac7daa871d",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Ceres-2 | Unknown Payload",
+   "net": "2026-11-04T21:00:00Z",
+   "status": "TBC",
+   "provider": "Galactic Energy",
+   "padLat": 40.969117,
+   "padLon": 100.343333
+  }
+ },
+ {
+  "id": "ll2.upcoming:a2423132-f965-423f-8b03-6891b775dc54",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Long March 12 | SatNet LEO Group TBD?",
+   "net": "2026-11-05T20:00:00Z",
+   "status": "TBC",
+   "provider": "China Aerospace Science and Technology Corporation",
+   "padLat": 19.59755,
+   "padLon": 110.936481
+  }
+ },
+ {
+  "id": "ll2.upcoming:3cdb9dee-b5cb-406c-bbd1-06a219930fb7",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Falcon 9 Block 5 | Starlink Group 15-21",
+   "net": "2026-11-06T02:21:00Z",
+   "status": "Go",
+   "provider": "SpaceX",
+   "padLat": 34.632,
+   "padLon": -120.611
+  }
+ },
+ {
+  "id": "ll2.upcoming:db3500ac-965b-4ad8-b417-cb8d8d005586",
+  "source": "ll2.upcoming",
+  "group": "ll2.upcoming",
+  "fields": {
+   "name": "Electron | The Mountain God Rises (iQPS Launch 10)",
+   "net": "2026-11-10T00:00:00Z",
+   "status": "TBD",
+   "provider": "Rocket Lab",
+   "padLat": -39.260881,
+   "padLon": 177.865826
+  }
+ }
+]

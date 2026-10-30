@@ -1,0 +1,12 @@
+[
+ {
+  "id": "swpc.kp:planetary",
+  "source": "swpc.kp",
+  "group": "swpc.kp",
+  "fields": {
+   "kp": 1,
+   "kpEstimated": 0.67,
+   "timeTag": "2026-10-30T02:29:00.000Z"
+  }
+ }
+]

@@ -1,0 +1,14 @@
+[
+ {
+  "id": "swpc.wind:l1",
+  "source": "swpc.wind",
+  "group": "swpc.wind",
+  "fields": {
+   "speed": 314.7,
+   "density": 1.61,
+   "temperature": 31914,
+   "spacecraft": "SOLAR1",
+   "timeTag": "2026-10-30T02:31:00.000Z"
+  }
+ }
+]

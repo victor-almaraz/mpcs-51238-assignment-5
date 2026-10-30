@@ -1,0 +1,114 @@
+[
+ {
+  "id": "jpl.cad:2025 UK9|2026-Oct-31 02:35",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2025 UK9",
+   "closeApproach": "2026-Oct-31 02:35",
+   "distAu": 0.0021032915876806,
+   "distLD": 0.8185379871776591,
+   "vRel": 7.83419285217263,
+   "vInf": 7.67078545793123,
+   "h": 29.83
+  }
+ },
+ {
+  "id": "jpl.cad:2021 VC4|2026-Nov-03 17:30",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2021 VC4",
+   "closeApproach": "2026-Nov-03 17:30",
+   "distAu": 0.0153190362722433,
+   "distLD": 5.961709346068925,
+   "vRel": 11.1747381789748,
+   "vInf": 11.1591625236854,
+   "h": 26.88
+  }
+ },
+ {
+  "id": "jpl.cad:2015 VH65|2026-Nov-10 00:24",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2015 VH65",
+   "closeApproach": "2026-Nov-10 00:24",
+   "distAu": 0.0249087786115373,
+   "distLD": 9.693749372251972,
+   "vRel": 7.97537698967337,
+   "vInf": 7.96195322442499,
+   "h": 27.7
+  }
+ },
+ {
+  "id": "jpl.cad:2023 VF3|2026-Nov-11 08:45",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2023 VF3",
+   "closeApproach": "2026-Nov-11 08:45",
+   "distAu": 0.0216543559130317,
+   "distLD": 8.427225690674547,
+   "vRel": 8.83920587644142,
+   "vInf": 8.82527442976536,
+   "h": 26.38
+  }
+ },
+ {
+  "id": "jpl.cad:2019 XF2|2026-Dec-04 00:35",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2019 XF2",
+   "closeApproach": "2026-Dec-04 00:35",
+   "distAu": 0.00795386356544704,
+   "distLD": 3.0954050837650247,
+   "vRel": 10.2034308257869,
+   "vInf": 10.1705465413561,
+   "h": 27.1
+  }
+ },
+ {
+  "id": "jpl.cad:2010 VQ|2026-Dec-12 04:55",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2010 VQ",
+   "closeApproach": "2026-Dec-12 04:55",
+   "distAu": 0.011715191719348,
+   "distLD": 4.559201161418661,
+   "vRel": 4.29956615577849,
+   "vInf": 4.24633879976312,
+   "h": 27.72
+  }
+ },
+ {
+  "id": "jpl.cad:2025 XN6|2026-Dec-12 22:26",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2025 XN6",
+   "closeApproach": "2026-Dec-12 22:26",
+   "distAu": 0.0177433448411245,
+   "distLD": 6.905177511820423,
+   "vRel": 12.2255754751232,
+   "vInf": 12.2132862107838,
+   "h": 29.2
+  }
+ },
+ {
+  "id": "jpl.cad:2026 QQ8|2026-Dec-13 13:41",
+  "source": "jpl.cad",
+  "group": "jpl.cad",
+  "fields": {
+   "des": "2026 QQ8",
+   "closeApproach": "2026-Dec-13 13:41",
+   "distAu": 0.00903698639175978,
+   "distLD": 3.5169239940811536,
+   "vRel": 0.796697965073278,
+   "vInf": 0.212236870822657,
+   "h": 31.367
+  }
+ }
+]

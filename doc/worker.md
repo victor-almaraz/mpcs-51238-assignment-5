@@ -20,6 +20,7 @@ On each invocation, fetch every due source, normalize the response, write only c
 supabase/functions/harvest/   deployed Edge Function (Deno)
   index.ts                    Deno.serve entry: auth check, secrets, client, background tick
   sources.json                source registry (sources.md)
+  config.js                   read secrets and environment, build the User-Agent
   registry.js                 load and validate the registry
   scheduler.js                due computation, per-host grouping, failure policies
   fetch.js                    HTTP GET with User-Agent and timeout
@@ -42,7 +43,7 @@ Modules other than `index.ts` use only APIs that Node.js 24 and Deno share (`fet
 - `pg_cron` job `harvest` runs every minute and calls `net.http_post` on `/functions/v1/harvest` with `Authorization: Bearer <HARVEST_TOKEN>`, read from Vault (`database.md`, Harvest schedule).
 - The function checks the token, answers HTTP 202 at once, and runs the tick in `EdgeRuntime.waitUntil`. `pg_net`'s request timeout therefore never cuts a tick short.
 - A tick loads `source_status`, selects due entries, and claims each one by a conditional update of `last_attempt_at` (compare-and-set on its previous value). An entry that another overlapping invocation claimed first is skipped.
-- A registry entry is due when it is enabled, listed in `SOURCES_ENABLED` (when set), not halted, `now ≥ next_attempt_at` (when set), and `now − last_attempt_at ≥ intervalSec − 15 s`. The 15 s slack absorbs cron jitter so that 60 s sources run every minute.
+- A registry entry is due when it is enabled, listed in `SOURCES_ENABLED` (when set), not halted, `now ≥ next_attempt_at` (when set), and `now − last_attempt_at ≥ intervalSec − 15 s`. The 15 s slack absorbs cron jitter so that 60 s sources run every minute. Entries with policy `halt` (CelesTrak) also require `now − last_success_at ≥ intervalSec`, without slack.
 - Due entries on the same host run one after another; different hosts run in parallel.
 - A tick ends within 120 s. A request still open at that point is aborted and recorded as a timeout.
 - Edge Function limits: 2 s CPU per invocation (I/O wait excluded), 150 s wall clock on the Free plan, 256 MB memory.

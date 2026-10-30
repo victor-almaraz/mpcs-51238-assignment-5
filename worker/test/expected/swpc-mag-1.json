@@ -1,0 +1,13 @@
+[
+ {
+  "id": "swpc.mag:l1",
+  "source": "swpc.mag",
+  "group": "swpc.mag",
+  "fields": {
+   "bt": 4.55,
+   "bz": -0.31,
+   "spacecraft": "SOLAR1",
+   "timeTag": "2026-10-30T02:24:00.000Z"
+  }
+ }
+]
