@@ -12,7 +12,8 @@ Routes, screens and their states, IDE layout patterns, the status bar, command p
 ## Routes
 | Route | Access | Screen |
 |---|---|---|
-| `/` | Public | Sign-in and sign-up |
+| `/` | Public | Landing page |
+| `/sign-in`, `/sign-up` | Public | Sign-in and sign-up |
 | `/listen` | Public | The `station-chord` starter in run mode, no account |
 | `/projects` | Signed in | Projects list |
 | `/projects/[id]` | Owner | Editor |
@@ -22,8 +23,32 @@ Routes, screens and their states, IDE layout patterns, the status bar, command p
 | `/learn`, `/learn/[slug]` | Public | User guide (`guide.md`) |
 | `/try` | Public | Editor with an unsaved example from the guide (`guide.md`) |
 
-## Sign-in (`/`)
-- Single column: the name `Sphärenmusik`, one sentence describing the piece, Clerk `<SignIn />` (with a link to sign-up), a "Listen without an account" link to `/listen`, and a "Learn the piece script" link to `/learn`.
+## Landing (`/`)
+Explains the idea behind the piece and leads to listening, composing and learning.
+
+- Copy: `content/landing.md`, rendered at build time with the guide pipeline (`guide.md`, Rendering). The front matter holds `title` and `description` for page metadata. Each `##` heading opens one `<section>` labelled by that heading.
+- Sections, in order:
+
+| Section | Heading | Content | Visual |
+|---|---|---|---|
+| Hero | `# Sphärenmusik` | What the name means; one sentence on what the piece does | Live orbit view: `celestrak.stations` propagated by the SGP4 worker on the `earth` projection, slow and without flashes; static with reduced motion |
+| Actions | | Listen now (`/listen`), Start composing (`/sign-in`; Open projects when signed in), Learn the piece script (`/learn`) | Buttons |
+| Live strip | | Kp, solar wind speed, stations in orbit, next launch name and time, each with its freshness glyph and label | Monospace strip, status-bar style |
+| Spheres | The music of the spheres | Pythagorean ratios; Plato, Boethius and Kepler; the physics caveat | A string divided at 2:1, 3:2 and 4:3, drawn as SVG with a text alternative |
+| Quadrivium | Four sister sciences | Plato's "sister sciences", Nicomachus's division, Boethius's term, the seven liberal arts | The division as a real 2 × 2 table styled as a grid |
+| App | What Sphärenmusik does | The four arts in the app; four kinds of sky motion; the ISS twenty octaves up | Table of sky motion to musical gesture |
+| How | How it works | Four-step pipeline and the five-line script from `first-piece` | Code block in the editor theme; actions repeated, with Your first piece (`/learn/first-piece`) in place of Learn |
+| Honesty | What is real | Live data, composed mapping, no claim of sound in the sky | None |
+| Reading | Further reading | Primary sources and one sourcebook | List |
+
+- The live strip reads `sky_objects` and `source_status` by REST through the publishable key on load and every 60 s; it opens no Realtime channel, so landing visitors use no Realtime messages. States: loading (`…` with "connecting"), fresh, stale and down as in States; a failed read shows "Live data unavailable" and keeps the rest of the page.
+- The landing page starts no audio and creates no `AudioContext`. Sound starts only on `/listen` after a click.
+- Visual safety applies (`visuals.md`): the orbit view has no flashes, honors reduced motion and pauses when the tab is hidden.
+- Signed-in visitors see the same page with Open projects in place of Start composing; there is no redirect.
+- States: the copy is static, so the page has no loading state apart from the live strip and the orbit view, which shows a static map until positions arrive.
+
+## Sign-in (`/sign-in`)
+- Single column: the name `Sphärenmusik`, Clerk `<SignIn />` (with a link to sign-up), a "Listen without an account" link to `/listen`, and a "Learn the piece script" link to `/learn`.
 - Signed-in visitors are redirected to `/projects`.
 - States: loading (Clerk component placeholder), error (Clerk inline error).
 

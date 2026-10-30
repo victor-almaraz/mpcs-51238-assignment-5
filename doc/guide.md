@@ -59,7 +59,7 @@ Render the guide's Markdown pages and make every example runnable in one click.
 | `F1` in the editor | `/learn/reference` |
 | Problems panel | Each problem links to `/learn/troubleshooting#<code>` |
 | Sky browser | Each group header links to `/learn/sky-data` |
-| Sign-in screen | "Learn the piece script" → `/learn` |
+| Landing page and sign-in screen | "Learn the piece script" → `/learn` |
 | Starter project scripts | Header comments name the guide pages that explain them |
 | Projects empty state | "Learning the script? Start with Your first piece" → `/learn/first-piece` |
 

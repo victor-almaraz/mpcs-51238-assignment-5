@@ -83,6 +83,12 @@ Kernel and model tests run in Node without Web Audio. Audio-rate route tests use
 
 Table checks parse the Markdown tables; they compare values, not formatting.
 
+## Landing tests
+`tests/landing.test.js` reads `content/landing.md` and asserts:
+1. Front matter has `title` and `description`, and the page has one `h1` and the section headings listed in `ui.md`, Landing.
+2. The script in "How it works" equals the first runnable example of `first-piece.md`, so it builds and type-checks under the guide tests.
+3. The ISS figures (93 minutes, twenty octaves, about 188 Hz) agree with the ISS element set in `worker/test/fixtures/celestrak-stations-1.json` within 1 minute and 1 Hz.
+
 ## Starter tests
 | Area | Assertions |
 |---|---|
