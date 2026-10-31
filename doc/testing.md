@@ -102,7 +102,11 @@ Table checks parse the Markdown tables; they compare values, not formatting.
 | Seeding (`supabase/tests/seed_starters.sql`) | First call inserts every starter with its subscriptions and sets `starters_version`; a second call inserts nothing; a deleted starter is not recreated at the same version; a higher version adds only missing slugs; one user's call cannot insert rows for another user |
 
 ## Trace-replay tests
-`tests/trace-replay.test.js` reads a console export (`.jsonl`), feeds its `CHANGE` records through the binding runtime with fake instruments, and compares the produced `AUDIO` records with those in the file. Export a trace from a session that behaved as intended and commit it under `tests/fixtures/traces/`.
+`tests/trace-replay.test.js` reads a console export (`.jsonl`), feeds its `CHANGE` records through the binding runtime with fake instruments, and compares the produced `AUDIO` records with those in the file. Export a trace from a session that behaved as intended and commit it under `tests/fixtures/traces/` with the running IR as `<name>.ir.json`. The replay stops the runtime at the end only when the export contains Stop's noteOffs (`traceId` null), so exports taken while the piece plays and after Stop both compare.
+
+| Fixture | Session |
+|---|---|
+| `first-piece-synthetic` | `/try` with starter `first-piece` in headless Chrome: three `celestrak.stations` objects entered through the synthetic panel, one update raising `meanMotion` 1.5× (pitch +7 semitones), one exit; exported while playing. Replace or add exports from live sessions. |
 
 ## Manual checklist
 1. The `harvest` function logs show no errors for 10 minutes, and `runs` gains rows for each source on schedule.

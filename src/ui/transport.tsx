@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { levelLabel } from '@/src/ui/status.js';
 import { PHOTOSENSITIVITY_WARNING, VOLUME_WARNING } from './safety-text';
 import type { PieceSession, SessionState } from './hooks';
+import { useDialogFocus } from './use-dialog-focus';
 
 /** Start notice dismissal lasts for the session (tab) and is never stored. */
 let startNoticeDismissed = false;
@@ -31,10 +32,12 @@ export function useStartNotice(onStart: () => void) {
 
 function StartNotice({ onStart, onCancel }: { onStart: () => void; onCancel: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const trap = useDialogFocus(box);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}>
-      <div role="alertdialog" aria-modal="true" aria-labelledby="start-notice-title" aria-describedby="start-notice-text" className="max-w-sm rounded-sm border border-line bg-panel p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } else trap(e); }}>
+      <div ref={box} role="alertdialog" aria-modal="true" aria-labelledby="start-notice-title" aria-describedby="start-notice-text" className="max-w-sm rounded-sm border border-line bg-panel p-4">
         <h2 id="start-notice-title" className="mb-2 font-semibold">Before you start</h2>
         <div id="start-notice-text" className="mb-4 space-y-2 text-sm">
           <p>{VOLUME_WARNING}</p>

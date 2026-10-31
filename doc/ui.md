@@ -8,6 +8,8 @@ Routes, screens and their states, IDE layout patterns, the status bar, command p
 - Type: system monospace for code, data, the console and the status bar; system sans-serif for chrome.
 - Colour: neutral greys in dark (default) and light themes. One accent colour is reserved for live state (fresh indicators, playing transport). Stale uses amber, down uses red; each state also has a text label and a distinct glyph, so colour is never the only signal.
 - Tokens are CSS variables in `app/globals.css` mapped through Tailwind v4 `@theme`.
+- Modal dialogs (the start notice, the command palette) keep Tab and Shift-Tab inside the dialog and return focus to the element that opened them when they close.
+- The preview and run mode always use the dark tokens (`data-theme="dark"` on their root), because the picture is drawn on black; text on them keeps WCAG AA contrast in either theme.
 
 ## Routes
 | Route | Access | Screen |

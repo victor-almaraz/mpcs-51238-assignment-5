@@ -92,7 +92,7 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
   const canRun = !!session?.ir && state.ready && !problem;
 
   return (
-    <div className={`fixed inset-0 bg-black ${kiosk ? 'cursor-none' : ''}`}>
+    <div data-theme="dark" className={`fixed inset-0 bg-black text-fg ${kiosk ? 'cursor-none' : ''}`}>
       <div className="absolute inset-0">
         <Preview session={session} state={state} installation className="h-full w-full" prompt={kiosk ? '' : 'Press Run to start sound'} />
       </div>

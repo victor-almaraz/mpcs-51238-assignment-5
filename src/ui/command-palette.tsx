@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fuzzyFilter } from '@/src/ui/palette.js';
 import { formatShortcut } from '@/src/ui/shortcuts.js';
+import { useDialogFocus } from './use-dialog-focus';
 
 export type PaletteItem = { id: string; title: string; detail?: string; shortcut?: string };
 export type PalettePage = {
@@ -21,6 +22,8 @@ export function CommandPalette({ open, root, onClose, isMac }: { open: boolean; 
   const [items, setItems] = useState<PaletteItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const trap = useDialogFocus(box);
   const page = stack[stack.length - 1];
 
   useEffect(() => {
@@ -71,7 +74,7 @@ export function CommandPalette({ open, root, onClose, isMac }: { open: boolean; 
 
   return (
     <div className="fixed inset-0 z-50 flex justify-center bg-black/40 pt-24" onMouseDown={onClose}>
-      <div role="dialog" aria-modal="true" aria-label="Command palette" className="h-fit w-full max-w-lg rounded-sm border border-line bg-panel font-mono text-sm" onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={box} onKeyDown={trap} role="dialog" aria-modal="true" aria-label="Command palette" className="h-fit w-full max-w-lg rounded-sm border border-line bg-panel font-mono text-sm" onMouseDown={(e) => e.stopPropagation()}>
         <input
           ref={input}
           value={query}

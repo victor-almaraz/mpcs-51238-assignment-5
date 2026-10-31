@@ -73,7 +73,9 @@ export function replay(records, ir) {
     }
   }
   clock.advance(1000);
-  rt.stop();
+  // Stop only if the session stopped before its export: Stop releases voices with traceId null.
+  // An export taken while the piece plays has no such noteOffs.
+  if (records.some((r) => r.stage === 'AUDIO' && r.event === 'noteOff' && r.traceId == null)) rt.stop();
   return trace.records;
 }
 

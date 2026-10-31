@@ -1,0 +1,63 @@
+{
+  "irVersion": 1,
+  "seed": 1,
+  "tempo": 120,
+  "scale": {
+    "root": "C",
+    "mode": "chromatic"
+  },
+  "instruments": [
+    {
+      "id": "i0",
+      "type": "additive",
+      "volumeDb": -12,
+      "octave": 0,
+      "cents": 0,
+      "params": {
+        "attack": 1.5,
+        "release": 4
+      },
+      "fx": []
+    }
+  ],
+  "master": {
+    "fx": []
+  },
+  "lfos": [],
+  "mods": [],
+  "bindings": [
+    {
+      "id": "b0",
+      "kind": "voices",
+      "inst": "i0",
+      "group": "celestrak.stations",
+      "select": null,
+      "pitch": {
+        "op": "octaveInto",
+        "args": [
+          {
+            "op": "field",
+            "args": [
+              "meanMotion"
+            ]
+          },
+          110,
+          440
+        ]
+      },
+      "velocity": 64,
+      "pan": 0,
+      "voiceMods": {}
+    }
+  ],
+  "reactions": [],
+  "view": {
+    "projection": "orbital",
+    "background": "#000000"
+  },
+  "layers": [],
+  "groups": [
+    "celestrak.stations"
+  ],
+  "localOnly": false
+}

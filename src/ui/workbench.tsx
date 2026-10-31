@@ -29,6 +29,7 @@ import { SkyBrowser } from './sky-browser';
 import { StatusBar } from './status-bar';
 import { Notices, Transport, useStartNotice } from './transport';
 import { createProject, listProjects } from './project-actions';
+import { useHydrated } from './use-hydrated';
 
 export type Template = { slug: string; name: string; source: string; ir: unknown };
 
@@ -62,6 +63,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
   const search = useSearchParams();
   const dev = search.get('dev') === '1';
   const { client } = useSupabase();
+  const hydrated = useHydrated();
   const { settings } = useSettings();
   const { session, state } = usePieceSession();
   const isMac = useIsMac();
@@ -289,7 +291,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
         <span className="flex-1" />
         {mode === 'try' && (signedIn
           ? <button type="button" className={btn} onClick={saveAsProject} disabled={savingAs || !client}>{savingAs ? 'Saving…' : 'Save as project'}</button>
-          : <Link className={btn} href={`/sign-in?redirect_url=${encodeURIComponent(typeof window === 'undefined' ? '/try' : window.location.pathname + window.location.search)}`}>Sign in to save</Link>)}
+          : <Link className={btn} href={`/sign-in?redirect_url=${encodeURIComponent(hydrated ? window.location.pathname + window.location.search : '/try')}`}>Sign in to save</Link>)}
         {mode === 'project' && project && <Link className={btn} href={`/projects/${project.id}/run`} onClick={() => { saveNow(); }}>Run fullscreen</Link>}
         <button type="button" className={btn} onClick={() => setPaletteOpen(true)} title="Command palette (Mod-Shift-P, Mod-K)">Commands</button>
       </header>

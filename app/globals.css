@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
-/* Design tokens (doc/ui.md, Style). Dark is the default theme. */
-:root {
+/* Design tokens (doc/ui.md, Style). Dark is the default theme; [data-theme="dark"] re-applies it
+   inside a light page (the preview and run mode, drawn on black). */
+:root, [data-theme="dark"] {
   --bg: #1b1d1f;
   --panel: #222426;
   --panel-2: #2a2c2f;
@@ -28,7 +29,8 @@
   color-scheme: light;
 }
 
-@theme {
+/* inline: utilities read the tokens where they are used, so a [data-theme] scope takes effect. */
+@theme inline {
   --color-bg: var(--bg);
   --color-panel: var(--panel);
   --color-panel-2: var(--panel-2);

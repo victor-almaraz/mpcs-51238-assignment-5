@@ -19,7 +19,7 @@ export const Preview = forwardRef<PreviewHandle, { session: PieceSession | null;
     }, [session, installation]);
     useEffect(() => { if (state.audio === 'playing') setStarted(true); }, [state.audio]);
     return (
-      <div className={`relative min-h-0 overflow-hidden bg-black ${className}`}>
+      <div data-theme="dark" className={`relative min-h-0 overflow-hidden bg-black text-fg ${className}`}>
         <div ref={box} tabIndex={-1} className="absolute inset-0 outline-none [&_.visual-summary]:p-3 [&_.visual-summary]:font-mono [&_.visual-summary]:text-xs [&_.visual-summary]:text-fg" aria-label="Preview" />
         {!started && (prompt || !state.ready) && (
           <div className={`pointer-events-none absolute inset-x-0 flex justify-center ${installation ? 'bottom-12' : 'bottom-3'}`}>

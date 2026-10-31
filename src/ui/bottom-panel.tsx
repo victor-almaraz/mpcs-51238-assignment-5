@@ -10,6 +10,7 @@ import {
   ConsoleControls, EffectsPanel, EventsPanel, ModulationPanel, ProblemsPanel, SourcesPanel, TracePanel, VoicesPanel,
 } from './console-panels';
 import { ReplayControls } from './replay-controls';
+import { useHydrated } from './use-hydrated';
 import { useFreshness, useTraceRecords, type PieceSession, type Problem, type SessionState } from './hooks';
 
 export type BottomTab = 'console' | 'problems' | 'ir' | 'trace';
@@ -28,6 +29,7 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
   const [selected, setSelected] = useState<string | null>(null);
   const records = useTraceRecords(paused);
   const freshness = useFreshness(session?.sky ?? null);
+  const hydrated = useHydrated();
   const errors = problems.filter((p) => p.severity === 'error').length;
   const warnings = problems.length - errors;
   const select = (id: string) => { setSelected(id); };
@@ -55,7 +57,7 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
                 ))}
               </div>
               <ConsoleControls paused={paused} onPause={setPaused} />
-              <ReplayControls session={session} mode={state.mode} replay={state.replay} defaultSpeed={replaySpeed} disabled={!client} />
+              <ReplayControls session={session} mode={state.mode} replay={state.replay} defaultSpeed={replaySpeed} disabled={!hydrated || !client} />
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
               {sub === 'Sources' && <SourcesPanel client={client} freshness={freshness} timeZone={timeZone} />}
