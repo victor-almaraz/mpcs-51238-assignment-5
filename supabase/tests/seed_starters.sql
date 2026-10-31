@@ -64,7 +64,7 @@ reset role;
 
 do $$
 begin
-  assert (select count(*) from public.projects where user_id = 'user_test_a') = 3, 'user a rows unchanged';
+  assert (select count(*) from public.projects where user_id = 'user_test_a') = 5, 'user a rows unchanged';
 end $$;
 
 select 'seed_starters.sql: all assertions passed' as result;

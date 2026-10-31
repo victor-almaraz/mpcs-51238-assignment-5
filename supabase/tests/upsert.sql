@@ -38,8 +38,9 @@ begin
   select count(*) into n from public.upsert_sky_objects('test.src', 'test.group', '[]', false);
   assert n = 0, 'partial: no exits';
 
-  -- re-enter
-  select count(*), max(out_kind) into n, k from public.upsert_sky_objects('test.src', 'test.group', rows_ab, true);
+  -- re-enter: a is unchanged, b returns
+  select count(*), max(out_kind) into n, k from public.upsert_sky_objects('test.src', 'test.group',
+    '[{"id":"test.group:a","fields":{"x":3},"hash":"h1b"},{"id":"test.group:b","fields":{"x":2},"hash":"h2"}]', true);
   assert n = 1 and k = 'enter', format('re-enter: got %s %s', n, k);
   assert (select removed_at is null from public.sky_objects where id = 'test.group:b'), 're-enter: removed_at cleared';
 
