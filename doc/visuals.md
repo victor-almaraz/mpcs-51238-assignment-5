@@ -206,6 +206,8 @@ Guard algorithm (`src/visual/flash-guard.js`):
 
 The flash limit is `visual.maxFlashesPerSecond` (0–3); 0 intervenes on any single transition over the flash area.
 
+Photosensitivity warning: the guard measures a 64×48 grid and cannot rule out every pattern that affects people with photosensitive epilepsy, such as fine stripes or rapid movement. Before the first Run in a session, the start notice (`audio/audio-safety.md`, Safety UI) and the installation-mode "Begin listening" button read: "Photosensitivity warning: this piece shows moving and changing light. Flashing is limited to three per second, but some patterns can still affect people with photosensitive epilepsy. If you are sensitive to light, watch with care and stop if you feel unwell."
+
 Reduced motion: when `prefers-reduced-motion: reduce` matches, or the setting forces it, trails, ring pulses, glyph fades, aurora drift and camera motion are off, and data-driven changes apply in steps no faster than 1 Hz. Concretely, `trail` and `fade` are 0, `drift` is 0, the camera does not turn, and the renderer applies new property values (from sky events and from `audio.*`) at most once per second, so ring radii driven by audio step instead of pulsing. Orbital motion of objects continues; it is not a data change.
 
 Bursts: trigger rate limits (`bindings.md`) apply to visual event effects as well.

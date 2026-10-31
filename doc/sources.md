@@ -40,7 +40,7 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 - The worker persists `last_success_at` per registry id and never fetches a group before `last_success_at + interval`, including after a restart.
 - Format: OMM JSON (`FORMAT=json`). Catalog numbers assigned from 2026-07-11 have six digits (the `stations` group already contains `101031`); the TLE format cannot represent them. `NORAD_CAT_ID` arrives as a JSON number; the normalizer stores it as a decimal string.
 - Edge Functions have no static egress IP; the address is shared with other workloads. A download of the same group by another workload from the same address can produce a 403 for this worker, which halts the source like any other non-200 response.
-- An HTTP 200 response can carry a plain-text body such as "No GP data found". The normalizer rejects any body that is not a JSON array.
+- An HTTP 200 response can carry a plain-text body such as "No GP data found". The normalizer rejects any body that is not a non-empty JSON array; an empty array would otherwise mark every object in the group as exited. `EPOCH` is parsed as UTC; a value that is not a valid timestamp is a normalize error.
 - The `active` group (over 10,000 objects) is not a registry source.
 
 | Field | OMM key | Unit |

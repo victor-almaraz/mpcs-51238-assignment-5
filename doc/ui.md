@@ -118,7 +118,7 @@ Behavior:
 - The preview fills the window. While the piece plays, chrome hides after 3 s without pointer movement; while it is stopped, chrome stays visible so the Run control and the "Press Run to start sound" prompt are on screen.
 - Overlays toggle independently: console (`C`), sounding voices (`N`), status bar (`S`).
 - `Escape` returns to the editor, which stops the piece. Panic stays available as a button in the chrome.
-- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin listening" click starts audio, and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
+- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
 - Freshness is shown in the status bar and is also audible and visible through the project's reactions.
 
 ## Settings (`/settings`)

@@ -179,3 +179,84 @@ test('requests to one host run one at a time', async () => {
   assert.equal(maxOpen, 1);
   assert.equal(store.runs.length, 3);
 });
+
+test('overlapping ticks never have two requests open to one host', async () => {
+  const cel = registry.filter((e) => e.host === 'celestrak.org');
+  assert.ok(cel.length > 1);
+  let open = 0;
+  let maxOpen = 0;
+  const fetch = async () => {
+    open++; maxOpen = Math.max(maxOpen, open);
+    await new Promise((r) => setTimeout(r, 20));
+    open--;
+    return new Response(fixture('celestrak-stations-1.json'));
+  };
+  const { store, deps } = setup({});
+  const a = tick({ ...deps, fetch, registry: cel, holder: 'a' });
+  await new Promise((r) => setTimeout(r, 25));
+  const b = tick({ ...deps, fetch, registry: cel, holder: 'b' });
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.equal(maxOpen, 1);
+  assert.deepEqual(rb.ran, []);
+  assert.equal(ra.ran.length, cel.length);
+  assert.equal(store.leases.size, 0, 'leases are released');
+});
+
+test('a CelesTrak 403 halts even when the runs insert fails', async () => {
+  const e = entry('celestrak.stations');
+  const { store, fetch, now, deps } = setup({ [e.url]: [{ status: 403, body: fixture('celestrak-403.txt') }] });
+  deps.registry = [e];
+  store.insertRun = async () => { throw new Error('insert runs: boom'); };
+  await tick(deps);
+  assert.equal(store.status.get(e.id).halted, true);
+  now.advance(86400);
+  await tick(deps);
+  assert.equal(fetch.calls.length, 1);
+});
+
+test('a CelesTrak run that never records its result halts at the next claim', async () => {
+  const e = entry('celestrak.stations');
+  const { store, log, fetch, now, deps } = setup({ [e.url]: [ok('celestrak-stations-1.json')] });
+  deps.registry = [e];
+  store.saveStatus = async () => { throw new Error('upsert source_status: boom'); };
+  await tick(deps);
+  assert.equal(fetch.calls.length, 1);
+  assert.ok(store.status.get(e.id).in_flight_at);
+  now.advance(86400);
+  await tick(deps);
+  assert.equal(fetch.calls.length, 1, 'no second fetch');
+  assert.equal(store.status.get(e.id).halted, true);
+  assert.ok(log.lines.some((l) => l.level === 'error' && l.event === 'halt'));
+});
+
+test('a CelesTrak claim within the interval is refused, even without the due check', async () => {
+  const e = entry('celestrak.stations');
+  const { store, now, deps } = setup({ [e.url]: [ok('celestrak-stations-1.json')] });
+  assert.equal(await store.claim(e.id, e.intervalSec, null, true), 'claimed');
+  await runSource(e, undefined, deps);
+  now.advance(60);
+  assert.equal(await store.claim(e.id, e.intervalSec, store.status.get(e.id).last_attempt_at, true), 'busy');
+});
+
+test('CelesTrak 200 with [] halts instead of removing the group', async () => {
+  const e = entry('celestrak.stations');
+  const { store, now, deps } = setup({ [e.url]: [ok('celestrak-stations-1.json'), { status: 200, body: '[]' }] });
+  deps.registry = [e];
+  await tick(deps);
+  now.advance(e.intervalSec);
+  await tick(deps);
+  assert.equal(store.status.get(e.id).halted, true);
+  assert.ok(store.changes.every((c) => c.kind === 'enter'));
+  assert.match(store.runs.at(-1).error, /^normalize:/);
+});
+
+test('rows that are not objects and duplicate ids are normalize errors', async () => {
+  const e = entry('celestrak.stations');
+  const one = JSON.parse(fixture('celestrak-stations-1.json'))[0];
+  for (const body of ['[null]', '[1]', JSON.stringify([one, one])]) {
+    const { store, deps } = setup({ [e.url]: [{ status: 200, body }] });
+    await runSource(e, undefined, deps);
+    assert.match(store.runs[0].error, /^normalize:/, body.slice(0, 20));
+    assert.equal(store.status.get(e.id).halted, true);
+  }
+});

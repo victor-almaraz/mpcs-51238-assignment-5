@@ -11,6 +11,7 @@ Tables, the upsert RPC, grants, row-level security (RLS), the Realtime publicati
 | `runs` | Worker | Everyone | One row per fetch |
 | `source_status` | Worker | Everyone | Schedule state and last outcome per registry id |
 | `source_samples` | Worker | Everyone | Last raw response per registry id |
+| `host_leases` | Worker (RPC) | Nobody | One lease per source host, so overlapping invocations never send two requests to one host |
 | `projects` | Owner | Owner | Script source and compiled IR |
 | `project_subscriptions` | Owner | Owner | Groups each project follows |
 | `user_settings` | Owner | Owner | Settings JSON |
@@ -64,7 +65,8 @@ create table public.source_status (
   last_ok          boolean,
   halted           boolean not null default false,
   failures         integer not null default 0,
-  next_attempt_at  timestamptz
+  next_attempt_at  timestamptz,
+  in_flight_at     timestamptz
 );
 
 create table public.source_samples (
@@ -74,12 +76,18 @@ create table public.source_samples (
   body         text not null check (length(body) <= 65536)
 );
 
+create table public.host_leases (
+  host        text primary key,
+  holder      text not null,
+  expires_at  timestamptz not null
+);
+
 create table public.projects (
   id          uuid primary key default gen_random_uuid(),
   user_id     text not null default (auth.jwt() ->> 'sub'),
   name        text not null check (length(name) between 1 and 120),
   source      text not null default '' check (length(source) <= 200000),
-  ir          jsonb,
+  ir          jsonb check (ir is null or octet_length(ir::text) <= 1000000),
   ir_version  integer not null default 1,
   local_only  boolean not null default false,
   starter_slug text,
@@ -100,7 +108,7 @@ create index project_subscriptions_user on public.project_subscriptions (user_id
 
 create table public.user_settings (
   user_id     text primary key default (auth.jwt() ->> 'sub'),
-  settings    jsonb not null default '{}',
+  settings    jsonb not null default '{}' check (octet_length(settings::text) <= 16384),
   starters_version integer not null default 0,
   updated_at  timestamptz not null default now()
 );
@@ -163,25 +171,72 @@ grant execute on function public.upsert_sky_objects(text, text, jsonb, boolean)
 `p_full` is the registry entry's `full` value.
 
 ## Claim RPC
-The worker claims a due entry before fetching it. The claim succeeds only when `last_attempt_at` still holds the value the worker read, so two overlapping invocations never fetch the same source.
+The worker claims a due entry before fetching it. The claim returns `claimed`, `busy` or `halted`.
+- `claimed` only when `last_attempt_at` still holds the value the worker read and the source is not halted, so two overlapping invocations never fetch the same source.
+- For entries with failure policy `halt` (`p_halt_policy`), the claim also requires `now() − last_success_at ≥ interval` and no open run, and sets `in_flight_at`. Every `source_status` write after the run, success or failure, clears it. The interval check in SQL holds for every caller, including `cli.js --once`.
+- A halt-policy run whose `in_flight_at` is older than 10 minutes never recorded its result (the invocation was killed, or a write failed after the fetch). The next claim sets `halted = true` and `last_ok = false`, inserts a failed `runs` row and returns `halted`. The halt therefore fails closed: losing a response never resumes fetching. The 10 minutes exceed the 150 s Edge Function wall clock.
 ```sql
 create or replace function public.claim_source(
-  p_source_id text, p_interval_sec integer, p_prev timestamptz)
+  p_source_id text, p_interval_sec integer, p_prev timestamptz, p_halt_policy boolean)
+returns text
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_since timestamptz;
+begin
+  if p_halt_policy then
+    select s.in_flight_at into v_since from public.source_status s
+    where s.source_id = p_source_id and not s.halted
+      and s.in_flight_at < now() - interval '10 minutes'
+    for update;
+    if found then
+      update public.source_status set halted = true, last_ok = false, in_flight_at = null
+      where source_id = p_source_id;
+      insert into public.runs (source_id, started_at, finished_at, ok, error)
+      values (p_source_id, v_since, now(), false, 'previous run did not record its result; halted');
+      return 'halted';
+    end if;
+  end if;
+  insert into public.source_status as s (source_id, interval_sec, last_attempt_at, in_flight_at)
+  values (p_source_id, p_interval_sec, now(), case when p_halt_policy then now() end)
+  on conflict (source_id) do update
+    set last_attempt_at = now(), interval_sec = excluded.interval_sec, in_flight_at = excluded.in_flight_at
+    where s.last_attempt_at is not distinct from p_prev and not s.halted
+      and (not p_halt_policy or (s.in_flight_at is null
+           and (s.last_success_at is null
+                or s.last_success_at <= now() - make_interval(secs => p_interval_sec))));
+  if found then return 'claimed'; end if;
+  return 'busy';
+end $$;
+revoke execute on function public.claim_source(text, integer, timestamptz, boolean)
+  from public, anon, authenticated;
+grant execute on function public.claim_source(text, integer, timestamptz, boolean) to service_role;
+```
+
+## Host lease RPC
+A tick holds a lease on each host while it runs that host's queue (`worker.md`, Invocation model). The lease expires on its own after `p_ttl_sec`, so a killed invocation releases it.
+```sql
+create or replace function public.claim_host(p_host text, p_holder text, p_ttl_sec integer)
 returns boolean
 language sql security definer set search_path = '' as $$
   with c as (
-    insert into public.source_status as s (source_id, interval_sec, last_attempt_at)
-    values (p_source_id, p_interval_sec, now())
-    on conflict (source_id) do update
-      set last_attempt_at = now(), interval_sec = excluded.interval_sec
-      where s.last_attempt_at is not distinct from p_prev and not s.halted
+    insert into public.host_leases as h (host, holder, expires_at)
+    values (p_host, p_holder, now() + make_interval(secs => p_ttl_sec))
+    on conflict (host) do update
+      set holder = excluded.holder, expires_at = excluded.expires_at
+      where h.expires_at <= now() or h.holder = excluded.holder
     returning 1
   )
   select exists (select 1 from c);
 $$;
-revoke execute on function public.claim_source(text, integer, timestamptz)
-  from public, anon, authenticated;
-grant execute on function public.claim_source(text, integer, timestamptz) to service_role;
+create or replace function public.release_host(p_host text, p_holder text)
+returns void
+language sql security definer set search_path = '' as $$
+  delete from public.host_leases where host = p_host and holder = p_holder;
+$$;
+revoke execute on function public.claim_host(text, text, integer) from public, anon, authenticated;
+revoke execute on function public.release_host(text, text) from public, anon, authenticated;
+grant execute on function public.claim_host(text, text, integer) to service_role;
+grant execute on function public.release_host(text, text) to service_role;
 ```
 
 ## Starter seeding RPC
@@ -200,14 +255,19 @@ begin
   insert into public.user_settings (user_id) values (v_user) on conflict (user_id) do nothing;
   select starters_version into v_have from public.user_settings where user_id = v_user for update;
   if v_have >= p_version then return 0; end if;
+  if jsonb_typeof(p_projects) is distinct from 'array' then
+    raise exception 'seed_starters: p_projects must be a JSON array';
+  end if;
   for r in select * from jsonb_array_elements(p_projects) loop
     insert into public.projects (user_id, name, source, ir, starter_slug)
-    values (v_user, r ->> 'name', r ->> 'source', r -> 'ir', r ->> 'slug')
+    values (v_user, r ->> 'name', coalesce(r ->> 'source', ''), r -> 'ir', r ->> 'slug')
     on conflict (user_id, starter_slug) where starter_slug is not null do nothing
     returning id into v_id;
     if v_id is not null then
       insert into public.project_subscriptions (project_id, user_id, group_key)
-      select v_id, v_user, g from jsonb_array_elements_text(r -> 'ir' -> 'groups') as g;
+      select distinct v_id, v_user, g
+      from jsonb_array_elements_text(case when jsonb_typeof(r -> 'ir' -> 'groups') = 'array'
+                                          then r -> 'ir' -> 'groups' else '[]' end) as g;
       n := n + 1;
     end if;
     v_id := null;
@@ -228,6 +288,7 @@ alter table public.changes               enable row level security;
 alter table public.runs                  enable row level security;
 alter table public.source_status         enable row level security;
 alter table public.source_samples        enable row level security;
+alter table public.host_leases           enable row level security;
 alter table public.projects              enable row level security;
 alter table public.project_subscriptions enable row level security;
 alter table public.user_settings         enable row level security;
@@ -307,7 +368,7 @@ select cron.schedule('prune-projects', '53 3 * * *',
 Rows removed by `prune-removed` already carry `removed_at`, so clients have received their exit before the delete.
 
 ## Harvest schedule
-The cron job reads the project URL and the harvest token from Vault at run time. The migration creates the job; a human stores the two Vault secrets once in the SQL editor:
+The cron job reads the project URL and the harvest token from Vault at run time. The migration creates the job; it sends nothing until a human stores the two Vault secrets once in the SQL editor:
 ```sql
 select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
 select vault.create_secret('<HARVEST_TOKEN value>', 'harvest_token');
@@ -323,6 +384,8 @@ select cron.schedule('harvest', '* * * * *', $$
                                      where name = 'harvest_token')),
     body := '{}'::jsonb,
     timeout_milliseconds := 5000)
+  where exists (select 1 from vault.decrypted_secrets where name = 'project_url')
+    and exists (select 1 from vault.decrypted_secrets where name = 'harvest_token')
 $$);
 ```
 `pg_net` writes the header to `net.http_request_queue` until the request is sent. The header carries `HARVEST_TOKEN`, which can only start a tick; it never carries the secret key.

@@ -5,6 +5,8 @@ import { byHost, isDue, onFailure, onSuccess } from './scheduler.js';
 
 /** A tick stops starting requests after this many milliseconds. */
 export const TICK_BUDGET_MS = 120_000;
+/** Host lease lifetime: the tick budget plus time for the last writes (doc/worker.md, Invocation model). */
+export const HOST_LEASE_SEC = 150;
 
 /**
  * Fetch, normalize and store one registry entry. Records exactly one `runs` row.
@@ -32,6 +34,11 @@ export async function runSource(entry, st, { store, fetch, userAgent, log, now }
       };
       const objects = normalizers[entry.normalizer](res.body, entry.normalizerArgs, ctx);
       const rows = [];
+      const seen = new Set();
+      for (const o of objects) {
+        if (seen.has(o.id)) throw new NormalizeError(`duplicate object id ${o.id}`);
+        seen.add(o.id);
+      }
       for (const o of objects) rows.push({ id: o.id, fields: o.fields, hash: await hashFields(o.fields) });
       const changed = await store.upsertObjects(entry.id, entry.group, rows, entry.full);
       rowsChanged = changed.length;
@@ -40,18 +47,18 @@ export async function runSource(entry, st, { store, fetch, userAgent, log, now }
     }
   }
 
+  // Status before the run row, so a halt is saved even if the runs insert fails.
   const finished = now();
+  const row = failure === null ? onSuccess(entry, finished) : onFailure(entry, st, finished, failure);
+  await store.saveStatus(row);
   await store.insertRun({
     source_id: entry.id, started_at: iso(started), finished_at: iso(finished),
     ok: failure === null, rows_changed: rowsChanged, http_status: res.status || null,
     error: failure?.error ?? null,
   });
   if (failure === null) {
-    await store.saveStatus(onSuccess(entry, finished));
     log.info({ source: entry.id, event: 'run', ok: true, rowsChanged, ms: finished - started });
   } else {
-    const row = onFailure(entry, st, finished, failure);
-    await store.saveStatus(row);
     if (row.halted) log.error({ source: entry.id, event: 'halt', status: res.status, error: failure.error });
     else log.warn({ source: entry.id, event: 'run', ok: false, status: res.status, error: failure.error, nextAttemptAt: row.next_attempt_at });
   }
@@ -59,8 +66,19 @@ export async function runSource(entry, st, { store, fetch, userAgent, log, now }
 }
 
 /**
- * One invocation: claim and run every due entry, one request per host at a time.
- * @param {{ registry: object[], isEnabled: (id: string) => boolean, store, fetch, userAgent: string, log, now?: () => number }} deps
+ * Claim one entry (doc/database.md, Claim RPC). Returns whether it may run.
+ * @param {object} entry @param {object | undefined} st @param {{ store, log }} deps
+ */
+export async function claimEntry(entry, st, { store, log }) {
+  const result = await store.claim(entry.id, entry.intervalSec, st?.last_attempt_at ?? null, entry.onNon200 === 'halt');
+  if (result === 'halted') log.error({ source: entry.id, event: 'halt', error: 'previous run did not record its result' });
+  return result === 'claimed';
+}
+
+/**
+ * One invocation: claim and run every due entry, one request per host at a time across
+ * overlapping invocations (each host's queue runs under a lease).
+ * @param {{ registry: object[], isEnabled: (id: string) => boolean, store, fetch, userAgent: string, log, now?: () => number, holder?: string }} deps
  * @returns {Promise<{ ran: string[], skipped: string[] }>}
  */
 export async function tick(deps) {
@@ -70,20 +88,34 @@ export async function tick(deps) {
   const due = deps.registry.filter((e) => isDue(e, status.get(e.id), now(), deps.isEnabled));
   const ran = [];
   const skipped = [];
+  const holder = deps.holder ?? crypto.randomUUID();
+  const errorText = (err) => String(err?.message ?? err);
   await Promise.all(byHost(due).map(async (entries) => {
-    for (const entry of entries) {
-      if (now() + entry.timeoutMs > deadline) { skipped.push(entry.id); continue; }
-      const st = status.get(entry.id);
-      try {
-        if (!(await deps.store.claim(entry.id, entry.intervalSec, st?.last_attempt_at ?? null))) {
-          skipped.push(entry.id);
-          continue;
+    const host = entries[0].host;
+    let leased = false;
+    try {
+      leased = await deps.store.claimHost(host, holder, HOST_LEASE_SEC);
+    } catch (err) {
+      deps.log.error({ host, event: 'tick_error', error: errorText(err) });
+    }
+    if (!leased) { skipped.push(...entries.map((e) => e.id)); return; }
+    try {
+      for (const entry of entries) {
+        if (now() + entry.timeoutMs > deadline) { skipped.push(entry.id); continue; }
+        const st = status.get(entry.id);
+        try {
+          if (!(await claimEntry(entry, st, deps))) {
+            skipped.push(entry.id);
+            continue;
+          }
+          await runSource(entry, st, { ...deps, now });
+          ran.push(entry.id);
+        } catch (err) {
+          deps.log.error({ source: entry.id, event: 'tick_error', error: errorText(err) });
         }
-        await runSource(entry, st, { ...deps, now });
-        ran.push(entry.id);
-      } catch (err) {
-        deps.log.error({ source: entry.id, event: 'tick_error', error: String(err?.message ?? err) });
       }
+    } finally {
+      await deps.store.releaseHost(host, holder).catch((err) => deps.log.error({ host, event: 'tick_error', error: errorText(err) }));
     }
   }));
   return { ran, skipped };

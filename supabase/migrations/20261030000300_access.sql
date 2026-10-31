@@ -5,6 +5,7 @@ alter table public.changes               enable row level security;
 alter table public.runs                  enable row level security;
 alter table public.source_status         enable row level security;
 alter table public.source_samples        enable row level security;
+alter table public.host_leases           enable row level security;
 alter table public.projects              enable row level security;
 alter table public.project_subscriptions enable row level security;
 alter table public.user_settings         enable row level security;

@@ -42,9 +42,9 @@ Modules other than `index.ts` use only APIs that Node.js 24 and Deno share (`fet
 ## Invocation model
 - `pg_cron` job `harvest` runs every minute and calls `net.http_post` on `/functions/v1/harvest` with `Authorization: Bearer <HARVEST_TOKEN>`, read from Vault (`database.md`, Harvest schedule).
 - The function checks the token, answers HTTP 202 at once, and runs the tick in `EdgeRuntime.waitUntil`. `pg_net`'s request timeout therefore never cuts a tick short.
-- A tick loads `source_status`, selects due entries, and claims each one by a conditional update of `last_attempt_at` (compare-and-set on its previous value). An entry that another overlapping invocation claimed first is skipped.
+- A tick loads `source_status`, selects due entries, and claims each one with RPC `claim_source`, a conditional update of `last_attempt_at` (compare-and-set on its previous value; `database.md`, Claim RPC). An entry that another overlapping invocation claimed first is skipped. A claim that returns `halted` logs `error` with event `halt`.
 - A registry entry is due when it is enabled, listed in `SOURCES_ENABLED` (when set), not halted, `now ≥ next_attempt_at` (when set), and `now − last_attempt_at ≥ intervalSec − 15 s`. The 15 s slack absorbs cron jitter so that 60 s sources run every minute. Entries with policy `halt` (CelesTrak) also require `now − last_success_at ≥ intervalSec`, without slack.
-- Due entries on the same host run one after another; different hosts run in parallel.
+- Due entries on the same host run one after another; different hosts run in parallel. Before a host's queue starts, the tick takes that host's lease with RPC `claim_host` (TTL 150 s, longer than the tick budget plus the last writes) and releases it when the queue ends. When another invocation holds the lease, the tick skips the host's entries. Overlapping ticks therefore never send two requests to one host at a time.
 - A tick ends within 120 s. A request still open at that point is aborted and recorded as a timeout.
 - Edge Function limits: 2 s CPU per invocation (I/O wait excluded), 150 s wall clock on the Free plan, 256 MB memory.
 
@@ -52,9 +52,9 @@ Modules other than `index.ts` use only APIs that Node.js 24 and Deno share (`fet
 1. `fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(timeoutMs) })`.
 2. On a non-200 status, apply the entry's failure policy and record a failed run.
 3. Upsert the raw body, truncated to 64 KB, into `source_samples`.
-4. Normalize the body to `SkyObject[]`. Compute `hash` for each object.
+4. Normalize the body to `SkyObject[]`. Two objects with the same id are a normalize error. Compute `hash` for each object.
 5. Call RPC `upsert_sky_objects(p_source, p_group, p_rows, p_full)`. The RPC writes only rows whose hash differs, marks absent objects removed when `p_full` is true, inserts one `changes` row per changed object, and returns the changed ids.
-6. Insert one `runs` row and upsert `source_status`.
+6. Upsert `source_status` (clearing `in_flight_at`), then insert one `runs` row. The status comes first, so a halt is saved even when the `runs` insert fails.
 
 The conditional write runs in SQL because `supabase-js` `.upsert()` cannot express `ON CONFLICT ... DO UPDATE ... WHERE`.
 
@@ -65,11 +65,11 @@ The conditional write runs in SQL because `supabase-js` `.upsert()` cannot expre
 | `retryAfter` | Set `next_attempt_at` to now plus the `Retry-After` header value in seconds, or 3600 s when absent. |
 | `backoff` | Set `next_attempt_at` to now plus `min(intervalSec × 2^failures, maxBackoffSec)`. `failures` resets to 0 on success. |
 
-A timeout or network error counts as a non-200 status. A normalize error under policy `halt` also halts.
+A timeout or network error counts as a non-200 status. A normalize error under policy `halt` also halts. A `halt` run that never records its result also halts, at the next claim (`database.md`, Claim RPC).
 
 Clear a halt in the Supabase SQL editor:
 ```sql
-update public.source_status set halted = false, failures = 0, next_attempt_at = null
+update public.source_status set halted = false, failures = 0, next_attempt_at = null, in_flight_at = null
 where source_id = 'celestrak.stations';
 ```
 or locally with `node --env-file=.env cli.js clear-halt celestrak.stations`.
@@ -109,7 +109,7 @@ node --env-file=.env cli.js --once swpc.wind
 node --env-file=.env cli.js tick           # one tick over all due sources
 npm test                                   # node --test
 ```
-`--once <id>` ignores the due check but honors `halted`. Local runs write to the same project as the deployed function; a CelesTrak group fetched locally cannot be fetched again from the deployed function before the next GP update.
+`--once <id>` ignores the due check but honors `halted`, and `claim_source` still refuses a `halt` entry within its interval. Local runs write to the same project as the deployed function; a CelesTrak group fetched locally cannot be fetched again from the deployed function before the next GP update.
 
 ## Deployment
 1. Dashboard → Edge Functions → Deploy a new function → name `harvest`. Create one file per module in `supabase/functions/harvest/` with the same relative paths, and paste each file's contents.

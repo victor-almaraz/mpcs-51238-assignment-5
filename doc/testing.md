@@ -37,9 +37,12 @@ The tests run the pipeline with a fake fetch and a fake store that implements `u
 8. An invalid registry fails the invocation with a message naming the entry.
 9. A claim already taken by an overlapping invocation skips the entry.
 10. The due check runs a 60 s source on consecutive one-minute ticks with up to 15 s of jitter.
+11. Overlapping ticks never have two requests open to one host.
+12. A CelesTrak 403 halts even when the `runs` insert fails; a CelesTrak run that never records its result halts at the next claim.
+13. A CelesTrak 200 with `[]`, a row that is not an object, and duplicate ids are normalize errors.
 
 ## SQL tests
-`supabase/tests/upsert.sql` runs in the Supabase SQL editor inside `begin; ... rollback;`, raises an exception on the first failed assertion, and checks the RPC on enter, unchanged, update, exit and re-enter, and checks that `anon` cannot read `projects` or execute the RPC.
+`supabase/tests/upsert.sql` runs in the Supabase SQL editor inside `begin; ... rollback;`, raises an exception on the first failed assertion, and checks the RPC on enter, unchanged, update, exit and re-enter, the claim and host lease RPCs, and checks that `anon` cannot read `projects` or execute the RPC.
 
 ## Page tests
 | Area | Assertions |

@@ -19,4 +19,6 @@ select cron.schedule('harvest', '* * * * *', $$
                                      where name = 'harvest_token')),
     body := '{}'::jsonb,
     timeout_milliseconds := 5000)
+  where exists (select 1 from vault.decrypted_secrets where name = 'project_url')
+    and exists (select 1 from vault.decrypted_secrets where name = 'harvest_token')
 $$);

@@ -63,6 +63,7 @@ Audio signals are drawn when you hear the sound, corrected for output latency. T
 
 ## Safety
 - The picture never flashes more than three times per second over an area large enough to affect people with photosensitive epilepsy. When a piece would exceed this, Sphärenmusik slows the change and records a `SAFETY` event in the console.
+- The guard cannot rule out every pattern that affects people with photosensitive epilepsy, such as fine stripes or fast movement, so every listener sees a photosensitivity warning before a piece starts. Avoid high-contrast stripes and rapid full-screen motion.
 - With reduced motion enabled in the operating system or in Settings, trails, pulses, fades, aurora drift and camera movement are off, and data changes the picture at most once per second.
 
 ## Custom shaders

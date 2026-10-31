@@ -80,3 +80,11 @@ test('CAD missing a field fails', () => {
 test('Scout runs that differ only in tEphem normalize identically', () => {
   assert.deepEqual(run('jpl-scout-1.json'), run('jpl-scout-2.json'));
 });
+
+test('CelesTrak EPOCH: missing zone means UTC, an offset is kept, garbage is rejected', () => {
+  const ctx = { source: 's', group: 'g', warn() {} };
+  const row = (EPOCH) => JSON.stringify([{ NORAD_CAT_ID: 1, EPOCH, MEAN_MOTION: 1, ECCENTRICITY: 0, INCLINATION: 0, RA_OF_ASC_NODE: 0, ARG_OF_PERICENTER: 0, MEAN_ANOMALY: 0 }]);
+  assert.equal(normalizers.celestrakOmm(row('2026-10-30T00:00:00.123456'), {}, ctx)[0].fields.epoch, '2026-10-30T00:00:00.123456Z');
+  assert.equal(normalizers.celestrakOmm(row('2026-10-30T00:00:00+00:00'), {}, ctx)[0].fields.epoch, '2026-10-30T00:00:00+00:00');
+  assert.throws(() => normalizers.celestrakOmm(row('soon'), {}, ctx), { name: 'NormalizeError' });
+});

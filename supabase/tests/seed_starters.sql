@@ -25,6 +25,18 @@ begin
   assert n = 1, format('higher version: expected 1, got %s', n);
   assert (select count(*) from public.projects) = 3, 'higher version: only s3 added';
   perform set_config('test.a_project', (select id::text from public.projects limit 1), true);
+
+  n := public.seed_starters(3, '[{"slug":"s4","name":"S4","ir":{"groups":["swpc.kp","swpc.kp"]}},
+                                 {"slug":"s5","name":"S5","source":"","ir":{"groups":"swpc.kp"}}]');
+  assert n = 2, 'duplicate groups, missing source and non-array groups seed';
+  assert (select source from public.projects where starter_slug = 's4') = '', 'missing source is empty';
+  begin
+    perform public.seed_starters(4, null);
+    raise exception 'null p_projects accepted';
+  exception when raise_exception then
+    if sqlerrm not like 'seed_starters:%' then raise; end if;
+  end;
+  assert (select starters_version from public.user_settings) = 3, 'failed seed keeps the version';
 end $$;
 
 set local request.jwt.claims = '{"sub":"user_test_b","role":"authenticated"}';

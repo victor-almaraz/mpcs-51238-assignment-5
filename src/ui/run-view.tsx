@@ -18,6 +18,7 @@ import { useSettings } from './app-providers';
 import { EventsPanel, VoicesPanel } from './console-panels';
 import { useFreshness, useLevels, usePieceSession, useTraceRecords } from './hooks';
 import { Preview } from './preview';
+import { PHOTOSENSITIVITY_WARNING, VOLUME_WARNING } from './safety-text';
 import { StatusBar } from './status-bar';
 import { Notices, Transport } from './transport';
 
@@ -105,7 +106,8 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
             className="cursor-none rounded-sm border border-line bg-black/70 px-6 py-4 text-center font-mono text-fg"
           >
             <span className="block text-lg">{canRun ? 'Begin listening' : 'Loading…'}</span>
-            <span className="mt-1 block text-xs text-fg-muted">Lower your device volume before starting. Headphones can reach harmful levels.</span>
+            <span className="mt-1 block max-w-md text-xs text-fg-muted">{VOLUME_WARNING}</span>
+            <span className="mt-1 block max-w-md text-xs text-fg-muted">{PHOTOSENSITIVITY_WARNING}</span>
           </button>
         </div>
       )}

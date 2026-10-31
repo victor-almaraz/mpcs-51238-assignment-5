@@ -14,10 +14,17 @@ export function createStore(client) {
       const rows = check('select source_status', await client.from('source_status').select('*'));
       return new Map(rows.map((r) => [r.source_id, r]));
     },
-    async claim(sourceId, intervalSec, prevAttemptAt) {
+    /** @returns {Promise<'claimed' | 'busy' | 'halted'>} */
+    async claim(sourceId, intervalSec, prevAttemptAt, haltPolicy) {
       return check('claim_source', await client.rpc('claim_source', {
-        p_source_id: sourceId, p_interval_sec: intervalSec, p_prev: prevAttemptAt ?? null,
-      })) === true;
+        p_source_id: sourceId, p_interval_sec: intervalSec, p_prev: prevAttemptAt ?? null, p_halt_policy: haltPolicy,
+      }));
+    },
+    async claimHost(host, holder, ttlSec) {
+      return check('claim_host', await client.rpc('claim_host', { p_host: host, p_holder: holder, p_ttl_sec: ttlSec })) === true;
+    },
+    async releaseHost(host, holder) {
+      check('release_host', await client.rpc('release_host', { p_host: host, p_holder: holder }));
     },
     async upsertObjects(source, group, rows, full) {
       const data = check('upsert_sky_objects', await client.rpc('upsert_sky_objects', {
@@ -38,7 +45,7 @@ export function createStore(client) {
     },
     async clearHalt(sourceId) {
       const rows = check('clear halt', await client.from('source_status')
-        .update({ halted: false, failures: 0, next_attempt_at: null })
+        .update({ halted: false, failures: 0, next_attempt_at: null, in_flight_at: null })
         .eq('source_id', sourceId).select('source_id'));
       return rows.length === 1;
     },

@@ -36,6 +36,7 @@ export function utc(value) {
 }
 
 export function requireKeys(row, keys, what) {
+  if (row === null || typeof row !== 'object' || Array.isArray(row)) throw new NormalizeError(`${what} is not an object`);
   for (const k of keys) {
     if (!(k in row)) throw new NormalizeError(`${what} lacks field ${k}`);
   }

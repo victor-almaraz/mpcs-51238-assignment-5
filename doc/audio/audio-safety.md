@@ -337,7 +337,7 @@ A granular widget can play a user's audio file (`synthesis-granular.md` "User sa
 ## Safety UI
 Controls are specified in `controls-and-accessibility.md`; placement in `layout-and-responsive.md`.
 - **No sound on load.** The AudioContext is created on the first gesture that needs audio.
-- **Start notice.** Before the first audio start in a session, a dialog reads: "Lower your device volume before starting. Headphones can reach harmful levels." Dismissal is held in memory for the session; nothing is stored.
+- **Start notice.** Before the first audio start in a session, a dialog reads: "Lower your device volume before starting. Headphones can reach harmful levels." It also carries the photosensitivity warning of `../visuals.md` (Visual safety). Dismissal is held in memory for the session; nothing is stored.
 - **Master volume and meter.** Always visible. The meter reads peak and RMS from the post-limiter analyser once per animation frame, with 1 s peak hold, scale −60…0 dBFS.
 - **Limiting indicator.** A "Limit" text badge shows while the pre-limiter peak exceeds the ceiling.
 - **Panic.** A visible "Panic" button and the `Escape` key (when no menu or dialog is open). Panic stops the transport, calls `releaseAll()` (file and live voices), clears scheduled events and ramps `masterGain` to 0 over 10 ms. While muted, the same button reads "Reset" and the master section shows "Muted".

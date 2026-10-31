@@ -15,7 +15,7 @@ begin
   assert (select count(*) from public.changes where group_key = 'test.group' and kind = 'enter') = 2, 'enter: changes rows';
   assert (select count(distinct trace_id) from public.sky_objects where group_key = 'test.group') = 2, 'enter: one trace id per row';
   assert (select bool_and(s.trace_id = c.trace_id) from public.sky_objects s
-          join public.changes c on c.object_id = s.id), 'enter: trace ids match';
+          join public.changes c on c.object_id = s.id where s.group_key = 'test.group'), 'enter: trace ids match';
 
   -- unchanged
   select count(*) into n from public.upsert_sky_objects('test.src', 'test.group', rows_ab, true);
@@ -43,12 +43,35 @@ begin
   assert n = 1 and k = 'enter', format('re-enter: got %s %s', n, k);
   assert (select removed_at is null from public.sky_objects where id = 'test.group:b'), 're-enter: removed_at cleared';
 
-  -- claim_source: first claim, stale claim, halted
-  assert public.claim_source('test.claim', 60, null), 'claim: first';
-  assert not public.claim_source('test.claim', 60, null), 'claim: stale prev';
+  -- claim_source: first claim, stale claim, halted (now() is fixed inside the transaction)
+  assert public.claim_source('test.claim', 60, null, false) = 'claimed', 'claim: first';
+  assert public.claim_source('test.claim', 60, null, false) = 'busy', 'claim: stale prev';
   update public.source_status set halted = true where source_id = 'test.claim';
-  assert not public.claim_source('test.claim', 60,
-    (select last_attempt_at from public.source_status where source_id = 'test.claim')), 'claim: halted';
+  assert public.claim_source('test.claim', 60,
+    (select last_attempt_at from public.source_status where source_id = 'test.claim'), false) = 'busy', 'claim: halted';
+
+  -- claim_source, halt policy: open run, unfinished run, interval
+  assert public.claim_source('test.halt', 7200, null, true) = 'claimed', 'halt claim: first';
+  assert (select in_flight_at is not null from public.source_status where source_id = 'test.halt'), 'halt claim: in flight';
+  assert public.claim_source('test.halt', 7200,
+    (select last_attempt_at from public.source_status where source_id = 'test.halt'), true) = 'busy', 'halt claim: open run';
+  update public.source_status set in_flight_at = now() - interval '11 minutes' where source_id = 'test.halt';
+  assert public.claim_source('test.halt', 7200,
+    (select last_attempt_at from public.source_status where source_id = 'test.halt'), true) = 'halted', 'halt claim: unfinished run';
+  assert (select halted and in_flight_at is null from public.source_status where source_id = 'test.halt'), 'halt claim: halted';
+  assert exists (select 1 from public.runs where source_id = 'test.halt' and not ok), 'halt claim: run recorded';
+  insert into public.source_status (source_id, interval_sec, last_attempt_at, last_success_at)
+  values ('test.interval', 7200, now() - interval '3 hours', now() - interval '1 hour');
+  assert public.claim_source('test.interval', 7200, now() - interval '3 hours', true) = 'busy', 'halt claim: interval';
+
+  -- claim_host / release_host
+  assert public.claim_host('test.host', 'a', 150), 'lease: first';
+  assert public.claim_host('test.host', 'a', 150), 'lease: same holder';
+  assert not public.claim_host('test.host', 'b', 150), 'lease: held';
+  perform public.release_host('test.host', 'a');
+  assert public.claim_host('test.host', 'b', 150), 'lease: after release';
+  update public.host_leases set expires_at = now() - interval '1 second' where host = 'test.host';
+  assert public.claim_host('test.host', 'c', 150), 'lease: expired';
 end $$;
 
 set local role anon;
@@ -65,8 +88,13 @@ begin
   exception when insufficient_privilege then null;
   end;
   begin
-    perform public.claim_source('x', 60, null);
+    perform public.claim_source('x', 60, null, false);
     raise exception 'anon can execute claim_source';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.claim_host('x', 'x', 1);
+    raise exception 'anon can execute claim_host';
   exception when insufficient_privilege then null;
   end;
   assert (select count(*) from public.sky_objects where group_key = 'test.group') = 2, 'anon reads sky_objects';

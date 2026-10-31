@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 export const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
 /**
- * In-memory store with the semantics of upsert_sky_objects and claim_source (doc/database.md).
+ * In-memory store with the semantics of upsert_sky_objects, claim_source and claim_host (doc/database.md).
  * `now` stands in for the database clock, so claims agree with the test clock.
  */
 export function fakeStore({ now = Date.now } = {}) {
@@ -12,22 +12,40 @@ export function fakeStore({ now = Date.now } = {}) {
   const runs = [];
   const samples = new Map();
   const changes = [];
+  const leases = new Map(); // host → { holder, expiresAt }
   let traces = 0;
   return {
-    objects, status, runs, samples, changes,
+    objects, status, runs, samples, changes, leases,
     async loadStatus() {
       return new Map([...status].map(([k, v]) => [k, { ...v }]));
     },
-    async claim(sourceId, intervalSec, prev) {
+    async claim(sourceId, intervalSec, prev, haltPolicy) {
       const st = status.get(sourceId);
-      const at = new Date(now()).toISOString();
-      if (!st) {
-        status.set(sourceId, { source_id: sourceId, interval_sec: intervalSec, last_attempt_at: at, halted: false, failures: 0 });
-        return true;
+      const t = now();
+      const at = new Date(t).toISOString();
+      const inFlight = haltPolicy ? at : null;
+      if (haltPolicy && st && !st.halted && st.in_flight_at && Date.parse(st.in_flight_at) < t - 600_000) {
+        Object.assign(st, { halted: true, last_ok: false, in_flight_at: null });
+        runs.push({ source_id: sourceId, ok: false, error: 'previous run did not record its result; halted' });
+        return 'halted';
       }
-      if ((st.last_attempt_at ?? null) !== (prev ?? null) || st.halted) return false;
-      st.last_attempt_at = at;
+      if (!st) {
+        status.set(sourceId, { source_id: sourceId, interval_sec: intervalSec, last_attempt_at: at, halted: false, failures: 0, in_flight_at: inFlight });
+        return 'claimed';
+      }
+      if ((st.last_attempt_at ?? null) !== (prev ?? null) || st.halted) return 'busy';
+      if (haltPolicy && (st.in_flight_at || (st.last_success_at && Date.parse(st.last_success_at) > t - intervalSec * 1000))) return 'busy';
+      Object.assign(st, { last_attempt_at: at, interval_sec: intervalSec, in_flight_at: inFlight });
+      return 'claimed';
+    },
+    async claimHost(host, holder, ttlSec) {
+      const l = leases.get(host);
+      if (l && l.expiresAt > now() && l.holder !== holder) return false;
+      leases.set(host, { holder, expiresAt: now() + ttlSec * 1000 });
       return true;
+    },
+    async releaseHost(host, holder) {
+      if (leases.get(host)?.holder === holder) leases.delete(host);
     },
     async upsertObjects(source, group, rows, full) {
       const out = [];

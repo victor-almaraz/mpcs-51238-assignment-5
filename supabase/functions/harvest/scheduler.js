@@ -37,7 +37,7 @@ export function onSuccess(entry, now) {
   return {
     source_id: entry.id, interval_sec: entry.intervalSec,
     last_success_at: new Date(now).toISOString(), last_ok: true,
-    failures: 0, next_attempt_at: null,
+    failures: 0, next_attempt_at: null, in_flight_at: null,
   };
 }
 
@@ -47,7 +47,7 @@ export function onSuccess(entry, now) {
  */
 export function onFailure(entry, st, now, { retryAfterSec = null } = {}) {
   const failures = (st?.failures ?? 0) + 1;
-  const row = { source_id: entry.id, interval_sec: entry.intervalSec, last_ok: false, failures, next_attempt_at: null };
+  const row = { source_id: entry.id, interval_sec: entry.intervalSec, last_ok: false, failures, next_attempt_at: null, in_flight_at: null };
   let waitSec = 0;
   if (entry.onNon200 === 'halt') {
     row.halted = true;

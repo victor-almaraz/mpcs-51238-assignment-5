@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { buildConfig } from '../supabase/functions/harvest/config.js';
 import { createLogger } from '../supabase/functions/harvest/log.js';
-import { runSource, tick } from '../supabase/functions/harvest/pipeline.js';
+import { claimEntry, runSource, tick } from '../supabase/functions/harvest/pipeline.js';
 import { createStore } from '../supabase/functions/harvest/store.js';
 
 const USAGE = 'usage: cli.js tick | --once <id> | clear-halt <id>';
@@ -37,7 +37,7 @@ if (cmd === 'tick') {
   const entry = config.registry.find((e) => e.id === id) ?? fail(`unknown source ${id}`);
   const st = (await store.loadStatus()).get(id);
   if (st?.halted) fail(`${id} is halted; run clear-halt ${id} first`);
-  if (!(await store.claim(id, entry.intervalSec, st?.last_attempt_at ?? null))) fail(`${id} was claimed by another run`);
+  if (!(await claimEntry(entry, st, deps))) fail(`${id} was not claimed: another run holds it, it is halted, or it is within its interval`);
   const { ok } = await runSource(entry, st, deps);
   if (!ok) process.exit(1);
 } else if (cmd === 'clear-halt') {

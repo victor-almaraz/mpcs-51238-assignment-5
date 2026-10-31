@@ -47,7 +47,8 @@ create table public.source_status (
   last_ok          boolean,
   halted           boolean not null default false,
   failures         integer not null default 0,
-  next_attempt_at  timestamptz
+  next_attempt_at  timestamptz,
+  in_flight_at     timestamptz
 );
 
 create table public.source_samples (
@@ -57,12 +58,18 @@ create table public.source_samples (
   body         text not null check (length(body) <= 65536)
 );
 
+create table public.host_leases (
+  host        text primary key,
+  holder      text not null,
+  expires_at  timestamptz not null
+);
+
 create table public.projects (
   id          uuid primary key default gen_random_uuid(),
   user_id     text not null default (auth.jwt() ->> 'sub'),
   name        text not null check (length(name) between 1 and 120),
   source      text not null default '' check (length(source) <= 200000),
-  ir          jsonb,
+  ir          jsonb check (ir is null or octet_length(ir::text) <= 1000000),
   ir_version  integer not null default 1,
   local_only  boolean not null default false,
   starter_slug text,
@@ -83,7 +90,7 @@ create index project_subscriptions_user on public.project_subscriptions (user_id
 
 create table public.user_settings (
   user_id     text primary key default (auth.jwt() ->> 'sub'),
-  settings    jsonb not null default '{}',
+  settings    jsonb not null default '{}' check (octet_length(settings::text) <= 16384),
   starters_version integer not null default 0,
   updated_at  timestamptz not null default now()
 );
