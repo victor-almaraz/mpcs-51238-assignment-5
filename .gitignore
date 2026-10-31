@@ -4,6 +4,7 @@ node_modules/
 .env
 .env.local
 .env*.local
+.mcp.json
 worker/.env
 .DS_Store
 next-env.d.ts
