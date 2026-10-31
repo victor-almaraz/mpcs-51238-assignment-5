@@ -8,7 +8,7 @@ order: 1
 This page builds a piece in which every object in the space-stations group (the ISS, its modules and other stations) holds one note, with its pitch set by how fast it orbits.
 
 ## Create a project
-1. Open **Projects** and select **New project** → **Blank**.
+1. Open **Projects** and select **New Project** → **Blank**.
 2. The editor opens with an empty `piece.ts`.
 
 ## Write the script

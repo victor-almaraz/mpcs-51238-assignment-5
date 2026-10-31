@@ -8,10 +8,13 @@ export const VERSION = '0.1.0';
 export function secretKeyFrom(env) {
   if (env.SUPABASE_SECRET_KEY) return env.SUPABASE_SECRET_KEY;
   if (env.SUPABASE_SECRET_KEYS) {
+    let keys;
     try {
-      const keys = JSON.parse(env.SUPABASE_SECRET_KEYS);
-      if (typeof keys?.default === 'string' && keys.default) return keys.default;
-    } catch { /* reported below */ }
+      keys = JSON.parse(env.SUPABASE_SECRET_KEYS);
+    } catch (err) {
+      throw new RegistryError(`SUPABASE_SECRET_KEYS is not valid JSON: ${/** @type {Error} */ (err).message}`);
+    }
+    if (typeof keys?.default === 'string' && keys.default) return keys.default;
   }
   return null;
 }

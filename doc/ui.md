@@ -6,8 +6,13 @@ Routes, screens and their states, IDE layout patterns, the status bar, command p
 ## Style
 - Minimal and IDE-derived: flat panels, 1 px dividers, no shadows, no rounded corners above 4 px.
 - Type: system monospace for code, data, the console and the status bar; system sans-serif for chrome.
-- Colour: neutral greys in dark (default) and light themes. One accent colour is reserved for live state (fresh indicators, playing transport). Stale uses amber, down uses red; each state also has a text label and a distinct glyph, so colour is never the only signal.
+- Colour: neutral greys in dark (default) and light themes. One accent colour is reserved for live state (fresh indicators, playing transport). Stale uses amber, down uses red; each state also has a text label and a distinct icon shape, so colour is never the only signal.
 - Tokens are CSS variables in `app/globals.css` mapped through Tailwind v4 `@theme`.
+- Type: Inter (variable, SIL OFL 1.1) for interface text; JetBrains Mono (variable, SIL OFL 1.1) for code, identifiers (group keys, file names), console records and numeric readouts. Both are bundled from `@fontsource-variable/*`, so pages make no font requests to third parties. Icons: Lucide (`lucide-react`, ISC), 16 px with a 2 px stroke; every icon-only control has a text label for assistive technology and a tooltip.
+- Text follows the GNOME HIG writing rules: header capitalization (Title Case without small words) for buttons, tabs, menu and palette commands, dialog headings, section labels and table columns; sentence case for body text, descriptions, check box labels, tooltips and notices. Nothing is set in all capitals.
+- Each view has at most one highlighted (accent) action; other buttons are bordered.
+- Errors say what happened and what to do, in plain words; technical detail goes to the trace and the console.
+- Narrow windows: below 768 px the editor stacks editor, preview and bottom panel vertically and hides the side panel; the console stacks its group list above the panels; the guide stacks its page list above the page. No page scrolls sideways at 360 px.
 - Modal dialogs (the start notice, the command palette) keep Tab and Shift-Tab inside the dialog and return focus to the element that opened them when they close.
 - The preview and run mode always use the dark tokens (`data-theme="dark"` on their root), because the picture is drawn on black; text on them keeps WCAG AA contrast in either theme.
 
@@ -34,8 +39,8 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 | Section | Heading | Content | Visual |
 |---|---|---|---|
 | Hero | `# Sphärenmusik` | What the name means; one sentence on what the piece does | Live orbit map: `celestrak.stations` propagated in the page with `satellite.js` every 2 s and drawn on a 2D canvas in the `map` projection's equirectangular geometry, with a graticule, the night side shaded from the subsolar point, and 45-minute ground-track trails; the ISS is labelled. Elements come from the live strip's snapshot. Drawn once per snapshot with reduced motion |
-| Actions | | Listen now (`/listen`), Start composing (`/sign-in`; Open projects when signed in), Learn the piece script (`/learn`) | Buttons |
-| Live strip | | Kp, solar wind speed, stations in orbit, next launch name and time, each with its freshness glyph and label | Monospace strip, status-bar style |
+| Actions | | Listen Now (`/listen`, the one highlighted action), Start Composing (`/sign-in`; Open Projects when signed in), Learn the Piece Script (`/learn`) | Buttons |
+| Live strip | | Kp, solar wind speed, stations in orbit, next launch name and time, each with its freshness icon and label | Monospace strip, status-bar style |
 | Spheres | The music of the spheres | Pythagorean ratios; Plato, Boethius and Kepler; the physics caveat | A string divided at 2:1, 3:2 and 4:3, drawn as SVG with a text alternative |
 | Quadrivium | Four sister sciences | Plato's "sister sciences", Nicomachus's division, Boethius's term, the seven liberal arts | The division as a real 2 × 2 table styled as a grid |
 | App | What Sphärenmusik does | The four arts in the app; four kinds of sky motion; the ISS twenty octaves up | Table of sky motion to musical gesture |
@@ -48,21 +53,21 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 - The live strip reads `sky_objects` and `source_status` by REST through the publishable key on load and every 60 s; it opens no Realtime channel, so landing visitors use no Realtime messages. States: loading (`…` with "connecting"), fresh, stale and down as in States; a failed read shows "Live data unavailable" and keeps the rest of the page.
 - The landing page starts no audio and creates no `AudioContext`. Sound starts only on `/listen` after a click.
 - Visual safety applies (`visuals.md`): the orbit view has no flashes, honors reduced motion and pauses when the tab is hidden.
-- Signed-in visitors see the same page with Open projects in place of Start composing; there is no redirect.
+- Signed-in visitors see the same page with Open Projects in place of Start Composing; there is no redirect.
 - States: the copy is static, so the page has no loading state apart from the live strip and the orbit view, which shows a static map until positions arrive.
 
 ## Sign-in (`/sign-in`)
-- Single column: the name `Sphärenmusik`, Clerk `<SignIn />` (with a link to sign-up), a "Listen without an account" link to `/listen`, and a "Learn the piece script" link to `/learn`.
+- Single column: the name `Sphärenmusik`, Clerk `<SignIn />` (with a link to sign-up), a "Listen Without an Account" link to `/listen`, and a "Learn the Piece Script" link to `/learn`. When Clerk cannot load, a status message titled "Sign-In Unavailable" replaces the form and points to those links.
 - Signed-in visitors are redirected to `/projects`.
 - States: loading (Clerk component placeholder), error (Clerk inline error).
 
 ## Projects (`/projects`)
 - Table with columns name, groups followed, last edited, last run. Row actions: Open, Run, Duplicate, Delete.
 - Last edited is `projects.updated_at`; every save sets it. `projects` has no last-run column, so last run is recorded per browser in `localStorage` (`sphaerenmusik.lastRun.<id>`) when Run starts the project, and reads `—` on other devices.
-- "New project" offers Blank and each starter project as a template.
+- "New Project" offers Blank and each starter project as a template.
 - On first sign-in the list contains the starter projects (Starter projects).
 - Delete sets `deleted_at` and removes the row from the table with a toast "Project deleted" and an Undo button for 10 s. The `prune-projects` job deletes rows a day after `deleted_at`.
-- States: loading (skeleton rows), empty ("No projects" with New project and the starter templates), error (message and Retry).
+- States: loading (skeleton rows), empty ("No Projects" with New Project and the starter templates), error (message and Retry).
 
 ### Starter projects
 Every account receives simple example projects on its first visit to `/projects`, so a first-time user can press Run and hear a piece without writing code.
@@ -85,7 +90,7 @@ Every account receives simple example projects on its first visit to `/projects`
 │  │  ▸ ll2        │ CONSOLE   PROBLEMS   IR   TRACE                  │
 │  │               │ 14:02:11 CHANGE jpl.scout:P21kQ3x enter {...}    │
 ├──┴───────────────┴──────────────────────────────────────────────────┤
-│ ● swpc  ● jpl  ◐ ll2  ○ celestrak │ ▶ playing  12/64 │ −18 dBFS │ Saved │
+│ ✓ swpc  ✓ jpl  ◷ ll2  ⊗ celestrak │ ▷ playing  12/64 │ −18 dBFS │ Saved │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 | Region | Content |
@@ -110,17 +115,17 @@ Behavior:
 ### Status bar
 | Item | Content |
 |---|---|
-| Freshness | One glyph and label per registry id of the followed groups, or of every known source when no group is followed; the tooltip carries "stale since HH:MM" or "down since HH:MM" in `data.timeZone` |
-| Audio | `■ stopped`, `… starting`, `▶ playing`, `Muted` after Panic, `Fault` after a safety fault |
+| Freshness | One icon and label per registry id of the followed groups, or of every known source when no group is followed; the tooltip carries "stale since HH:MM" or "down since HH:MM" in `data.timeZone` |
+| Audio | An icon and a word: `stopped` (square), `starting` (spinner), `playing` (play), `muted` after Panic (speaker off), `fault` after a safety fault (warning triangle) |
 | Voices | Sounding voices out of 64 |
 | Level | Post-limiter peak in dBFS, `−∞` when silent |
 | Save | `Saved`, `Saving…`, `Unsaved changes`, `Offline`; `Scratch` in Try mode |
 
 ## Running (`/projects/[id]/run`)
-- The preview fills the window. While the piece plays, chrome hides after 3 s without pointer movement; while it is stopped, chrome stays visible so the Run control and the "Press Run to start sound" prompt are on screen.
+- The preview fills the window. The cursor and the chrome (title, transport, links) start hidden and appear on pointer movement, a tap or a key press; they hide again after 3 s without any. They stay while the pointer is over the chrome, while focus is inside it (keyboard use, the start notice) and while the start notice is open. While hidden and stopped, the preview reads "Move the pointer or press a key to show the controls"; while shown and stopped, "Press Run to start sound".
 - Overlays toggle independently: console (`C`), sounding voices (`N`), status bar (`S`).
 - `Escape` returns to the editor, which stops the piece. Panic stays available as a button in the chrome.
-- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
+- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin Listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
 - Freshness is shown in the status bar and is also audible and visible through the project's reactions.
 
 ## Settings (`/settings`)
@@ -135,9 +140,9 @@ Behavior:
 | Loading | Skeletons in tables and panels; status bar indicators `…` with label "connecting" |
 | Empty | Explanatory line and the primary action, for example "This project follows no groups. Add `sky.group(...)` to the script." |
 | Error | Inline message with cause and Retry; build errors in Problems |
-| Fresh | `●` and the source name |
-| Stale | `◐`, the source name and "stale since HH:MM" in the tooltip |
-| Down | `○`, the source name and "down since HH:MM"; the console Sources panel shows the last error |
+| Fresh | Circle-check icon and the source name |
+| Stale | Clock icon, the source name and "stale since HH:MM" in the tooltip |
+| Down | Circle-x icon, the source name and "down since HH:MM"; the console Sources panel shows the last error |
 
 ## Command palette
 Opened with `Mod-Shift-P` or `Mod-K`. Typing filters commands by fuzzy match on the title (consecutive and word-start matches rank first). Commands that do not apply to the current screen are hidden; on screens without a piece only navigation commands remain. Commands:
@@ -146,15 +151,15 @@ Opened with `Mod-Shift-P` or `Mod-K`. Typing filters commands by fuzzy match on 
 |---|---|
 | Run / Stop | Start or stop the piece |
 | Panic | `allNotesOff` on every instrument, then Stop |
-| New project | Create from a template |
-| Open project | Fuzzy search of the user's projects |
-| Toggle console / problems / IR / trace | Show the bottom panel tab |
+| New Project | Create from a template |
+| Open Project | Fuzzy search of the user's projects |
+| Toggle Console / Problems / IR / Trace | Show the bottom panel tab |
 | Replay | Choose window and speed (1×, 10×, 100×, 1000×) |
-| Go live | Leave replay |
-| Download trace | Export JSONL |
-| Open settings | `/settings` |
-| Open guide | `/learn` |
-| Run fullscreen | `/projects/[id]/run` |
+| Go Live | Leave replay |
+| Download Trace | Export JSONL |
+| Open Settings | `/settings` |
+| Open Guide | `/learn` |
+| Run Fullscreen | `/projects/[id]/run` |
 
 ## Keyboard shortcuts
 | Action | Shortcut |

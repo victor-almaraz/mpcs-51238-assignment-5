@@ -79,3 +79,21 @@ test('fn evaluation for local-only pieces', async () => {
   assert.equal(await sandbox.evalFn('o => { throw new Error("x") }', {}), null);
   assert.equal(await sandbox.evalFn('o => ({})', {}), null);
 });
+
+test('the build timeout starts when the worker is ready, not when it is created', async () => {
+  let handler = null;
+  const posted = [];
+  const slowStart = () => ({
+    postMessage: (m) => { posted.push(m); setTimeout(() => handler?.({ data: { ir: { ok: true }, problems: [] } }), 5); },
+    terminate() {}, onerror: null,
+    get onmessage() { return handler; }, set onmessage(fn) { handler = fn; setTimeout(() => fn({ data: { ready: true } }), 60); },
+  });
+  const sb = createSandbox({ createWorker: slowStart, timeoutMs: 30 });
+  const r = await sb.build('x', {});
+  assert.deepEqual(r.problems, [], 'a 60 ms start does not count against a 30 ms run limit');
+  assert.equal(posted.length, 1);
+  const never = () => ({ postMessage() {}, terminate() {}, onerror: null, onmessage: null });
+  const r2 = await createSandbox({ createWorker: never, timeoutMs: 30, startupMs: 50 }).build('x', {});
+  assert.deepEqual(r2.problems.map((p) => p.code), ['runtime_error']);
+  assert.match(r2.problems[0].message, /did not start/);
+});

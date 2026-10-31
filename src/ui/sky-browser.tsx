@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GROUPS } from '@/src/sky/groups.js';
 import { formatValue } from '@/src/ui/console-filters.js';
+import { CircleCheck } from 'lucide-react';
+import { Icon } from './icons';
 
 const PROVIDERS = ['celestrak', 'swpc', 'jpl', 'll2'];
 
@@ -55,7 +57,7 @@ export function SkyBrowser({ sky, followed, onInsert }: { sky: any | null; follo
                   <details>
                     <summary className="cursor-pointer">
                       <a href="/learn/sky-data" target="_blank" rel="noreferrer" className="hover:underline" title="Sky data in the guide" onClick={(e) => e.stopPropagation()}>{g}</a>
-                      {isFollowed ? <span className="text-accent" title="Followed by this piece"> ● followed</span> : null}
+                      {isFollowed ? <span className="ml-1 inline-flex items-center gap-0.5 align-middle text-accent" title="Followed by this piece"><Icon as={CircleCheck} size={12} />followed</span> : null}
                       <span className="text-fg-muted"> {isFollowed ? `${count} obj` : ''}</span>
                     </summary>
                     <ul className="pl-3">

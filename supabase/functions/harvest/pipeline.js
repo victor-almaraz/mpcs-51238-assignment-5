@@ -79,7 +79,7 @@ export async function claimEntry(entry, st, { store, log }) {
  * One invocation: claim and run every due entry, one request per host at a time across
  * overlapping invocations (each host's queue runs under a lease).
  * @param {{ registry: object[], isEnabled: (id: string) => boolean, store, fetch, userAgent: string, log, now?: () => number, holder?: string }} deps
- * @returns {Promise<{ ran: string[], skipped: string[] }>}
+ * @returns {Promise<{ ran: string[], skipped: string[], failed: string[] }>} `failed`: runs that did not succeed
  */
 export async function tick(deps) {
   const now = deps.now ?? Date.now;
@@ -88,6 +88,7 @@ export async function tick(deps) {
   const due = deps.registry.filter((e) => isDue(e, status.get(e.id), now(), deps.isEnabled));
   const ran = [];
   const skipped = [];
+  const failed = [];
   const holder = deps.holder ?? crypto.randomUUID();
   const errorText = (err) => String(err?.message ?? err);
   await Promise.all(byHost(due).map(async (entries) => {
@@ -108,15 +109,17 @@ export async function tick(deps) {
             skipped.push(entry.id);
             continue;
           }
-          await runSource(entry, st, { ...deps, now });
+          const { ok } = await runSource(entry, st, { ...deps, now });
           ran.push(entry.id);
+          if (!ok) failed.push(entry.id);
         } catch (err) {
           deps.log.error({ source: entry.id, event: 'tick_error', error: errorText(err) });
+          failed.push(entry.id);
         }
       }
     } finally {
       await deps.store.releaseHost(host, holder).catch((err) => deps.log.error({ host, event: 'tick_error', error: errorText(err) }));
     }
   }));
-  return { ran, skipped };
+  return { ran, skipped, failed };
 }

@@ -1,5 +1,5 @@
-// Page side of the sandbox (doc/piece-dsl.md, Sandbox): posts `{ source, defs }` to the worker at
-// /dsl-sandbox.js, waits up to 1500 ms for `{ ir, problems }`, and terminates the worker with
+// Page side of the sandbox (doc/piece-dsl.md, Sandbox): waits for the worker at /dsl-sandbox.js to
+// post `{ ready: true }`, posts `{ source, defs }`, waits up to 1500 ms for `{ ir, problems }`, and terminates the worker with
 // problem `timeout` when no reply arrives. One worker serves consecutive builds and, for
 // local-only pieces, `fn` evaluation.
 
@@ -15,12 +15,17 @@ import { problem } from './problem-codes.js';
 /** @returns {WorkerLike} */
 const browserWorker = () => /** @type {any} */ (new Worker('/dsl-sandbox.js'));
 
+/** Longest wait for a new worker's `ready` message, ms. */
+export const STARTUP_TIMEOUT_MS = 15_000;
+
 /**
- * @param {{ createWorker?: () => WorkerLike, timeoutMs?: number }} [opts]
+ * @param {{ createWorker?: () => WorkerLike, timeoutMs?: number, startupMs?: number }} [opts]
  */
-export function createSandbox({ createWorker = browserWorker, timeoutMs = LIMITS.timeoutMs } = {}) {
+export function createSandbox({ createWorker = browserWorker, timeoutMs = LIMITS.timeoutMs, startupMs = STARTUP_TIMEOUT_MS } = {}) {
   /** @type {WorkerLike | null} */
   let worker = null;
+  /** Resolves true when the current worker has posted `ready`, false when it failed to load. @type {Promise<boolean>} */
+  let ready = Promise.resolve(true);
   /** @type {Promise<unknown>} */
   let queue = Promise.resolve();
   /** @type {Map<number, (v: { value?: unknown, error?: string }) => void>} */
@@ -32,8 +37,11 @@ export function createSandbox({ createWorker = browserWorker, timeoutMs = LIMITS
   const ensure = () => {
     if (worker) return worker;
     const w = createWorker();
+    /** @type {(ok: boolean) => void} */ let markReady = () => {};
+    ready = new Promise((resolve) => { markReady = resolve; });
     w.onmessage = (e) => {
       const d = e.data;
+      if (d && typeof d === 'object' && d.ready === true) { markReady(true); return; }
       if (d && typeof d === 'object' && d.fn) {
         const r = fnWaiters.get(d.fn.id);
         fnWaiters.delete(d.fn.id);
@@ -45,6 +53,7 @@ export function createSandbox({ createWorker = browserWorker, timeoutMs = LIMITS
       }
     };
     w.onerror = (e) => {
+      markReady(false);
       const r = buildWaiter;
       buildWaiter = null;
       r?.({ ir: null, problems: [problem('runtime_error', '', `The sandbox failed: ${e?.message ?? 'unknown error'}`)] });
@@ -68,8 +77,18 @@ export function createSandbox({ createWorker = browserWorker, timeoutMs = LIMITS
    * @returns {Promise<{ ir: any | null, problems: Problem[] }>}
    */
   function build(source, defs, { snapshot } = {}) {
-    const run = () => new Promise((resolve) => {
+    const run = async () => {
       const w = ensure();
+      let startTimer;
+      const started = await Promise.race([ready, new Promise((r) => { startTimer = setTimeout(() => r(false), startupMs); })]);
+      clearTimeout(startTimer);
+      if (!started) {
+        reset();
+        return { ir: null, problems: [problem('runtime_error', '', 'The script sandbox did not start')] };
+      }
+      return post(w);
+    };
+    const post = (/** @type {WorkerLike} */ w) => new Promise((resolve) => {
       const timer = setTimeout(() => {
         buildWaiter = null;
         reset();

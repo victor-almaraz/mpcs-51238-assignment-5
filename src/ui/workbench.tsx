@@ -30,6 +30,8 @@ import { StatusBar } from './status-bar';
 import { Notices, Transport, useStartNotice } from './transport';
 import { createProject, listProjects } from './project-actions';
 import { useHydrated } from './use-hydrated';
+import { CircleQuestionMark, Command, Files, LogIn, Maximize, Orbit, Search, Settings, type LucideIcon } from 'lucide-react';
+import { Icon } from './icons';
 
 export type Template = { slug: string; name: string; source: string; ir: unknown };
 
@@ -45,7 +47,7 @@ type Props = {
 
 type Side = 'explorer' | 'search' | 'sky';
 
-const btn = 'rounded-sm border border-line px-2 py-0.5 font-mono text-xs hover:bg-panel-2 disabled:opacity-50';
+const btn = 'inline-flex items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50';
 
 /** Last objects of each followed group, for the validator's `unknown_field` warning. */
 function snapshotOf(sky: any): Record<string, { fields: Record<string, unknown> }[]> {
@@ -277,23 +279,23 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
 
   const followedSources = state.followed.map((g) => sourceOf(g) ?? g);
   const tz = settings.data.timeZone;
-  const activity: { id: Side | 'guide' | 'settings'; glyph: string; label: string }[] = [
-    { id: 'explorer', glyph: '▣', label: 'Explorer' }, { id: 'search', glyph: '⌕', label: 'Search' }, { id: 'sky', glyph: '◉', label: 'Sky' },
-    { id: 'guide', glyph: '?', label: 'Guide' }, { id: 'settings', glyph: '⚙', label: 'Settings' },
+  const activity: { id: Side | 'guide' | 'settings'; glyph: LucideIcon; label: string }[] = [
+    { id: 'explorer', glyph: Files, label: 'Explorer' }, { id: 'search', glyph: Search, label: 'Search' }, { id: 'sky', glyph: Orbit, label: 'Sky' },
+    { id: 'guide', glyph: CircleQuestionMark, label: 'Guide' }, { id: 'settings', glyph: Settings, label: 'Settings' },
   ];
 
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-3 border-b border-line bg-panel px-3 py-1 font-mono text-xs">
+    <div className="flex h-screen flex-col overflow-hidden">
+      <header className="flex min-w-0 items-center gap-3 border-b border-line bg-panel px-3 py-1 text-xs [&>a]:shrink-0 [&>a]:whitespace-nowrap [&>button]:shrink-0 [&>button]:whitespace-nowrap">
         <Link href={signedIn ? '/projects' : '/'} className="hover:underline">Sphärenmusik</Link>
         <span className="text-fg-muted">/</span>
-        <h1>{mode === 'try' ? `Try: ${name}` : name}</h1>
+        <h1 className="min-w-0 truncate">{mode === 'try' ? `Try: ${name}` : name}</h1>
         <span className="flex-1" />
         {mode === 'try' && (signedIn
-          ? <button type="button" className={btn} onClick={saveAsProject} disabled={savingAs || !client}>{savingAs ? 'Saving…' : 'Save as project'}</button>
-          : <Link className={btn} href={`/sign-in?redirect_url=${encodeURIComponent(hydrated ? window.location.pathname + window.location.search : '/try')}`}>Sign in to save</Link>)}
-        {mode === 'project' && project && <Link className={btn} href={`/projects/${project.id}/run`} onClick={() => { saveNow(); }}>Run fullscreen</Link>}
-        <button type="button" className={btn} onClick={() => setPaletteOpen(true)} title="Command palette (Mod-Shift-P, Mod-K)">Commands</button>
+          ? <button type="button" className={btn} onClick={saveAsProject} disabled={savingAs || !client}>{savingAs ? 'Saving…' : 'Save as Project'}</button>
+          : <Link className={btn} href={`/sign-in?redirect_url=${encodeURIComponent(hydrated ? window.location.pathname + window.location.search : '/try')}`}><Icon as={LogIn} size={12} />Sign In to Save</Link>)}
+        {mode === 'project' && project && <Link className={btn} href={`/projects/${project.id}/run`} onClick={() => { saveNow(); }}><Icon as={Maximize} size={12} />Run Fullscreen</Link>}
+        <button type="button" className={btn} onClick={() => setPaletteOpen(true)} title="Command palette (Mod-Shift-P, Mod-K)"><Icon as={Command} size={12} />Commands</button>
       </header>
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Activity bar" className="flex w-9 shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2">
@@ -306,20 +308,20 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
             };
             return (
               <button key={a.id} type="button" title={a.label} aria-label={a.label} aria-pressed={active} onClick={onClick}
-                className={`h-7 w-7 text-sm ${active ? 'text-accent' : 'text-fg-muted hover:text-fg'}`}>{a.glyph}</button>
+                className={`flex h-8 w-8 items-center justify-center rounded-sm ${active ? 'bg-panel-2 text-accent' : 'text-fg-muted hover:text-fg'}`}><Icon as={a.glyph} size={16} /></button>
             );
           })}
         </nav>
         <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-line bg-panel p-2 md:block" aria-label={side}>
           {side === 'explorer' && (
             <div className="font-mono text-xs">
-              <div className="mb-1 uppercase text-fg-muted">Explorer</div>
+              <div className="mb-1 text-fg-muted">Explorer</div>
               {mode === 'project' && (nameDraft === null
                 ? <button type="button" className="mb-1 block w-full truncate text-left hover:underline" title="Rename" onClick={() => setNameDraft(name)}>{name}</button>
                 : <input autoFocus className="mb-1 w-full border border-line bg-bg px-1" value={nameDraft} aria-label="Project name"
                     onChange={(e) => setNameDraft(e.target.value)} onBlur={rename} onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') setNameDraft(null); }} />)}
               <button type="button" className="block w-full bg-panel-2 px-1 text-left" onClick={() => editor.current?.focus()}>piece.ts</button>
-              <div className="mt-3 mb-1 uppercase text-fg-muted">Sky</div>
+              <div className="mt-3 mb-1 text-fg-muted">Sky</div>
               <SkyBrowser sky={session?.sky ?? null} followed={state.followed} onInsert={(t) => editor.current?.insert(t)} />
             </div>
           )}
@@ -327,7 +329,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
           {side === 'search' && <SourceSearch source={source} onGoto={(l) => editor.current?.goto(l)} />}
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <main className="flex min-w-0 flex-1 flex-col" aria-label="Editor">
               <div className="border-b border-line bg-panel px-3 py-0.5 font-mono text-xs text-fg-muted">piece.ts</div>
               <div className="min-h-0 flex-1">
@@ -342,9 +344,9 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
                 />
               </div>
             </main>
-            <section aria-label="Preview" className="flex w-[38%] min-w-64 flex-col border-l border-line">
+            <section aria-label="Preview" className="flex h-[45%] w-full flex-col border-t border-line md:h-auto md:w-[38%] md:min-w-64 md:border-t-0 md:border-l">
               <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-2 py-1">
-                <span className="font-mono text-xs uppercase text-fg-muted">Preview</span>
+                <span className="text-xs text-fg-muted">Preview</span>
                 <Transport session={session} state={state} onRun={runNow} canRun={canRun} runHint={canRun ? null : 'Fix the errors in Problems to run'}
                   maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
               </div>
@@ -389,7 +391,7 @@ function SourceSearch({ source, onGoto }: { source: string; onGoto: (line: numbe
   }, [q, source]);
   return (
     <div className="font-mono text-xs">
-      <div className="mb-1 uppercase text-fg-muted">Search</div>
+      <div className="mb-1 text-fg-muted">Search</div>
       <input className="mb-2 w-full border border-line bg-bg px-1" placeholder="Search piece.ts" aria-label="Search piece.ts" value={q} onChange={(e) => setQ(e.target.value)} />
       <ul>
         {q && hits.length === 0 && <li className="text-fg-muted">No matches</li>}

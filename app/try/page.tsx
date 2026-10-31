@@ -19,7 +19,7 @@ export default function TryPage() {
   }
   return (
     <AppProviders>
-      <Suspense fallback={<p className="p-4 font-mono text-xs text-fg-muted">Loading…</p>}>
+      <Suspense fallback={<p className="p-4 text-xs text-fg-muted">Loading…</p>}>
         <TryView examples={examples} />
       </Suspense>
     </AppProviders>

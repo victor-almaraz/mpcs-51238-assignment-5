@@ -73,8 +73,3 @@ export function problem(code, path, message, line = null) {
   if (!def) throw new Error(`unknown problem code ${code}`);
   return { severity: def.severity, code, path, line, message };
 }
-
-/** @param {Problem[]} problems */
-export function hasErrors(problems) {
-  return problems.some((p) => p.severity === 'error');
-}

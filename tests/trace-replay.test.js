@@ -85,7 +85,7 @@ const audioKeys = (records) => records.filter((r) => r.stage === 'AUDIO' && COMP
 const exports = existsSync(DIR) ? readdirSync(DIR).filter((f) => f.endsWith('.jsonl')) : [];
 
 if (exports.length === 0) {
-  test('trace replay of committed console exports', { skip: 'no console export in tests/fixtures/traces/; export a trace ("Download trace") from a session that behaved as intended and commit it as <name>.jsonl with the running IR as <name>.ir.json' }, () => {});
+  test('trace replay of committed console exports', { skip: 'no console export in tests/fixtures/traces/; export a trace ("Download Trace") from a session that behaved as intended and commit it as <name>.jsonl with the running IR as <name>.ir.json' }, () => {});
 }
 
 for (const file of exports) {

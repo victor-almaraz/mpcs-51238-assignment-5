@@ -6,6 +6,7 @@
 import { parseHex } from './color.js';
 import { projectRecord, viewCentre, surfaceRecord, mapRect } from './projection.js';
 import { STRIDE } from './propagation-core.js';
+import { hasOrbit } from '../sky/groups.js';
 
 /** Floats per sprite instance: x, y, size, width, r, g, b, a, glyph. */
 export const SPRITE_STRIDE = 9;
@@ -28,7 +29,7 @@ const WHITE = [1, 1, 1];
  */
 export function objectScreenPosition(obj, positions, projection, view, ctx) {
   const group = String(obj.group ?? '');
-  if (group.startsWith('celestrak.')) {
+  if (hasOrbit(group)) {
     const i = positions.index.get(obj.id);
     if (i === undefined) return null;
     return projectRecord(projection, positions.data, i * STRIDE, view);

@@ -34,9 +34,9 @@ test('status sources are those of the followed groups, or all', () => {
 });
 
 test('audio, voices, level and save labels', () => {
-  assert.equal(audioLabel('playing'), '▶ playing');
-  assert.equal(audioLabel('stopped'), '■ stopped');
-  assert.equal(audioLabel('muted'), 'Muted');
+  assert.equal(audioLabel('playing'), 'playing');
+  assert.equal(audioLabel('stopped'), 'stopped');
+  assert.equal(audioLabel('muted'), 'muted');
   assert.equal(voicesLabel(12), '12/64');
   assert.equal(voicesLabel(NaN), '0/64');
   assert.equal(levelLabel(-18.2), '−18 dBFS');

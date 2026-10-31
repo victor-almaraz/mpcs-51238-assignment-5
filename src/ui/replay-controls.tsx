@@ -38,7 +38,7 @@ export function ReplayControls({ session, mode, replay, defaultSpeed = 100, disa
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 font-mono text-xs" role="group" aria-label="Replay">
+    <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Replay">
       <label>Replay <select className="bg-panel-2" value={windowMs} onChange={(e) => setWindowMs(Number(e.target.value))} disabled={disabled || busy}>
         {REPLAY_WINDOWS.map((w) => <option key={w.ms} value={w.ms}>{w.label}</option>)}
       </select></label>
@@ -46,7 +46,7 @@ export function ReplayControls({ session, mode, replay, defaultSpeed = 100, disa
         {REPLAY_SPEEDS.map((s: number) => <option key={s} value={s}>{s}×</option>)}
       </select></label>
       <button type="button" className={btn} onClick={start} disabled={disabled || busy || !session}>Replay</button>
-      <button type="button" className={btn} onClick={live} disabled={busy || !session || mode === 'live'}>Go live</button>
+      <button type="button" className={btn} onClick={live} disabled={busy || !session || mode === 'live'}>Go Live</button>
       {mode === 'replay' && replay && (
         <span className="text-stale">REPLAY ×{replay.speed} from {new Date(replay.from).toISOString().slice(0, 16).replace('T', ' ')} UTC{replay.ended ? ', ended' : ''}</span>
       )}

@@ -13,7 +13,7 @@ import { Attribution } from '@/src/ui/attribution';
 import { useSettings, type SettingsWarning } from '@/src/ui/app-providers';
 
 const SAVE_DELAY_MS = 1000;
-const btn = 'rounded-sm border border-line px-2 py-0.5 font-mono text-xs hover:bg-panel-2';
+const btn = 'rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2';
 
 export function SettingsView() {
   const { settings, warnings: loadWarnings, loaded, error: loadError, save } = useSettings();
@@ -76,7 +76,7 @@ export function SettingsView() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex items-center gap-4 border-b border-line px-4 py-2 font-mono text-sm">
+      <header className="flex items-center gap-4 border-b border-line px-4 py-2 text-sm">
         <Link href="/" className="hover:underline">Sphärenmusik</Link>
         <nav aria-label="Site" className="flex gap-4">
           <Link href="/projects" className="hover:underline">Projects</Link>
@@ -88,7 +88,7 @@ export function SettingsView() {
       </header>
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
         <h1 className="mb-4 text-xl font-semibold">Settings</h1>
-        {(loadError || saveError) && <p role="alert" className="mb-4 font-mono text-xs text-down">{saveError ?? loadError}</p>}
+        {(loadError || saveError) && <p role="alert" className="mb-4 text-xs text-down">{saveError ?? loadError}</p>}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
             type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings" aria-label="Search settings"
@@ -100,7 +100,7 @@ export function SettingsView() {
           </div>
         </div>
         {warnings.length > 0 && (
-          <ul aria-label="Warnings" className="mb-4 border border-stale p-2 font-mono text-xs text-stale">
+          <ul aria-label="Warnings" className="mb-4 border border-stale p-2 text-xs text-stale">
             {warnings.map((w, i) => <li key={i}>{w.path || 'settings'}: {w.message}</li>)}
           </ul>
         )}
@@ -125,7 +125,7 @@ export function SettingsView() {
               aria-invalid={parseError ? true : undefined}
               className="h-96 w-full border border-line bg-panel p-2 font-mono text-sm"
             />
-            {parseError && <p role="alert" className="mt-1 font-mono text-xs text-down">Not saved: {parseError}</p>}
+            {parseError && <p role="alert" className="mt-1 text-xs text-down">Not saved: {parseError}</p>}
           </div>
         )}
         <section aria-labelledby="account" className="mt-10">
@@ -143,7 +143,7 @@ function SettingRow({ def, value, onChange, maxDb }: { def: SettingDef; value: a
   let control: React.ReactNode;
   if (def.control === 'select') {
     control = (
-      <select id={id} className="border border-line bg-panel px-1 py-0.5 font-mono text-sm" value={String(value)}
+      <select id={id} className="border border-line bg-panel px-1 py-0.5 text-sm" value={String(value)}
         onChange={(e) => { const o = def.options?.find((x) => String(x) === e.target.value); onChange(o); }}>
         {def.options?.map((o) => <option key={String(o)} value={String(o)}>{String(o)}</option>)}
       </select>
@@ -153,11 +153,11 @@ function SettingRow({ def, value, onChange, maxDb }: { def: SettingDef; value: a
     control = (
       <input id={id} type="number" min={def.min} max={max} step={def.step} value={value ?? ''}
         onChange={(e) => { if (e.target.value !== '') onChange(Number(e.target.value)); }}
-        className="w-28 border border-line bg-panel px-1 py-0.5 font-mono text-sm" />
+        className="w-28 border border-line bg-panel px-1 py-0.5 text-sm" />
     );
   } else if (def.control === 'observer') {
     control = (
-      <span id={id} className="flex gap-2 font-mono text-sm">
+      <span id={id} className="flex gap-2 text-sm">
         <label>lat <input type="number" min={-90} max={90} step={0.01} value={value?.lat ?? ''} className="w-24 border border-line bg-panel px-1"
           onChange={(e) => onChange({ ...value, lat: Number(e.target.value) })} /></label>
         <label>lon <input type="number" min={-180} max={180} step={0.01} value={value?.lon ?? ''} className="w-24 border border-line bg-panel px-1"
@@ -184,6 +184,6 @@ function TextSetting({ id, value, onCommit }: { id: string; value: string; onCom
   useEffect(() => setV(value), [value]);
   return (
     <input id={id} value={v} onChange={(e) => setV(e.target.value)} onBlur={() => { if (v !== value) onCommit(v); }}
-      onKeyDown={(e) => { if (e.key === 'Enter') onCommit(v); }} className="w-56 border border-line bg-panel px-1 py-0.5 font-mono text-sm" />
+      onKeyDown={(e) => { if (e.key === 'Enter') onCommit(v); }} className="w-56 border border-line bg-panel px-1 py-0.5 text-sm" />
   );
 }

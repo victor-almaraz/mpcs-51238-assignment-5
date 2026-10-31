@@ -12,7 +12,9 @@ export const HIDDEN_CLOSE_MS = 60000;
 export const BACKOFF_MIN_MS = 1000;
 export const BACKOFF_MAX_MS = 30000;
 
-const SKY_COLUMNS = 'id,source,group_key,fields,trace_id,updated_at,removed_at';
+export const SKY_COLUMNS = 'id,source,group_key,fields,trace_id,updated_at,removed_at';
+/** Object ids per `.in('id', …)` lookup, which keeps the request URL short. */
+const ID_CHUNK = 100;
 const STATUS_COLUMNS = 'source_id,interval_sec,last_attempt_at,last_success_at,last_ok,halted';
 const FAILURE_STATUSES = ['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'];
 
@@ -265,8 +267,8 @@ export function createSky({ client, now = Date.now, timers = globalTimers(), doc
     if (missing.length === 0) return;
     /** @type {Map<string, string>} */
     const exitIds = new Map();
-    for (let i = 0; i < missing.length; i += MAX_GROUPS) {
-      const chunk = missing.slice(i, i + MAX_GROUPS);
+    for (let i = 0; i < missing.length; i += ID_CHUNK) {
+      const chunk = missing.slice(i, i + ID_CHUNK);
       const { data, error } = await client.from('sky_objects').select('id,trace_id').in('id', chunk);
       if (error) {
         note('exit_lookup_failed', { message: error.message ?? String(error) }, 'warn');

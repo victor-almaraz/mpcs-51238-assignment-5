@@ -11,6 +11,7 @@ import { isReducedMotion, watchSystemReducedMotion, clampPixelRatio, REDUCED_MOT
 import { parseHex, isHexColor, COLORMAPS, mixRgb } from './color.js';
 import { summaryLines, UNAVAILABLE_STATUS } from './summary.js';
 import * as S from './shaders.js';
+import { hasOrbit } from '../sky/groups.js';
 
 const DEG = Math.PI / 180;
 const ATLAS_COLS = 16;
@@ -498,10 +499,17 @@ class Renderer {
     const simNow = simMs;
 
     for (const layer of this.order) {
-      const resolve = (/** @type {string | null} */ id) => this.resolver.resolve(layer, id, { frame: sources.frame, pushed: sources.pushed, reducedMotion: reduced, holdColors: holding });
+      // Once per object and frame: trails, sprites and paths all read the same values.
+      /** @type {Map<string | null, Record<string, number | string>>} */
+      const resolved = new Map();
+      const resolve = (/** @type {string | null} */ id) => {
+        let v = resolved.get(id);
+        if (v === undefined) { v = this.resolver.resolve(layer, id, { frame: sources.frame, pushed: sources.pushed, reducedMotion: reduced, holdColors: holding }); resolved.set(id, v); }
+        return v;
+      };
       if (layer.type === 'points' || layer.type === 'rings' || layer.type === 'glyph') {
         const objects = objectsOf(/** @type {string} */ (layer.group));
-        if (layer.type === 'points' && String(layer.group).startsWith('celestrak.')) {
+        if (layer.type === 'points' && hasOrbit(String(layer.group))) {
           const byId = new Map(objects.map((o) => [o.id, o]));
           const maxTrail = maxProp(objects, resolve, 'trail', 60);
           if (maxTrail > 0) {
@@ -524,7 +532,7 @@ class Renderer {
         this.drawSprites(layer.type === 'points' ? 0 : layer.type === 'rings' ? 1 : 2, sprites.data, sprites.count);
       } else if (layer.type === 'lines') {
         const objects = objectsOf(/** @type {string} */ (layer.group));
-        if (!String(layer.group).startsWith('celestrak.')) continue;
+        if (!hasOrbit(String(layer.group))) continue;
         const maxSpan = maxProp(objects, resolve, 'span', 10);
         const key = `lines:${layer.id}`;
         pathRequests.push({ key, group: layer.group, fromSec: -maxSpan * 30, toSec: maxSpan * 30, stepSec: 60 });

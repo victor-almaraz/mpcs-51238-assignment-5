@@ -8,14 +8,15 @@
 //            --defs tests/fixtures/dsl/engine-defs.js until the user's engine is present
 //   --check  fails when an .ir.json differs from the build, instead of writing it
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diag, loadDefs } from './lib/defs.mjs';
+import { parseArgs, writeOrCheck } from './lib/cli.mjs';
 import { buildStarters } from './lib/starters.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
+const { check } = parseArgs(argv, { check: 'boolean', defs: 'list' }, 'node scripts/build-starters.mjs [--defs <module>]... [--check]', 'build_starters');
 
 try {
   const defs = await loadDefs(ROOT, argv);
@@ -26,13 +27,9 @@ try {
   } else {
     for (const s of starters) {
       const file = join(ROOT, 'content/starters', `${s.slug}.ir.json`);
-      if (argv.includes('--check')) {
-        if (!existsSync(file) || readFileSync(file, 'utf8') !== s.text) {
-          diag({ level: 'error', event: 'build_starters', file: `content/starters/${s.slug}.ir.json`, message: 'out of date; run node scripts/build-starters.mjs' });
-          process.exitCode = 1;
-        }
-      } else {
-        writeFileSync(file, s.text);
+      if (!writeOrCheck(file, s.text, check)) {
+        diag({ level: 'error', event: 'build_starters', file: `content/starters/${s.slug}.ir.json`, message: 'out of date; run node scripts/build-starters.mjs' });
+        process.exitCode = 1;
       }
     }
   }

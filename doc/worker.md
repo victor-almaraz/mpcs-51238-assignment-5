@@ -65,7 +65,7 @@ The conditional write runs in SQL because `supabase-js` `.upsert()` cannot expre
 | `retryAfter` | Set `next_attempt_at` to now plus the `Retry-After` header value in seconds, or 3600 s when absent. |
 | `backoff` | Set `next_attempt_at` to now plus `min(intervalSec × 2^failures, maxBackoffSec)`. `failures` resets to 0 on success. |
 
-A timeout or network error counts as a non-200 status. A normalize error under policy `halt` also halts. A `halt` run that never records its result also halts, at the next claim (`database.md`, Claim RPC).
+A timeout or network error counts as a non-200 status. A normalize error or a database error during the run under policy `halt` also halts: the halt fails closed whenever the run's outcome is in doubt. A `halt` run that never records its result also halts, at the next claim (`database.md`, Claim RPC).
 
 Clear a halt in the Supabase SQL editor:
 ```sql
@@ -109,7 +109,7 @@ node --env-file=.env cli.js --once swpc.wind
 node --env-file=.env cli.js tick           # one tick over all due sources
 npm test                                   # node --test
 ```
-`--once <id>` ignores the due check but honors `halted`, and `claim_source` still refuses a `halt` entry within its interval. Local runs write to the same project as the deployed function; a CelesTrak group fetched locally cannot be fetched again from the deployed function before the next GP update.
+`cli.js` exits 0 when every run succeeded, 1 when a run failed (the JSON log lines on stderr name it) and 2 on a usage error; `cli.js help` prints the usage. `--once <id>` ignores the due check but honors `halted`, and `claim_source` still refuses a `halt` entry within its interval. Local runs write to the same project as the deployed function; a CelesTrak group fetched locally cannot be fetched again from the deployed function before the next GP update.
 
 ## Deployment
 1. Dashboard → Edge Functions → Deploy a new function → name `harvest`. Create one file per module in `supabase/functions/harvest/` with the same relative paths, and paste each file's contents.

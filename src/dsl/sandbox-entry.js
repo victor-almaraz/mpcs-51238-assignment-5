@@ -78,3 +78,5 @@ g.onmessage = (/** @type {MessageEvent} */ e) => {
   }
   g.postMessage(reply);
 };
+// Loaded: the page starts its build timeout from here (doc/piece-dsl.md, Sandbox).
+g.postMessage({ ready: true });

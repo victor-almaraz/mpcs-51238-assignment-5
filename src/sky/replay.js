@@ -2,14 +2,13 @@
 import { trace as busTrace } from '../trace/bus.js';
 import { createCore, makeObject } from './core.js';
 import { groupKeys, sourceOf } from './groups.js';
-import { checkGroups, selectAll } from './store.js';
+import { checkGroups, selectAll, SKY_COLUMNS } from './store.js';
 import { parseChangeRow, parseSkyRow } from './validate.js';
 
 export const REPLAY_SPEEDS = Object.freeze([1, 10, 100, 1000]);
 export const RETENTION_MS = 7 * 86400000;
 
 const CHANGE_COLUMNS = 'id,trace_id,source,group_key,object_id,kind,diff,at';
-const SKY_COLUMNS = 'id,source,group_key,fields,trace_id,updated_at,removed_at';
 
 /**
  * @param {{ client: any, from: number, to?: number, speed: number, now?: () => number,

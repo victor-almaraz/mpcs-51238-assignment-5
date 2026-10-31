@@ -74,8 +74,8 @@ function remarkTryIt({ slug }) {
         data: { hProperties: { className: ['try-it'] } },
         children: [{
           type: 'link', url: `/try?src=${slug}/${n}`,
-          data: { hProperties: { 'aria-label': `Try it: ${lastHeading}` } },
-          children: [{ type: 'text', value: 'Try it' }],
+          data: { hProperties: { 'aria-label': `Try It: ${lastHeading}` } },
+          children: [{ type: 'text', value: 'Try It' }],
         }],
       };
       parent.children.splice(index + 1, 0, link);

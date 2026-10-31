@@ -11,6 +11,8 @@ import {
 } from './console-panels';
 import { ReplayControls } from './replay-controls';
 import { useHydrated } from './use-hydrated';
+import { CircleX, TriangleAlert } from 'lucide-react';
+import { Icon } from './icons';
 import { useFreshness, useTraceRecords, type PieceSession, type Problem, type SessionState } from './hooks';
 
 export type BottomTab = 'console' | 'problems' | 'ir' | 'trace';
@@ -36,14 +38,17 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
 
   return (
     <section aria-label="Bottom panel" className="flex h-full min-h-0 flex-col border-t border-line bg-panel">
-      <div role="tablist" aria-label="Bottom panel tabs" className="flex items-center gap-1 border-b border-line px-2 font-mono text-xs">
+      <div role="tablist" aria-label="Bottom panel tabs" className="flex items-center gap-1 border-b border-line px-2 text-xs">
         {TABS.map((t) => (
           <button
             key={t.id} type="button" role="tab" aria-selected={tab === t.id} aria-controls={`panel-${t.id}`} id={`tab-${t.id}`}
             onClick={() => onTab(t.id)}
-            className={`px-2 py-1 uppercase ${tab === t.id ? 'border-b border-accent text-fg' : 'text-fg-muted hover:text-fg'}`}
+            className={`px-2 py-1 ${tab === t.id ? 'border-b border-accent text-fg' : 'text-fg-muted hover:text-fg'}`}
           >
-            {t.label}{t.id === 'problems' && problems.length ? ` (${errors ? `${errors} ✖ ` : ''}${warnings ? `${warnings} ▲` : ''})` : ''}
+            {t.label}{t.id === 'problems' && problems.length ? <span className="ml-1 inline-flex items-center gap-1 align-middle">
+              {errors ? <span className="inline-flex items-center gap-0.5 text-down"><Icon as={CircleX} size={12} />{errors}<span className="sr-only"> errors</span></span> : null}
+              {warnings ? <span className="inline-flex items-center gap-0.5 text-stale"><Icon as={TriangleAlert} size={12} />{warnings}<span className="sr-only"> warnings</span></span> : null}
+            </span> : null}
           </button>
         ))}
       </div>
@@ -51,7 +56,7 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
         {tab === 'console' && (
           <div className="flex h-full min-h-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-3">
-              <div role="tablist" aria-label="Console panels" className="flex gap-1 font-mono text-xs">
+              <div role="tablist" aria-label="Console panels" className="flex gap-1 text-xs">
                 {[...SUBTABS, ...(dev ? (['Synthetic'] as const) : [])].map((s) => (
                   <button key={s} type="button" role="tab" aria-selected={sub === s} onClick={() => setSub(s)} className={`px-1.5 ${sub === s ? 'bg-panel-2 text-fg' : 'text-fg-muted hover:text-fg'}`}>{s}</button>
                 ))}
@@ -72,7 +77,7 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
         {tab === 'problems' && <ProblemsPanel problems={problems} onGoto={onGoto} />}
         {tab === 'ir' && (ir
           ? <pre aria-label="Compiled IR (read-only)" className="font-mono text-xs">{JSON.stringify(ir, null, 2)}</pre>
-          : <p className="font-mono text-xs text-fg-muted">No compiled IR. Fix the problems in Problems to build the piece.</p>)}
+          : <p className="text-xs text-fg-muted">No compiled IR. Fix the problems in Problems to build the piece.</p>)}
         {tab === 'trace' && <TracePanel records={records} selected={selected} onSelect={select} timeZone={timeZone} />}
       </div>
     </section>
@@ -114,9 +119,9 @@ function SyntheticPanel({ session }: { session: PieceSession | null }) {
         <select className="bg-panel-2" value={fstate} onChange={(e) => setFstate(e.target.value)} aria-label="Freshness">
           {['fresh', 'stale', 'down', 'loading'].map((s) => <option key={s}>{s}</option>)}
         </select>
-        <button type="button" className={btn} onClick={() => run(() => syn().freshness(source, fstate))}>Set freshness</button>
+        <button type="button" className={btn} onClick={() => run(() => syn().freshness(source, fstate))}>Set Freshness</button>
         <button type="button" className={btn} onClick={() => run(() => syn().freshness(source, null))}>Release</button>
-        <button type="button" className={btn} onClick={() => run(() => { syn().clear(); })}>Clear synthetic</button>
+        <button type="button" className={btn} onClick={() => run(() => { syn().clear(); })}>Clear Synthetic</button>
       </div>
       {msg && <p role="status">{msg}</p>}
     </div>

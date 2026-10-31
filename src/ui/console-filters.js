@@ -1,5 +1,6 @@
 // Console panel logic (doc/console.md, Panels): event filters, field diffs, the Sources table,
 // record badges and throttled announcements. Pure functions over trace records.
+import { formatClock } from './status.js';
 
 export const ANNOUNCE_MS = 10000;
 const ACTED = new Set(['fired', 'voiceOn', 'voiceOff']);
@@ -207,11 +208,5 @@ export function midiHz(midi) {
 
 /** HH:MM:SS of a record time in a zone. @param {string} iso @param {string} [timeZone] */
 export function clockTime(iso, timeZone = 'UTC') {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '--:--:--';
-  try {
-    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone }).format(d);
-  } catch {
-    return d.toISOString().slice(11, 19);
-  }
+  return formatClock(iso, timeZone, { seconds: true }) ?? '--:--:--';
 }

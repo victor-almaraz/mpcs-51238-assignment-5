@@ -85,6 +85,8 @@ g.onmessage = (/** @type {MessageEvent} */ e) => {
   }
   g.postMessage(reply);
 };
+// Loaded: the page starts its build timeout from here (doc/piece-dsl.md, Sandbox).
+g.postMessage({ ready: true });
 
 }, {"sucrase":1,"./run-script.js":2,"./problem-codes.js":3}],
 /* node_modules/sucrase/dist/index.js */ [function (module, exports, require) {
@@ -408,11 +410,6 @@ function lineOf(stack, base) {
   if (!def) throw new Error(`unknown problem code ${code}`);
   return { severity: def.severity, code, path, line, message };
 } exports.problem = problem;
-
-/** @param {Problem[]} problems */
- function hasErrors(problems) {
-  return problems.some((p) => p.severity === 'error');
-} exports.hasErrors = hasErrors;
 
 }, {}],
 /* node_modules/sucrase/dist/CJSImportProcessor.js */ [function (module, exports, require) {
@@ -17756,7 +17753,7 @@ var _typescript = require('./typescript');
     defs[id][0].call(module.exports, module, module.exports, function (spec) {
       var dep = deps[spec];
       if (dep === -1) return {};
-      if (dep === null || dep === undefined) throw new Error('dsl-sandbox: module ' + spec + ' is not bundled');
+      if (dep === null || dep === undefined) throw new Error('bundle: module ' + spec + ' is not bundled');
       return load(dep);
     });
     return module.exports;

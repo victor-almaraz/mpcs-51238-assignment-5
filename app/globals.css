@@ -42,12 +42,13 @@
   --color-down: var(--down);
   --radius-sm: 2px;
   --radius-md: 4px;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 html, body { height: 100%; }
-body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; }
+.tabular { font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 /* Guide prose (doc/guide.md) */
@@ -67,7 +68,8 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); }
 .prose-guide th { background: var(--panel-2); font-weight: 600; }
 .prose-guide tr:target { outline: 2px solid var(--focus); }
 .prose-guide .try-it { margin-top: -0.5rem; }
-.prose-guide .try-it a { display: inline-block; font-family: var(--font-mono); font-size: 0.85rem; text-decoration: none; color: var(--bg); background: var(--accent); padding: 0.15rem 0.6rem; border-radius: 2px; }
+.prose-guide .try-it a { display: inline-block; font-size: 0.85rem; text-decoration: none; color: var(--fg); border: 1px solid var(--line); padding: 0.15rem 0.6rem; border-radius: 4px; }
+.prose-guide .try-it a:hover { background: var(--panel-2); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

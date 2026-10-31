@@ -2644,7 +2644,12 @@ function store(out, at, b0, b1, b2, a0, a1, a2) {
     var module = { exports: {} };
     cache[id] = module;
     var deps = defs[id][1];
-    defs[id][0].call(module.exports, module, module.exports, function (spec) { return load(deps[spec]); });
+    defs[id][0].call(module.exports, module, module.exports, function (spec) {
+      var dep = deps[spec];
+      if (dep === -1) return {};
+      if (dep === null || dep === undefined) throw new Error('bundle: module ' + spec + ' is not bundled');
+      return load(dep);
+    });
     return module.exports;
   }
   load(0);

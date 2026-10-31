@@ -61,11 +61,11 @@ export function ConsoleView() {
   const events = useMemo(() => mergeEvents(history, records), [history, records]);
   const toggle = (g: string) => setGroups((gs) => (gs.includes(g) ? gs.filter((x) => x !== g) : [...gs, g].sort()));
   const tabs: { id: Tab; label: string }[] = [{ id: 'sources', label: 'Sources' }, { id: 'events', label: 'Events' }, { id: 'trace', label: 'Trace' }];
-  const btn = 'rounded-sm border border-line px-2 py-0.5 font-mono text-xs hover:bg-panel-2';
+  const btn = 'rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2';
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-4 border-b border-line px-4 py-2 font-mono text-sm">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2 text-sm">
         <Link href="/" className="hover:underline">Sphärenmusik</Link>
         <h1 className="text-fg-muted">Console</h1>
         <nav aria-label="Site" className="ml-auto flex gap-4">
@@ -74,9 +74,9 @@ export function ConsoleView() {
           <Link href="/projects" className="hover:underline">Projects</Link>
         </nav>
       </header>
-      <div className="flex min-h-0 flex-1">
-        <aside aria-label="Followed groups" className="w-60 shrink-0 overflow-y-auto border-r border-line bg-panel p-3 font-mono text-xs">
-          <div className="mb-2 uppercase text-fg-muted">Live groups</div>
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <aside aria-label="Followed groups" className="max-h-48 w-full shrink-0 overflow-y-auto border-b border-line bg-panel p-3 font-mono text-xs md:max-h-none md:w-60 md:border-b-0 md:border-r">
+          <div className="mb-2 text-fg-muted">Live Groups</div>
           <ul className="flex flex-col gap-1">
             {all.map((g: string) => (
               <li key={g}>
@@ -92,17 +92,17 @@ export function ConsoleView() {
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center gap-3 border-b border-line px-3 py-1">
-            <div role="tablist" aria-label="Console panels" className="flex gap-1 font-mono text-xs">
+            <div role="tablist" aria-label="Console panels" className="flex gap-1 text-xs">
               {tabs.map((t) => (
                 <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-                  className={`px-2 py-1 uppercase ${tab === t.id ? 'border-b border-accent' : 'text-fg-muted hover:text-fg'}`}>{t.label}</button>
+                  className={`px-2 py-1 ${tab === t.id ? 'border-b border-accent' : 'text-fg-muted hover:text-fg'}`}>{t.label}</button>
               ))}
             </div>
             <ConsoleControls paused={paused} onPause={setPaused} />
-            {historyLoading && <span className="font-mono text-xs text-fg-muted">Loading recent changes…</span>}
+            {historyLoading && <span className="text-xs text-fg-muted">Loading recent changes…</span>}
           </div>
           {(skyError || historyError) && (
-            <p role="alert" className="border-b border-line px-3 py-1 font-mono text-xs text-down">
+            <p role="alert" className="border-b border-line px-3 py-1 text-xs text-down">
               {skyError ?? historyError} {historyError && <button type="button" className={btn} onClick={loadHistory}>Retry</button>}
             </p>
           )}

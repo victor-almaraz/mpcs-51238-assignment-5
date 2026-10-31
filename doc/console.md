@@ -80,7 +80,7 @@ createTraceBus({ capacity, now });   // separate bus with the same methods; test
 Controls: pause, resume, follow-live toggle, clear. Pause freezes the displayed list; records keep entering the bus. Follow live scrolls to the newest record; scrolling up turns it off. Clear empties the bus. Replayed records show the label `REPLAY ×<speed>`; synthetic records show `SYNTHETIC`.
 
 ## Export
-"Download trace" writes the buffer as JSON Lines (`.jsonl`), one record per line. `tests/trace-replay.test.js` accepts an exported file as a fixture (`testing.md`).
+"Download Trace" writes the buffer as JSON Lines (`.jsonl`), one record per line. `tests/trace-replay.test.js` accepts an exported file as a fixture (`testing.md`).
 
 ## Access
 - `/console` is public. It shows sources, runs and events for every group, without signing in.

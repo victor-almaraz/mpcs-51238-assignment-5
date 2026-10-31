@@ -17,7 +17,7 @@ export default function ListenPage() {
         ir={stationChord}
         name={NAME}
         links={(
-          <nav aria-label="Site" className="flex gap-3 font-mono text-xs">
+          <nav aria-label="Site" className="flex gap-3 text-xs">
             <Link className="underline" href="/learn/first-piece">How it works</Link>
             <Link className="underline" href="/console">Console</Link>
             <Link className="underline" href="/projects">Compose</Link>

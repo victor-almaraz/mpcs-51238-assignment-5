@@ -4,6 +4,7 @@
  */
 import { SampleBuffer } from './positions.js';
 import { orbitKey, STRIDE } from './propagation-core.js';
+import { hasOrbit } from '../sky/groups.js';
 
 const FLUSH_MS = 50;
 
@@ -108,7 +109,7 @@ export function createPropagator({ createWorker = defaultWorker, trace = () => {
     },
     /** @param {string[]} list */
     setGroups(list) {
-      groups = [...new Set((list ?? []).filter((g) => typeof g === 'string' && g.startsWith('celestrak.')))].sort();
+      groups = [...new Set((list ?? []).filter((g) => typeof g === 'string' && hasOrbit(g)))].sort();
       if (!groups.length && running) { worker?.postMessage({ type: 'objects', objects: [] }); worker?.postMessage({ type: 'stop' }); running = false; }
       scheduleFlush();
     },

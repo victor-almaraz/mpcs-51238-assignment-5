@@ -2,6 +2,7 @@
 // interface). Pure functions over a validated IR.
 
 import { forEachExprPosition, forEachNode, isNode, objectGroup } from '../dsl/ir-walk.js';
+import { hasOrbit } from '../sky/groups.js';
 
 const AUDIO_OPS = new Set(['level', 'spectrum', 'env']);
 
@@ -28,7 +29,7 @@ export function orbitSourcesOf(ir) {
 
 /** The IR's `celestrak.*` groups, for `propagator.setGroups`. @param {any} ir */
 export function orbitGroupsOf(ir) {
-  return (ir?.groups ?? []).filter((/** @type {string} */ g) => g.startsWith('celestrak.'));
+  return (ir?.groups ?? []).filter((/** @type {string} */ g) => hasOrbit(g));
 }
 
 /** @param {unknown} node */

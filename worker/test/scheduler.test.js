@@ -73,3 +73,7 @@ test('config reads the injected secret keys and validates the contact', () => {
   assert.throws(() => buildConfig({ ...env, LL2_BASE: '' }, sources), /missing environment variable: LL2_BASE/);
   assert.throws(() => buildConfig({ ...env, LOG_LEVEL: 'loud' }, sources), /LOG_LEVEL/);
 });
+
+test('malformed SUPABASE_SECRET_KEYS is reported as invalid JSON, not as missing', () => {
+  assert.throws(() => secretKeyFrom({ SUPABASE_SECRET_KEYS: '{default:' }), /not valid JSON/);
+});

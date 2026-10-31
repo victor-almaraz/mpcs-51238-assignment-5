@@ -15,9 +15,9 @@ export function TryView({ examples }: { examples: Record<string, Example> }) {
   if (!ex) {
     return (
       <main className="mx-auto max-w-xl px-4 py-12">
-        <h1 className="mb-3 text-xl font-semibold">Example not found</h1>
+        <h1 className="mb-3 text-xl font-semibold">Example Not Found</h1>
         <p className="mb-4 text-sm">{src ? <>No runnable example is called <code className="font-mono">{src}</code>.</> : 'Open an example with its Try it button in the guide.'}</p>
-        <Link className="underline" href="/learn">Learn the piece script</Link>
+        <Link className="underline" href="/learn">Learn the Piece Script</Link>
       </main>
     );
   }

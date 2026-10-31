@@ -5,20 +5,38 @@ export const STATE_GLYPH = Object.freeze({ loading: '…', fresh: '●', stale: 
 export const STATE_LABEL = Object.freeze({ loading: 'connecting', fresh: 'fresh', stale: 'stale', down: 'down' });
 export const MAX_VOICES = 64;
 
+/** Intl formatters by zone and precision; building one costs about 0.2 ms, so lists reuse them. */
+const clocks = new Map();
+
+/**
+ * HH:MM, or HH:MM:SS with `seconds`, of an ISO time in an IANA zone; null for an invalid time.
+ * An unknown zone falls back to UTC.
+ * @param {string | null | undefined} iso @param {string} [timeZone] @param {{ seconds?: boolean }} [opts]
+ */
+export function formatClock(iso, timeZone = 'UTC', { seconds = false } = {}) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const key = `${timeZone}|${seconds}`;
+  let f = clocks.get(key);
+  if (f === undefined) {
+    try {
+      f = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}), hour12: false, timeZone });
+    } catch {
+      f = null;
+    }
+    clocks.set(key, f);
+  }
+  return f ? f.format(d) : d.toISOString().slice(11, seconds ? 19 : 16);
+}
+
 /**
  * HH:MM of an ISO time in an IANA zone; '' for null or an invalid time.
  * @param {string | null | undefined} iso
  * @param {string} [timeZone]
  */
 export function formatHHMM(iso, timeZone = 'UTC') {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  try {
-    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone }).format(d);
-  } catch {
-    return d.toISOString().slice(11, 16);
-  }
+  return formatClock(iso, timeZone) ?? '';
 }
 
 /**
@@ -60,11 +78,11 @@ export function statusSources(all, followedSources) {
 /** @param {AudioState} state */
 export function audioLabel(state) {
   switch (state) {
-    case 'starting': return '… starting';
-    case 'playing': return '▶ playing';
-    case 'muted': return 'Muted';
-    case 'fault': return 'Fault';
-    default: return '■ stopped';
+    case 'starting': return 'starting';
+    case 'playing': return 'playing';
+    case 'muted': return 'muted';
+    case 'fault': return 'fault';
+    default: return 'stopped';
   }
 }
 
@@ -81,16 +99,6 @@ export function voicesLabel(n) {
 export function levelLabel(db) {
   if (db === null || !Number.isFinite(db) || db <= -100) return '−∞ dBFS';
   return `${db > 0 ? '+' : db < 0 ? '−' : ''}${Math.abs(db).toFixed(0)} dBFS`;
-}
-
-/** @param {number} linear @returns {number} dBFS, -Infinity for 0 */
-export function toDb(linear) {
-  return linear > 0 ? 20 * Math.log10(linear) : -Infinity;
-}
-
-/** @param {number} db @returns {number} linear gain */
-export function fromDb(db) {
-  return Number.isFinite(db) ? Math.pow(10, db / 20) : 0;
 }
 
 /** @typedef {'saved' | 'saving' | 'unsaved' | 'offline' | 'scratch' | 'error'} SaveState */

@@ -5,6 +5,7 @@
  */
 import { LAYER_DEFS } from './layer-defs.js';
 import { isHexColor } from './color.js';
+import { canonicalJson } from '../bind/canonical.js';
 
 const AUDIO_OPS = new Set(['level', 'spectrum', 'env']);
 /** Properties held while the flash guard intervenes. */
@@ -29,19 +30,7 @@ export function usesAudio(node) {
   return node.args.some(usesAudio);
 }
 
-/**
- * JSON with object keys sorted, for equality checks.
- * @param {unknown} v
- * @returns {string}
- */
-export function canonicalJson(v) {
-  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`;
-  if (v && typeof v === 'object') {
-    const keys = Object.keys(v).sort();
-    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(/** @type {any} */ (v)[k])}`).join(',')}}`;
-  }
-  return JSON.stringify(v) ?? 'null';
-}
+export { canonicalJson } from '../bind/canonical.js';
 
 /**
  * Coerces a value to a property definition. Returns `undefined` for a value
@@ -179,11 +168,11 @@ export class PropResolver {
         out[name] = pdef.reducedMotion;
         continue;
       }
-      const memo = `${layer.id}\u0000${objectId ?? ''}\u0000${name}`;
       if (!layer.exprProps.has(name)) {
         out[name] = layer.constants[name] ?? pdef.default;
         continue;
       }
+      const memo = `${layer.id}\u0000${objectId ?? ''}\u0000${name}`;
       const held = holdColors && HELD_PROPS.includes(name) ? this.last.get(memo) : undefined;
       if (held !== undefined) { out[name] = held; continue; }
       let v = pick(frame, layer.id, name, objectId, pdef);

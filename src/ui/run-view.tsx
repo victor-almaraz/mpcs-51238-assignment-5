@@ -1,7 +1,7 @@
 'use client';
 
 // Run mode (doc/ui.md, Running) for /projects/[id]/run and /listen: the preview fills the window,
-// chrome hides after 3 s without pointer movement, overlays toggle with C (console), N (sounding
+// cursor and chrome start hidden, appear on movement or a key and hide after 3 s idle, overlays toggle with C (console), N (sounding
 // voices) and S (status bar), and Escape returns to the editor. `?kiosk=1` is installation mode:
 // no cursor, no chrome, one "Begin listening" click starts audio, and the sky store ignores the
 // hidden-tab disconnect. Run mode never loads the type-check worker.
@@ -33,11 +33,13 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
   const levels = useLevels(session);
   const freshness = useFreshness(session?.sky ?? null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [chrome, setChrome] = useState(true);
+  const [chrome, setChrome] = useState(false);
   const [overlay, setOverlay] = useState({ console: false, voices: false, status: !kiosk });
   const [begun, setBegun] = useState(false);
   const records = useTraceRecords(!overlay.console);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The pointer is over the chrome, or focus is inside it: it stays. */
+  const holding = useRef({ hover: false, focus: false });
 
   useEffect(() => {
     if (!session) return;
@@ -54,24 +56,27 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
     if (projectId) createLastRunStore(window.localStorage).set(projectId, Date.now());
   }, [session, projectId]);
 
-  // While the piece plays, chrome hides after 3 s without pointer movement; while stopped it stays.
-  const sounding = state.audio !== 'stopped';
+  // Cursor and chrome appear on movement, a tap or a key, and hide after CHROME_HIDE_MS idle.
+  const reveal = useCallback(() => {
+    setChrome(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      if (!holding.current.hover && !holding.current.focus) setChrome(false);
+    }, CHROME_HIDE_MS);
+  }, []);
   useEffect(() => {
-    if (kiosk) { setChrome(false); return; }
-    const show = () => {
-      setChrome(true);
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-      if (sounding) hideTimer.current = setTimeout(() => setChrome(false), CHROME_HIDE_MS);
-    };
-    show();
-    window.addEventListener('pointermove', show);
-    window.addEventListener('pointerdown', show);
+    if (kiosk) return;
+    window.addEventListener('pointermove', reveal);
+    window.addEventListener('pointerdown', reveal);
+    window.addEventListener('keydown', reveal);
     return () => {
-      window.removeEventListener('pointermove', show);
-      window.removeEventListener('pointerdown', show);
+      window.removeEventListener('pointermove', reveal);
+      window.removeEventListener('pointerdown', reveal);
+      window.removeEventListener('keydown', reveal);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, [kiosk, sounding]);
+  }, [kiosk, reveal]);
+  const hold = (key: 'hover' | 'focus', on: boolean) => { holding.current[key] = on; if (!on) reveal(); };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -92,9 +97,10 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
   const canRun = !!session?.ir && state.ready && !problem;
 
   return (
-    <div data-theme="dark" className={`fixed inset-0 bg-black text-fg ${kiosk ? 'cursor-none' : ''}`}>
+    <div data-theme="dark" className={`fixed inset-0 bg-black text-fg ${kiosk || !chrome ? 'cursor-none' : ''}`}>
       <div className="absolute inset-0">
-        <Preview session={session} state={state} installation className="h-full w-full" prompt={kiosk ? '' : 'Press Run to start sound'} />
+        <Preview session={session} state={state} installation className="h-full w-full"
+          prompt={kiosk ? '' : chrome ? 'Press Run to start sound' : 'Move the pointer or press a key to show the controls'} />
       </div>
 
       {kiosk && !begun && (
@@ -103,9 +109,9 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
             type="button"
             disabled={!canRun}
             onClick={() => { setBegun(true); run(); }}
-            className="cursor-none rounded-sm border border-line bg-black/70 px-6 py-4 text-center font-mono text-fg"
+            className="cursor-none rounded-sm border border-line bg-black/70 px-6 py-4 text-center text-fg"
           >
-            <span className="block text-lg">{canRun ? 'Begin listening' : 'Loading…'}</span>
+            <span className="block text-lg">{canRun ? 'Begin Listening' : 'Loading…'}</span>
             <span className="mt-1 block max-w-md text-xs text-fg-muted">{VOLUME_WARNING}</span>
             <span className="mt-1 block max-w-md text-xs text-fg-muted">{PHOTOSENSITIVITY_WARNING}</span>
           </button>
@@ -113,19 +119,24 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
       )}
 
       {!kiosk && (
-        <div className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-3 bg-black/70 px-3 py-2 transition-opacity ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
-          <h1 className="font-mono text-sm">{name}</h1>
+        <div
+          onPointerEnter={() => hold('hover', true)} onPointerLeave={() => hold('hover', false)}
+          onFocus={() => { hold('focus', true); reveal(); }}
+          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) hold('focus', false); }}
+          className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-3 bg-black/70 px-3 py-2 transition-opacity ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        >
+          <h1 className="text-sm">{name}</h1>
           <Transport session={session} state={state} onRun={run} canRun={canRun} maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
           <span className="flex-1" />
-          <span className="font-mono text-xs text-fg-muted">C console · N voices · S status{backHref ? ' · Esc editor' : ''}</span>
-          {backHref && <Link href={backHref} className="font-mono text-xs underline">Editor</Link>}
+          <span className="text-xs text-fg-muted">C console · N voices · S status{backHref ? ' · Esc editor' : ''}</span>
+          {backHref && <Link href={backHref} className="text-xs underline">Editor</Link>}
           {links}
         </div>
       )}
 
       {(problem || state.notices.length > 0 || state.error) && (
         <div className="absolute inset-x-0 top-12 mx-auto w-fit max-w-xl bg-black/80 p-2">
-          {problem && <p role="alert" className="font-mono text-xs text-down">This piece cannot run: {problem}</p>}
+          {problem && <p role="alert" className="text-xs text-down">This piece cannot run: {problem}</p>}
           <Notices session={session} state={state} />
         </div>
       )}

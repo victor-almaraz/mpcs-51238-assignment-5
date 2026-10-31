@@ -12,6 +12,8 @@ import {
 } from '@/src/ui/console-filters.js';
 import { formatHHMM, freshnessItem, relativeTime } from '@/src/ui/status.js';
 import { useInterval, type Freshness, type PieceSession, type TraceRecord } from './hooks';
+import { CircleX, TriangleAlert } from 'lucide-react';
+import { FRESHNESS_ICON, Icon } from './icons';
 
 const STATE_CLASS: Record<string, string> = { loading: 'text-fg-muted', fresh: 'text-accent', stale: 'text-stale', down: 'text-down' };
 const LEVEL_CLASS: Record<string, string> = { info: '', warn: 'text-stale', error: 'text-down' };
@@ -32,10 +34,10 @@ export function downloadTrace() {
 /** Pause, resume, clear and download. Follow live is a toggle on each scrolling list. */
 export function ConsoleControls({ paused, onPause }: { paused: boolean; onPause: (p: boolean) => void }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+    <div className="flex flex-wrap items-center gap-2 text-xs">
       <button type="button" className={btn} onClick={() => onPause(!paused)} aria-pressed={paused}>{paused ? 'Resume' : 'Pause'}</button>
       <button type="button" className={btn} onClick={() => busClear()}>Clear</button>
-      <button type="button" className={btn} onClick={downloadTrace}>Download trace</button>
+      <button type="button" className={btn} onClick={downloadTrace}>Download Trace</button>
     </div>
   );
 }
@@ -105,8 +107,8 @@ export function SourcesPanel({ client, freshness, timeZone = 'UTC' }: { client: 
       <table className="w-full border-collapse">
         <thead>
           <tr className="text-left text-fg-muted">
-            <th className="py-0.5 pr-3 font-normal">Source</th><th className="pr-3 font-normal">State</th><th className="pr-3 font-normal">Last run</th>
-            <th className="pr-3 font-normal">Rows changed</th><th className="pr-3 font-normal">Duration</th><th className="font-normal">Last error</th>
+            <th className="py-0.5 pr-3 font-normal">Source</th><th className="pr-3 font-normal">State</th><th className="pr-3 font-normal">Last Run</th>
+            <th className="pr-3 font-normal">Rows Changed</th><th className="pr-3 font-normal">Duration</th><th className="font-normal">Last Error</th>
           </tr>
         </thead>
         <tbody>
@@ -123,7 +125,7 @@ export function SourcesPanel({ client, freshness, timeZone = 'UTC' }: { client: 
                     {open === r.source ? '▾' : '▸'} {r.source}
                   </button>
                 </td>
-                <td className="pr-3" title={it.title}><span aria-hidden="true" className={STATE_CLASS[it.state]}>{it.glyph}</span> {it.label}</td>
+                <td className="pr-3" title={it.title}><span className="inline-flex items-center gap-1"><Icon as={FRESHNESS_ICON[it.state]} size={12} className={STATE_CLASS[it.state]} />{it.label}</span></td>
                 <td className="pr-3">{r.lastRun ? `${formatHHMM(r.lastRun, timeZone)} (${relativeTime(r.lastRun, Date.now())})` : '—'}</td>
                 <td className="pr-3">{r.rowsChanged ?? '—'}</td>
                 <td className="pr-3">{r.ms === null ? '—' : `${r.ms} ms`}</td>
@@ -292,7 +294,7 @@ export function VoicesPanel({ session }: { session: PieceSession | null }) {
   if (!session?.host?.runtime) return <p className="font-mono text-xs text-fg-muted">No voices. Press Run to start the piece.</p>;
   return (
     <table className="w-full font-mono text-xs">
-      <thead><tr className="text-left text-fg-muted"><th className="font-normal">Instrument</th><th className="font-normal">Object</th><th className="font-normal">Bound fields</th><th className="font-normal">Pitch</th></tr></thead>
+      <thead><tr className="text-left text-fg-muted"><th className="font-normal">Instrument</th><th className="font-normal">Object</th><th className="font-normal">Bound Fields</th><th className="font-normal">Pitch</th></tr></thead>
       <tbody>
         {voices.length === 0 && <tr><td colSpan={4} className="text-fg-muted">No sounding voices.</td></tr>}
         {voices.map((v) => (
@@ -351,7 +353,7 @@ export function ModulationPanel({ session }: { session: PieceSession | null }) {
       </ul>
       {sources.length > 0 && (
         <table className="mt-2 w-full">
-          <thead><tr className="text-left text-fg-muted"><th className="font-normal">Data source</th><th className="font-normal">Class</th><th className="font-normal">Raw</th><th className="font-normal">Posted</th></tr></thead>
+          <thead><tr className="text-left text-fg-muted"><th className="font-normal">Data Source</th><th className="font-normal">Class</th><th className="font-normal">Raw</th><th className="font-normal">Posted</th></tr></thead>
           <tbody>
             {sources.map((s: any) => (
               <tr key={s.id} className="border-t border-line">
@@ -400,7 +402,7 @@ export function ProblemsPanel({ problems, onGoto }: { problems: { severity: stri
     <ul className="font-mono text-xs" aria-label="Problems">
       {problems.map((p, i) => (
         <li key={i} className="flex gap-2 border-b border-line py-0.5">
-          <span className={p.severity === 'error' ? 'text-down' : 'text-stale'}>{p.severity === 'error' ? '✖ error' : '▲ warning'}</span>
+          <span className={`inline-flex items-center gap-1 ${p.severity === 'error' ? 'text-down' : 'text-stale'}`}><Icon as={p.severity === 'error' ? CircleX : TriangleAlert} size={12} />{p.severity === 'error' ? 'error' : 'warning'}</span>
           {p.line !== null && onGoto
             ? <button type="button" className="hover:underline" onClick={() => onGoto(p.line as number)}>piece.ts:{p.line}</button>
             : <span className="text-fg-muted">{p.path || 'piece'}</span>}

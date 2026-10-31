@@ -28,7 +28,7 @@ export default async function Landing() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-line px-4 py-2 font-mono text-sm">
+      <header className="flex items-center justify-between border-b border-line px-4 py-2 text-sm">
         <span>Sphärenmusik</span>
         <nav aria-label="Site" className="flex gap-4">
           <Link href="/learn" className="hover:underline">Guide</Link>
@@ -52,7 +52,7 @@ export default async function Landing() {
         {section(spheres, <>{prose(spheres)}<StringRatios /></>)}
         {section(quadrivium, prose(quadrivium, 'prose-quadrivium'))}
         {section(app, prose(app))}
-        {section(how, <>{prose(how)}<div className="mt-6"><Actions signedIn={signedIn} learn={{ href: '/learn/first-piece', label: 'Your first piece' }} /></div></>)}
+        {section(how, <>{prose(how)}<div className="mt-6"><Actions signedIn={signedIn} highlight={false} learn={{ href: '/learn/first-piece', label: 'Your First Piece' }} /></div></>)}
         {section(honesty, prose(honesty))}
         {section(reading, prose(reading, 'text-sm'))}
       </main>

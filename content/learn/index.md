@@ -1,9 +1,9 @@
 ---
-title: Learn the piece script
+title: Learn the Piece Script
 order: 0
 ---
 
-# Learn the piece script
+# Learn the Piece Script
 
 Sphärenmusik plays music and images from live space data: satellites in orbit, the solar wind, asteroids passing Earth and rocket launches. A **piece** decides how that data sounds and looks. You write a piece as a short TypeScript **script** in the editor.
 
@@ -28,4 +28,4 @@ Because the script only describes the piece, it contains no loops over time, no 
 | [Reference](reference) | Every function, parameter, group and limit |
 | [Troubleshooting](troubleshooting) | Problem codes and silent or empty pieces |
 
-Every code block marked **Try it** opens in the editor as an unsaved copy.
+Every code block marked **Try It** opens in the editor as an unsaved copy.

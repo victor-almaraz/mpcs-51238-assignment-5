@@ -21,7 +21,7 @@ Render the guide's Markdown pages and make every example runnable in one click.
 
 | Page | Slug |
 |---|---|
-| Learn the piece script | `index` |
+| Learn the Piece Script | `index` |
 | Your first piece | `first-piece` |
 | Sky data | `sky-data` |
 | Expressions | `expressions` |
@@ -45,11 +45,11 @@ Render the guide's Markdown pages and make every example runnable in one click.
 ## Rendering
 - Pages render at build time with `generateStaticParams` over `content/learn/`. Markdown is parsed with `remark`, `remark-gfm` and `remark-frontmatter`, and converted with `remark-rehype` and `rehype-slug` (heading anchors).
 - Layout: the IDE shell of `ui.md` with the explorer replaced by the page list in `order`, the page in the main pane, and the page's headings in a right-hand outline.
-- Code blocks use the editor's monospace font and theme. Each runnable example shows a **Try it** button that opens `/try?src=<slug>/<n>`.
+- Code blocks use the editor's monospace font and theme. Each runnable example shows a **Try It** button that opens `/try?src=<slug>/<n>`.
 
 ## Try mode
 - `/try` opens the editor with an unsaved scratch project containing the example. Run, hot reload, the console, replay and test events work as in a saved project.
-- Scratch projects are not written to `projects`. A signed-in user can choose **Save as project**; a signed-out user sees **Sign in to save**.
+- Scratch projects are not written to `projects`. A signed-in user can choose **Save as Project**; a signed-out user sees **Sign In to Save**.
 - Try mode follows the example's groups without writing `project_subscriptions`. The sky store subscribes to the IR's `groups` directly.
 
 ## Links from the app
@@ -59,7 +59,7 @@ Render the guide's Markdown pages and make every example runnable in one click.
 | `F1` in the editor | `/learn/reference` |
 | Problems panel | Each problem links to `/learn/troubleshooting#<code>` |
 | Sky browser | Each group header links to `/learn/sky-data` |
-| Landing page and sign-in screen | "Learn the piece script" → `/learn` |
+| Landing page and sign-in screen | "Learn the Piece Script" → `/learn` |
 | Starter project scripts | Header comments name the guide pages that explain them |
 | Projects empty state | "Learning the script? Start with Your first piece" → `/learn/first-piece` |
 
@@ -85,8 +85,8 @@ The guide follows the same writing rules as these docs: formal register, present
 
 ## Accessibility
 - Pages use one `h1`, ordered headings and real tables.
-- **Try it** buttons are labelled "Try it: <first heading above the block>".
-- The page list is a `nav` landmark; the outline is a second `nav` labelled "On this page".
+- **Try It** buttons are labelled "Try It: <first heading above the block>". They are bordered, not highlighted: a page has many.
+- The page list is a `nav` landmark; the outline is a second `nav` labelled "On This Page".
 
 ## Sources
 - remark: https://github.com/remarkjs/remark

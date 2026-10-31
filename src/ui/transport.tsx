@@ -9,11 +9,13 @@ import { levelLabel } from '@/src/ui/status.js';
 import { PHOTOSENSITIVITY_WARNING, VOLUME_WARNING } from './safety-text';
 import type { PieceSession, SessionState } from './hooks';
 import { useDialogFocus } from './use-dialog-focus';
+import { OctagonX, Play, RotateCcw, Square, X } from 'lucide-react';
+import { Icon } from './icons';
 
 /** Start notice dismissal lasts for the session (tab) and is never stored. */
 let startNoticeDismissed = false;
 
-const btn = 'rounded-sm border border-line px-2 py-0.5 font-mono text-xs hover:bg-panel-2 disabled:opacity-50';
+const btn = 'inline-flex items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50';
 
 export function useStartNotice(onStart: () => void) {
   const [open, setOpen] = useState(false);
@@ -38,7 +40,7 @@ function StartNotice({ onStart, onCancel }: { onStart: () => void; onCancel: () 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } else trap(e); }}>
       <div ref={box} role="alertdialog" aria-modal="true" aria-labelledby="start-notice-title" aria-describedby="start-notice-text" className="max-w-sm rounded-sm border border-line bg-panel p-4">
-        <h2 id="start-notice-title" className="mb-2 font-semibold">Before you start</h2>
+        <h2 id="start-notice-title" className="mb-2 font-semibold">Before You Start</h2>
         <div id="start-notice-text" className="mb-4 space-y-2 text-sm">
           <p>{VOLUME_WARNING}</p>
           <p>{PHOTOSENSITIVITY_WARNING}</p>
@@ -46,7 +48,7 @@ function StartNotice({ onStart, onCancel }: { onStart: () => void; onCancel: () 
         <div className="flex justify-end gap-2">
           <button type="button" className={btn} onClick={onCancel}>Cancel</button>
           {/* The click on this button is the gesture that starts audio. */}
-          <button ref={ref} type="button" className="rounded-sm bg-accent px-3 py-1 font-mono text-xs text-bg" onClick={onStart}>Start sound</button>
+          <button ref={ref} type="button" className="rounded-sm bg-accent px-3 py-1 text-xs text-bg" onClick={onStart}>Start Sound</button>
         </div>
       </div>
     </div>
@@ -103,14 +105,14 @@ export function Transport({ session, state, onRun, canRun, runHint, compact = fa
   return (
     <div className="flex flex-wrap items-center gap-2" role="toolbar" aria-label="Transport">
       <button type="button" className={`${btn} ${playing ? 'border-accent text-accent' : ''}`} onClick={request} disabled={!canRun || !state.ready} title={runHint ?? 'Run (Mod-Enter)'}>
-        ▶ Run
+        <Icon as={Play} size={12} />Run
       </button>
-      <button type="button" className={btn} onClick={() => session?.stop()} disabled={!playing} title="Stop (Mod-.)">■ Stop</button>
+      <button type="button" className={btn} onClick={() => session?.stop()} disabled={!playing} title="Stop (Mod-.)"><Icon as={Square} size={12} />Stop</button>
       {muted
-        ? <button type="button" className={btn} onClick={(e) => session?.reset(e.detail)} title="Single click to end the mute">Reset</button>
-        : <button type="button" className={btn} onClick={() => session?.panic()} disabled={!state.ready} title="Panic (Escape twice)">Panic</button>}
+        ? <button type="button" className={btn} onClick={(e) => session?.reset(e.detail)} title="Single click to end the mute"><Icon as={RotateCcw} size={12} />Reset</button>
+        : <button type="button" className={btn} onClick={() => session?.panic()} disabled={!state.ready} title="Panic (Escape twice)"><Icon as={OctagonX} size={12} />Panic</button>}
       {!compact && (
-        <label className="flex items-center gap-1 font-mono text-xs">
+        <label className="flex items-center gap-1 text-xs">
           <span>{muted ? 'Muted' : 'Master'}</span>
           <input
             type="range" min={-60} max={maxDb} step={1} value={db}
@@ -121,7 +123,7 @@ export function Transport({ session, state, onRun, canRun, runHint, compact = fa
         </label>
       )}
       <Meter session={session} />
-      {session?.master?.reduced && <span className="font-mono text-xs text-stale" title="The safety limiter worklet is unavailable; the fallback stage caps the master at −6 dB">Reduced safety mode</span>}
+      {session?.master?.reduced && <span className="text-xs text-stale" title="The safety limiter worklet is unavailable; the fallback stage caps the master at −6 dB">Reduced safety mode</span>}
       {dialog}
     </div>
   );
@@ -135,19 +137,19 @@ export function Notices({ session, state }: { session: PieceSession | null; stat
       <div className="sr-only" aria-live="polite">{polite.map((n) => n.message).join('. ')}</div>
       <div className="sr-only" aria-live="assertive">{assertive.map((n) => n.message).join('. ')}</div>
       {state.notices.length > 0 && (
-        <ul className="flex flex-col gap-1 font-mono text-xs">
+        <ul className="flex flex-col gap-1 text-xs">
           {state.notices.map((n) => (
             <li key={n.id} className={`flex items-center gap-2 border px-2 py-1 ${n.kind === 'fault' || n.kind === 'engineFault' || n.kind === 'safetyError' ? 'border-down' : 'border-line'}`}>
               <span className="flex-1">{n.message}</span>
               {n.kind === 'duck' && <button type="button" className={btn} onClick={() => session?.restoreLevel()}>Restore Level</button>}
               {n.kind === 'safetyError' && <button type="button" className={btn} onClick={() => { session?.restartAudio().catch(() => {}); }}>Restart Audio</button>}
-              {n.kind !== 'duck' && n.kind !== 'panic' && n.kind !== 'safetyError' && <button type="button" className={btn} aria-label="Dismiss" onClick={() => session?.dismiss(n.id)}>×</button>}
+              {n.kind !== 'duck' && n.kind !== 'panic' && n.kind !== 'safetyError' && <button type="button" className={btn} aria-label="Dismiss" title="Dismiss" onClick={() => session?.dismiss(n.id)}><Icon as={X} size={12} /></button>}
             </li>
           ))}
         </ul>
       )}
       {state.error && (
-        <p role="alert" className="flex items-center gap-2 font-mono text-xs text-down">
+        <p role="alert" className="flex items-center gap-2 text-xs text-down">
           {state.error} <button type="button" className={btn} onClick={() => session?.clearError()}>Dismiss</button>
         </p>
       )}

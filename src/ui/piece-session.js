@@ -180,7 +180,8 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
     load(next) {
       ir = next;
       const groups = next.groups ?? [];
-      sky.follow(groups).catch((err) => set({ error: `Following ${groups.join(', ')} failed: ${err instanceof Error ? err.message : String(err)}` }));
+      // The sky store traces the cause and keeps retrying (doc/sky-contract.md); the notice stays plain.
+      sky.follow(groups).catch(() => set({ error: `Live data for ${groups.join(', ')} is unavailable. Sphärenmusik keeps trying; the console shows the details.` }));
       propagator.setGroups(orbitGroupsOf(next));
       propagator.setOrbitSources(orbitSourcesOf(next));
       applyIrToVisuals();

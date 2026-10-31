@@ -4,8 +4,8 @@ import { COMMANDS, availableCommands, filterCommands, fuzzyFilter, fuzzyScore } 
 
 test('the palette lists the commands of doc/ui.md', () => {
   const titles = COMMANDS.map((c) => c.title);
-  for (const t of ['Run', 'Stop', 'Panic', 'New project', 'Open project', 'Toggle console', 'Toggle problems', 'Toggle IR', 'Toggle trace',
-    'Replay', 'Go live', 'Download trace', 'Open settings', 'Open guide', 'Run fullscreen']) {
+  for (const t of ['Run', 'Stop', 'Panic', 'New Project', 'Open Project', 'Toggle Console', 'Toggle Problems', 'Toggle IR', 'Toggle Trace',
+    'Replay', 'Go Live', 'Download Trace', 'Open Settings', 'Open Guide', 'Run Fullscreen']) {
     assert.ok(titles.includes(t), t);
   }
 });
@@ -20,9 +20,9 @@ test('fuzzy score requires characters in order', () => {
 test('prefix and word-start matches rank first', () => {
   const r = filterCommands(COMMANDS, 'run');
   assert.equal(r[0].title, 'Run');
-  assert.ok(r.some((c) => c.title === 'Run fullscreen'));
+  assert.ok(r.some((c) => c.title === 'Run Fullscreen'));
   assert.equal(filterCommands(COMMANDS, 'tir')[0].title, 'Toggle IR');
-  assert.equal(filterCommands(COMMANDS, 'guide')[0].title, 'Open guide');
+  assert.equal(filterCommands(COMMANDS, 'guide')[0].title, 'Open Guide');
 });
 
 test('an empty query keeps every command in order', () => {

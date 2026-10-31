@@ -39,7 +39,7 @@ Most data changes slowly. Two editor tools play changes on demand.
 ### Replay
 **Replay** (command palette, `Mod-Shift-P` → Replay) plays recorded changes from the last seven days at 1×, 10×, 100× or 1000× speed. A day of CelesTrak updates plays in about 90 seconds at 1000×. The piece cannot tell replayed changes from live ones. The console labels them `REPLAY`.
 
-**Go live** returns to live data.
+**Go Live** returns to live data.
 
 ### Test events
 Opening the editor with `?dev=1` in the address shows a panel that sends test events to any group: an object entering, a field changing, a source becoming stale. Test events are marked `SYNTHETIC` in the console and never reach other users.

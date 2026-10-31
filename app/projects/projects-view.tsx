@@ -16,8 +16,8 @@ import { createProject } from '@/src/ui/project-actions';
 type Row = { id: string; name: string; updatedAt: string | null; starterSlug: string | null; groups: string[] };
 type Template = { slug: string; name: string; source: string; ir: unknown };
 
-const btn = 'rounded-sm border border-line px-2 py-0.5 font-mono text-xs hover:bg-panel-2 disabled:opacity-50';
-const primary = 'rounded-sm bg-accent px-3 py-1 font-mono text-xs text-bg disabled:opacity-50';
+const btn = 'rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50';
+const primary = 'rounded-sm bg-accent px-3 py-1 text-xs text-bg disabled:opacity-50';
 
 export function ProjectsView({ rows: initial, error, seedError, templates }: { rows: Row[] | null; error: string | null; seedError: string | null; templates: Template[] }) {
   const router = useRouter();
@@ -96,10 +96,10 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
   const templateMenu = (
     <div className="relative">
       <button type="button" className={primary} onClick={() => setMenu((m) => !m)} aria-expanded={menu} aria-haspopup="menu" disabled={busy === 'new' || !client}>
-        {busy === 'new' ? 'Creating…' : 'New project'}
+        {busy === 'new' ? 'Creating…' : 'New Project'}
       </button>
       {menu && (
-        <ul role="menu" className="absolute right-0 z-10 mt-1 w-64 border border-line bg-panel py-1 font-mono text-xs">
+        <ul role="menu" className="absolute right-0 z-10 mt-1 w-64 border border-line bg-panel py-1 text-xs">
           <li role="none"><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-panel-2" onClick={() => newProject(null)}>Blank</button></li>
           {templates.map((t) => (
             <li role="none" key={t.slug}><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-panel-2" onClick={() => newProject(t)}>{t.name}</button></li>
@@ -111,7 +111,7 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex items-center gap-4 border-b border-line px-4 py-2 font-mono text-sm">
+      <header className="flex items-center gap-4 border-b border-line px-4 py-2 text-sm">
         <Link href="/" className="hover:underline">Sphärenmusik</Link>
         <nav aria-label="Site" className="flex flex-1 gap-4">
           <Link href="/learn" className="hover:underline">Guide</Link>
@@ -125,9 +125,9 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
           <h1 className="text-xl font-semibold">Projects</h1>
           {!error && templateMenu}
         </div>
-        {actionError && <p role="alert" className="mb-4 font-mono text-xs text-down">{actionError} <button type="button" className={btn} onClick={() => setActionError(null)}>Dismiss</button></p>}
+        {actionError && <p role="alert" className="mb-4 text-xs text-down">{actionError} <button type="button" className={btn} onClick={() => setActionError(null)}>Dismiss</button></p>}
         {error ? (
-          <div role="alert" className="border border-line p-4 font-mono text-sm">
+          <div role="alert" className="border border-line p-4 text-sm">
             <p className="mb-3 text-down">{error}</p>
             <button type="button" className={btn} onClick={() => router.refresh()}>Retry</button>
           </div>
@@ -135,7 +135,7 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
           <div className="border border-line p-6">
             <p className="mb-4">No projects. Create one from a blank script or start from an example.</p>
             <div className="mb-4 flex flex-wrap gap-2">
-              <button type="button" className={btn} onClick={() => newProject(null)} disabled={!client}>New project: Blank</button>
+              <button type="button" className={btn} onClick={() => newProject(null)} disabled={!client}>New Project: Blank</button>
               {templates.map((t) => <button key={t.slug} type="button" className={btn} onClick={() => newProject(t)} disabled={!client}>{t.name}</button>)}
             </div>
             <p className="text-sm">Learning the script? Start with <Link className="underline" href="/learn/first-piece">Your first piece</Link>.</p>
@@ -143,9 +143,9 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
         ) : (
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="border-b border-line text-left font-mono text-xs text-fg-muted">
-                <th className="py-1 pr-4 font-normal">Name</th><th className="pr-4 font-normal">Groups followed</th>
-                <th className="pr-4 font-normal">Last edited</th><th className="pr-4 font-normal">Last run</th><th className="font-normal"><span className="sr-only">Actions</span></th>
+              <tr className="border-b border-line text-left text-xs text-fg-muted">
+                <th className="py-1 pr-4 font-normal">Name</th><th className="pr-4 font-normal">Groups Followed</th>
+                <th className="pr-4 font-normal">Last Edited</th><th className="pr-4 font-normal">Last Run</th><th className="font-normal"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -153,8 +153,8 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
                 <tr key={r.id} className="border-b border-line align-top">
                   <td className="py-1.5 pr-4"><Link href={`/projects/${r.id}`} className="hover:underline">{r.name}</Link></td>
                   <td className="pr-4 font-mono text-xs">{r.groups.length ? r.groups.join(', ') : <span className="text-fg-muted">none</span>}</td>
-                  <td className="pr-4 font-mono text-xs" title={r.updatedAt ?? undefined}>{relativeTime(r.updatedAt, now)}</td>
-                  <td className="pr-4 font-mono text-xs">{relativeTime(lastRuns[r.id] ?? null, now)}</td>
+                  <td className="pr-4 text-xs" title={r.updatedAt ?? undefined}>{relativeTime(r.updatedAt, now)}</td>
+                  <td className="pr-4 text-xs">{relativeTime(lastRuns[r.id] ?? null, now)}</td>
                   <td className="whitespace-nowrap py-1">
                     <span className="flex gap-1">
                       <Link className={btn} href={`/projects/${r.id}`}>Open</Link>
@@ -173,7 +173,7 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
         )}
       </main>
       {toast && (
-        <div role="status" className="fixed bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 border border-line bg-panel px-4 py-2 font-mono text-sm">
+        <div role="status" className="fixed bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-3 border border-line bg-panel px-4 py-2 text-sm">
           Project deleted
           <button type="button" className={btn} onClick={undo}>Undo</button>
         </div>

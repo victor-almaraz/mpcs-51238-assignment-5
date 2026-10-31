@@ -9,16 +9,18 @@
 // Usage: node scripts/gen-builder-dts.mjs [--defs <module>]... [--check]
 //   --check  fails when a file differs from a fresh generation, instead of writing it
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { diag, loadDefs } from './lib/defs.mjs';
+import { parseArgs, writeOrCheck } from './lib/cli.mjs';
 import { generateBuilderDts } from '../src/dsl/gen-dts.js';
 import { libClosure } from '../src/dsl/typecheck.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
+const { check } = parseArgs(argv, { check: 'boolean', defs: 'list' }, 'node scripts/gen-builder-dts.mjs [--defs <module>]... [--check]', 'gen_builder_dts');
 
 try {
   const defs = await loadDefs(ROOT, argv);
@@ -32,16 +34,10 @@ try {
     'src/dsl/ts-lib-files.js': `${header}// TypeScript library declarations (Apache-2.0, Microsoft) for the type-check worker.\nexport default {\n${
       Object.entries(libs).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`).join('\n')}\n};\n`,
   };
-  const check = argv.includes('--check');
   for (const [rel, text] of Object.entries(files)) {
-    const file = join(ROOT, rel);
-    if (check) {
-      if (!existsSync(file) || readFileSync(file, 'utf8') !== text) {
-        diag({ level: 'error', event: 'gen_builder_dts', file: rel, message: 'out of date; run node scripts/gen-builder-dts.mjs' });
-        process.exitCode = 1;
-      }
-    } else {
-      writeFileSync(file, text);
+    if (!writeOrCheck(join(ROOT, rel), text, check)) {
+      diag({ level: 'error', event: 'gen_builder_dts', file: rel, message: 'out of date; run node scripts/gen-builder-dts.mjs' });
+      process.exitCode = 1;
     }
   }
 } catch (e) {
