@@ -67,7 +67,7 @@ export function ConsoleView() {
     <div className="flex h-screen flex-col">
       <header className="flex items-center gap-4 border-b border-line px-4 py-2 font-mono text-sm">
         <Link href="/" className="hover:underline">Sphärenmusik</Link>
-        <span className="text-fg-muted">Console</span>
+        <h1 className="text-fg-muted">Console</h1>
         <nav aria-label="Site" className="ml-auto flex gap-4">
           <Link href="/listen" className="hover:underline">Listen</Link>
           <Link href="/learn" className="hover:underline">Guide</Link>

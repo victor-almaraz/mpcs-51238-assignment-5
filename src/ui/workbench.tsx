@@ -285,7 +285,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
       <header className="flex items-center gap-3 border-b border-line bg-panel px-3 py-1 font-mono text-xs">
         <Link href={signedIn ? '/projects' : '/'} className="hover:underline">Sphärenmusik</Link>
         <span className="text-fg-muted">/</span>
-        <span>{mode === 'try' ? `Try: ${name}` : name}</span>
+        <h1>{mode === 'try' ? `Try: ${name}` : name}</h1>
         <span className="flex-1" />
         {mode === 'try' && (signedIn
           ? <button type="button" className={btn} onClick={saveAsProject} disabled={savingAs || !client}>{savingAs ? 'Saving…' : 'Save as project'}</button>

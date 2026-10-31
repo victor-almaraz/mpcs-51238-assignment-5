@@ -260,7 +260,8 @@ export function TracePanel({ records, selected, onSelect, timeZone = 'UTC' }: { 
 // ---- Sounding voices ----
 
 export function VoicesPanel({ session }: { session: PieceSession | null }) {
-  const [voices, setVoices] = useState<any[]>([]);
+  // Read once on mount so the panel never shows an empty list before the first poll.
+  const [voices, setVoices] = useState<any[]>(() => session?.host?.runtime?.voices() ?? []);
   const [selected, setSelected] = useState<string | null>(null);
   useInterval(() => {
     const rt = session?.host?.runtime;

@@ -8,7 +8,8 @@ AudioWorklet processors: file layout, loading in a static Next.js export, real-t
 | `safety-limiter` | `public/worklets/safety-limiter.js` | `audio-safety.md` |
 | `ks-processor` | `public/worklets/ks-processor.js` | this doc, `synthesis-pluck.md` |
 | `fx-chain` | `public/worklets/fx-chain.js` (built from `src/audio/fx/worklet.js`) | `effects.md`, `modulation.md` |
-| `recorder` | `public/worklets/recorder.js` | `recording.md` |
+
+Recording (`recording.md`) and its `recorder` processor are outside this project; the loader does not request it.
 
 ## Availability
 - `AudioWorklet` and `AudioWorkletNode` ship in all current engines (Safari since 14.1).
@@ -22,7 +23,7 @@ AudioWorklet processors: file layout, loading in a static Next.js export, real-t
 - Modules are loaded once per context, `AudioContext` and `OfflineAudioContext` alike. `safety-limiter` loads first; no widget connects to the master bus until it is ready (`audio-safety.md`).
 ```ts
 // src/audio/worklet-loader.js
-const MODULES = ['safety-limiter', 'ks-processor', 'fx-chain', 'recorder'] as const;
+const MODULES = ['safety-limiter', 'ks-processor', 'fx-chain'] as const;
 const VERSION = 2;
 const loaded = new WeakMap<BaseAudioContext, Promise<void>>();
 
@@ -44,7 +45,6 @@ export function loadWorklets(ctx: BaseAudioContext): Promise<void> {
   - `safety-limiter` fails: the fallback stage is used (`audio-safety.md`).
   - `ks-processor` fails: the Pluck option is disabled in the Add Synth menu with "Pluck unavailable in this browser"; other widgets work.
   - `fx-chain` fails: effects are unavailable and the signal passes dry (`effects.md`, Engine API).
-  - `recorder` fails: Record is disabled with the reason; offline render is unaffected.
 - The Pluck widget shows "Loading pluck engine…" until loading resolves.
 
 ## Module format

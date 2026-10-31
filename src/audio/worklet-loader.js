@@ -5,7 +5,7 @@
 //   safety-limiter fails → master bus uses the fallback stage (audio-safety.md)
 //   ks-processor fails   → Pluck is unavailable
 //   fx-chain fails       → effects are unavailable; audio passes dry (effects.md)
-//   recorder fails       → Record is disabled; offline render is unaffected
+// Recording and its `recorder` processor are outside this project (audioworklet.md).
 
 /** Incremented whenever a processor changes (static assets are cached). */
 export const WORKLET_VERSION = 2;
@@ -14,7 +14,6 @@ const MODULES = [
   ['safety-limiter', 'safety'],
   ['ks-processor', 'ks'],
   ['fx-chain', 'fx'],
-  ['recorder', 'recorder'],
 ];
 
 const loaded = new WeakMap();
@@ -23,12 +22,12 @@ export function workletUrl(name) {
   return `/worklets/${name}.js?v=${WORKLET_VERSION}`;
 }
 
-/** → Promise<{ safety: boolean, ks: boolean, fx: boolean, recorder: boolean }>; never rejects. */
+/** → Promise<{ safety: boolean, ks: boolean, fx: boolean }>; never rejects. */
 export function loadWorklets(ctx) {
   let p = loaded.get(ctx);
   if (p) return p;
   p = (async () => {
-    const result = { safety: false, ks: false, fx: false, recorder: false };
+    const result = { safety: false, ks: false, fx: false };
     const worklet = ctx ? ctx.audioWorklet : undefined;   // only exposed in secure contexts
     if (!worklet || typeof worklet.addModule !== 'function') return result;
     for (const [name, key] of MODULES) {

@@ -115,7 +115,7 @@ Behavior:
 | Save | `Saved`, `Saving…`, `Unsaved changes`, `Offline`; `Scratch` in Try mode |
 
 ## Running (`/projects/[id]/run`)
-- The preview fills the window. Chrome hides after 3 s without pointer movement.
+- The preview fills the window. While the piece plays, chrome hides after 3 s without pointer movement; while it is stopped, chrome stays visible so the Run control and the "Press Run to start sound" prompt are on screen.
 - Overlays toggle independently: console (`C`), sounding voices (`N`), status bar (`S`).
 - `Escape` returns to the editor, which stops the piece. Panic stays available as a button in the chrome.
 - Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin listening" click starts audio, and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.

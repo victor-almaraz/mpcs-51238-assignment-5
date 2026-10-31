@@ -53,13 +53,14 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
     if (projectId) createLastRunStore(window.localStorage).set(projectId, Date.now());
   }, [session, projectId]);
 
-  // Chrome hides after 3 s without pointer movement.
+  // While the piece plays, chrome hides after 3 s without pointer movement; while stopped it stays.
+  const sounding = state.audio !== 'stopped';
   useEffect(() => {
     if (kiosk) { setChrome(false); return; }
     const show = () => {
       setChrome(true);
       if (hideTimer.current) clearTimeout(hideTimer.current);
-      hideTimer.current = setTimeout(() => setChrome(false), CHROME_HIDE_MS);
+      if (sounding) hideTimer.current = setTimeout(() => setChrome(false), CHROME_HIDE_MS);
     };
     show();
     window.addEventListener('pointermove', show);
@@ -69,7 +70,7 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
       window.removeEventListener('pointerdown', show);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, [kiosk]);
+  }, [kiosk, sounding]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -91,7 +92,9 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
 
   return (
     <div className={`fixed inset-0 bg-black ${kiosk ? 'cursor-none' : ''}`}>
-      <Preview session={session} state={state} installation className="absolute inset-0" prompt={kiosk ? '' : 'Press Run to start sound'} />
+      <div className="absolute inset-0">
+        <Preview session={session} state={state} installation className="h-full w-full" prompt={kiosk ? '' : 'Press Run to start sound'} />
+      </div>
 
       {kiosk && !begun && (
         <div className="absolute inset-0 flex items-center justify-center">
@@ -109,7 +112,7 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
 
       {!kiosk && (
         <div className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-3 bg-black/70 px-3 py-2 transition-opacity ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
-          <span className="font-mono text-sm">{name}</span>
+          <h1 className="font-mono text-sm">{name}</h1>
           <Transport session={session} state={state} onRun={run} canRun={canRun} maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
           <span className="flex-1" />
           <span className="font-mono text-xs text-fg-muted">C console · N voices · S status{backHref ? ' · Esc editor' : ''}</span>
