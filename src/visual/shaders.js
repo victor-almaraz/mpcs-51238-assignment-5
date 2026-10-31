@@ -208,7 +208,11 @@ const SRGB_FNS = `
 vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
 vec3 toSrgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }`;
 
-/** Desaturation and the flash guard's limit on change. uStep < 0 disables the limit. */
+/**
+ * Desaturation and the flash guard's limit on change. uStep < 0 disables the limit.
+ * uQuantize = 1 when the output target is 8-bit: a limited step then rounds toward
+ * the previous frame, so storage rounding never enlarges it.
+ */
 export const COMPOSITE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uScene;
@@ -216,6 +220,7 @@ uniform sampler2D uPrev;
 uniform vec2 uRes;
 uniform float uDesat;
 uniform float uStep;
+uniform float uQuantize;
 out vec4 outColor;
 ${SRGB_FNS}
 void main() {
@@ -223,11 +228,19 @@ void main() {
   vec3 lin = toLinear(texture(uScene, uv).rgb);
   float y = dot(lin, vec3(0.2126, 0.7152, 0.0722));
   lin = mix(lin, vec3(y), uDesat);
-  if (uStep >= 0.0) {
-    vec3 prev = toLinear(texture(uPrev, uv).rgb);
-    lin = prev + clamp(lin - prev, -uStep, uStep);
+  if (uStep < 0.0) {
+    outColor = vec4(toSrgb(clamp(lin, 0.0, 1.0)), 1.0);
+    return;
   }
-  outColor = vec4(toSrgb(clamp(lin, 0.0, 1.0)), 1.0);
+  vec3 prevS = texture(uPrev, uv).rgb;
+  vec3 prev = toLinear(prevS);
+  vec3 s = toSrgb(clamp(prev + clamp(lin - prev, -uStep, uStep), 0.0, 1.0));
+  if (uQuantize > 0.5) {
+    vec3 code = s * 255.0;
+    vec3 prevCode = floor(prevS * 255.0 + 0.5);
+    s = mix(ceil(code), floor(code), step(prevCode, code)) / 255.0;
+  }
+  outColor = vec4(s, 1.0);
 }`;
 
 export const COPY_FS = `#version 300 es
@@ -237,21 +250,59 @@ uniform vec2 uRes;
 out vec4 outColor;
 void main() { outColor = vec4(texture(uSrc, gl_FragCoord.xy / uRes).rgb, 1.0); }`;
 
-/** Averages linear RGB over each cell of the guard grid with 8×8 taps. */
-export const GUARD_FS = `#version 300 es
+/**
+ * Guard box pass: the mean linear RGB of the whole pixels in each box of a
+ * uDst grid. Pixel x belongs to box floor(x · dst / src), so every pixel counts once.
+ */
+export const GUARD_BOX_FS = `#version 300 es
 precision highp float;
+precision highp int;
 uniform sampler2D uSrc;
-uniform vec2 uGrid;
+uniform vec2 uSrcSize;
+uniform vec2 uDstSize;
 out vec4 outColor;
 ${SRGB_FNS}
 void main() {
-  vec2 cell = floor(gl_FragCoord.xy);
+  ivec2 src = ivec2(uSrcSize);
+  ivec2 dst = ivec2(uDstSize);
+  ivec2 id = ivec2(gl_FragCoord.xy);
+  ivec2 a = (id * src + dst - 1) / dst;
+  ivec2 b = ((id + 1) * src + dst - 1) / dst;
   vec3 sum = vec3(0.0);
+  for (int y = a.y; y < b.y; y++) {
+    for (int x = a.x; x < b.x; x++) sum += toLinear(texelFetch(uSrc, ivec2(x, y), 0).rgb);
+  }
+  int n = (b.x - a.x) * (b.y - a.y);
+  outColor = vec4(n > 0 ? sum / float(n) : vec3(0.0), 1.0);
+}`;
+
+/**
+ * Guard cell pass: each cell of the guard grid averages its 8×8 boxes, weighted
+ * by their pixel counts. uRowOffset places the grid in the shared readback target.
+ */
+export const GUARD_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uBoxes;
+uniform vec2 uSrcSize;
+uniform vec2 uBoxSize;
+uniform float uRowOffset;
+out vec4 outColor;
+void main() {
+  ivec2 src = ivec2(uSrcSize);
+  ivec2 box = ivec2(uBoxSize);
+  ivec2 cell = ivec2(gl_FragCoord.xy) - ivec2(0, int(uRowOffset));
+  vec3 sum = vec3(0.0);
+  float total = 0.0;
   for (int j = 0; j < 8; j++) {
     for (int i = 0; i < 8; i++) {
-      vec2 uv = (cell + (vec2(float(i), float(j)) + 0.5) / 8.0) / uGrid;
-      sum += toLinear(texture(uSrc, uv).rgb);
+      ivec2 id = cell * 8 + ivec2(i, j);
+      ivec2 a = (id * src + box - 1) / box;
+      ivec2 b = ((id + 1) * src + box - 1) / box;
+      float n = float((b.x - a.x) * (b.y - a.y));
+      sum += texelFetch(uBoxes, id, 0).rgb * n;
+      total += n;
     }
   }
-  outColor = vec4(sum / 64.0, 1.0);
+  outColor = vec4(total > 0.0 ? sum / total : vec3(0.0), 1.0);
 }`;

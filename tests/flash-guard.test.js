@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createFlashGuard, limitStep, transitionThreshold, GRID_W, GRID_H, LUMA_STEP } from '../src/visual/flash-guard.js';
-import { luminance, srgbToLinear } from '../src/visual/color.js';
+import { createFlashGuard, createLimitTail, limitStep, transitionThreshold, GRID_W, GRID_H, LIMIT_TAIL_SEC, LUMA_STEP } from '../src/visual/flash-guard.js';
+import { linearToSrgb, luminance, srgbToLinear } from '../src/visual/color.js';
 
 const FPS = 60;
 const CELLS = GRID_W * GRID_H;
@@ -96,6 +96,7 @@ test('the limit only gets stricter: 0 intervenes on one transition, values above
   assert.equal(transitionThreshold(10), 6);
   assert.equal(transitionThreshold(NaN), 6);
   assert.equal(transitionThreshold(1.5), 3);
+  assert.equal(transitionThreshold(2.4), 4, 'a fractional limit rounds down');
   const g = createFlashGuard({ maxFlashesPerSecond: 0 });
   g.frame(black, 0);
   assert.equal(g.frame(white, 16).limiting, true);
@@ -163,3 +164,75 @@ function countTransitions(samples) {
 function linearToSrgbApprox(c) {
   return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
 }
+
+/**
+ * Model of the renderer's loop (doc/visuals.md, Visual safety): an output guard and a scene
+ * guard, the limit tail, and output storage that is float or 8-bit with steps rounded toward
+ * the previous frame. Returns the worst count of output transitions in any 1 s window.
+ */
+function renderLoop({ fps, hz, lo, hi, seconds = 8, quantize }) {
+  const g = createFlashGuard({ encoding: 'linear' });
+  const sg = createFlashGuard({ encoding: 'linear', measured: 'scene' });
+  const tail = createLimitTail();
+  const store = (v) => (quantize ? srgbToLinear(Math.round(linearToSrgb(v) * 255) / 255) : v);
+  const dt = 1 / fps;
+  let out = null;
+  const lum = [];
+  for (let f = 0; f < seconds * fps; f++) {
+    const t = f * dt * 1000;
+    const scene = Math.floor(f * dt * hz * 2) % 2 ? hi : lo;
+    const was = g.limiting || sg.limiting;
+    if (out === null || !tail.active(was)) {
+      out = store(scene);
+    } else {
+      const stepped = out + Math.max(-limitStep(dt), Math.min(limitStep(dt), scene - out));
+      if (quantize) {
+        const code = linearToSrgb(stepped) * 255;
+        const prevCode = Math.round(linearToSrgb(out) * 255);
+        out = srgbToLinear((code >= prevCode ? Math.floor(code) : Math.ceil(code)) / 255);
+      } else {
+        out = stepped;
+      }
+    }
+    g.frame(new Float32Array(CELLS * 4).fill(out), t);
+    sg.frame(new Float32Array(CELLS * 4).fill(scene), t);
+    tail.after(was, g.limiting || sg.limiting, dt);
+    lum.push([t, out]);
+  }
+  const transitions = countTransitions(lum);
+  let worst = 0;
+  for (const t0 of transitions) worst = Math.max(worst, transitions.filter((t) => t >= t0 && t <= t0 + 1000).length);
+  return worst;
+}
+
+test('the full loop never shows more than 3 flashes in 1 s at any frame rate or storage', () => {
+  for (const quantize of [false, true]) {
+    for (const fps of [30, 60, 120, 144, 240]) {
+      for (const hz of [3.5, 4, 8, 15]) {
+        for (const [lo, hi] of [[0, 1], [0.7, 1], [0.05, 0.3]]) {
+          const worst = renderLoop({ fps, hz, lo, hi, quantize });
+          assert.ok(worst <= 6, `${quantize ? '8-bit' : 'float'} ${fps} Hz display, ${hz} Hz strobe ${lo}–${hi}: ${worst} transitions in 1 s`);
+        }
+      }
+    }
+  }
+});
+
+test('the limit stays on after release for LIMIT_TAIL_SEC of limited frame time', () => {
+  const tail = createLimitTail();
+  assert.equal(tail.active(false), false);
+  tail.after(true, false, 1 / 60);
+  let frames = 0;
+  while (tail.active(false)) { tail.after(false, false, 1 / 10); frames++; }
+  assert.equal(frames, Math.ceil(LIMIT_TAIL_SEC * 30), 'slow frames count at most 1/30 s each');
+  tail.after(false, true, 1 / 60);
+  assert.equal(tail.active(true), true);
+});
+
+test('flashLimit records name what was measured', () => {
+  const records = [];
+  const g = createFlashGuard({ measured: 'scene', trace: (r) => records.push(r), clock: () => 0 });
+  let t = 0;
+  for (let f = 0; f < FPS; f++, t += 1000 / FPS) g.frame(Math.floor(f / 6) % 2 ? white : black, t);
+  assert.equal(records[0].data.measured, 'scene');
+});

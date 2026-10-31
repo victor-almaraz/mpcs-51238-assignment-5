@@ -1,8 +1,9 @@
 /**
  * Flash guard (doc/visuals.md, Visual safety). Consumes a 64×48 RGBA
- * readback of the final output each frame, counts general and red flash
- * transitions per cell over the last second, and decides when the renderer
- * must limit change. Pure: no WebGL or DOM.
+ * readback each frame (the renderer runs one guard on its output and one on
+ * the scene before the limit), counts general and red flash transitions per
+ * cell over the last second, and decides when the renderer must limit
+ * change. Pure: no WebGL or DOM.
  */
 import { srgbToLinear, WHITE_UV } from './color.js';
 
@@ -20,6 +21,8 @@ export const MAX_FLASHES_PER_SECOND = 3;
 export const LIMIT_RATE_PER_SEC = 0.5;
 /** Longest frame interval the limit allows for. */
 export const MAX_LIMIT_DT_SEC = 1 / 30;
+/** Limited time after an intervention ends: enough for any pixel to reach the scene. */
+export const LIMIT_TAIL_SEC = 1 / LIMIT_RATE_PER_SEC;
 const WINDOW_MS = 1000;
 const CAP = 128; // transitions remembered per cell; far above any 1 s count that matters
 
@@ -40,7 +43,28 @@ export function limitStep(dtSec) {
  */
 export function transitionThreshold(maxFlashesPerSecond) {
   const n = Number.isFinite(maxFlashesPerSecond) ? Math.min(MAX_FLASHES_PER_SECOND, Math.max(0, maxFlashesPerSecond)) : MAX_FLASHES_PER_SECOND;
-  return Math.max(1, Math.ceil(2 * n));
+  return Math.max(1, Math.floor(2 * n));
+}
+
+/**
+ * Keeps the change limit on for LIMIT_TAIL_SEC of limited frame time after
+ * every guard has released, so held values return gradually.
+ */
+export function createLimitTail() {
+  let tail = 0;
+  return {
+    /** Whether the limit applies to the coming frame. @param {boolean} limiting */
+    active(limiting) { return limiting || tail > 0; },
+    /**
+     * After a frame drawn with `wasLimiting`, given the guards' new state.
+     * @param {boolean} wasLimiting @param {boolean} limiting @param {number} dtSec
+     */
+    after(wasLimiting, limiting, dtSec) {
+      if (limiting) tail = 0;
+      else if (wasLimiting) tail = LIMIT_TAIL_SEC;
+      else if (tail > 0) tail = Math.max(0, tail - (Number.isFinite(dtSec) && dtSec > 0 ? Math.min(dtSec, MAX_LIMIT_DT_SEC) : MAX_LIMIT_DT_SEC));
+    },
+  };
 }
 
 /** Per-cell ring of transition times. */
@@ -79,11 +103,12 @@ class TransitionLog {
  *   width?: number, height?: number,
  *   maxFlashesPerSecond?: number,
  *   encoding?: 'srgb' | 'linear',
+ *   measured?: 'output' | 'scene',
  *   trace?: (record: any) => void,
  *   clock?: () => number,
  * }} [options]
  */
-export function createFlashGuard({ width = GRID_W, height = GRID_H, maxFlashesPerSecond = MAX_FLASHES_PER_SECOND, encoding = 'srgb', trace = () => {}, clock = Date.now } = {}) {
+export function createFlashGuard({ width = GRID_W, height = GRID_H, maxFlashesPerSecond = MAX_FLASHES_PER_SECOND, encoding = 'srgb', measured = 'output', trace = () => {}, clock = Date.now } = {}) {
   const cells = width * height;
   const winW = Math.max(1, Math.min(width, Math.round((width * 341) / 1024)));
   const winH = Math.max(1, Math.min(height, Math.round((height * 256) / 768)));
@@ -139,7 +164,7 @@ export function createFlashGuard({ width = GRID_W, height = GRID_H, maxFlashesPe
   function emit(event, level, data) {
     trace({
       t: new Date(clock()).toISOString(),
-      traceId: `safety-flash-${interventions}`,
+      traceId: `safety-flash-${measured}-${interventions}`,
       stage: 'SAFETY', component: 'flash-guard', event, level, data,
     });
   }
@@ -221,11 +246,11 @@ export function createFlashGuard({ width = GRID_W, height = GRID_H, maxFlashesPe
         interventions++;
         const kind = g.cells >= areaCells ? 'general' : 'red';
         const w = kind === 'general' ? g : rw;
-        emit('flashLimit', 'warn', { kind, cells: w.cells, window: w.window });
+        emit('flashLimit', 'warn', { measured, kind, cells: w.cells, window: w.window });
       } else if (limiting && maxWindow(warmG).cells <= releaseCells && maxWindow(warmR).cells <= releaseCells) {
         limiting = false;
         event = 'released';
-        emit('flashLimitEnd', 'info', {});
+        emit('flashLimitEnd', 'info', { measured });
       }
       return { limiting, event, general: g.cells, red: rw.cells };
     },

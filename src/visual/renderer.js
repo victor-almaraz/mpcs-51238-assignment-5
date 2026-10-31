@@ -6,7 +6,7 @@
 import { diffLayers, PropResolver, ValueGate, isExprNode } from './layer-state.js';
 import { buildSprites, buildSegments, objectScreenPosition, maxProp, SPRITE_STRIDE, SEGMENT_STRIDE } from './scene.js';
 import { orbitalCamera, fitRadiusKm, cameraAzimuth, earthDisc, mapRect, projectMap, projectSky, skyRadius, PROJECTIONS } from './projection.js';
-import { createFlashGuard, limitStep, GRID_W, GRID_H } from './flash-guard.js';
+import { createFlashGuard, createLimitTail, limitStep, GRID_W, GRID_H, MAX_LIMIT_DT_SEC } from './flash-guard.js';
 import { isReducedMotion, watchSystemReducedMotion, clampPixelRatio, REDUCED_MOTION_STEP_MS } from './motion.js';
 import { parseHex, isHexColor, COLORMAPS, mixRgb } from './color.js';
 import { summaryLines, UNAVAILABLE_STATUS } from './summary.js';
@@ -124,7 +124,9 @@ class Renderer {
     this.pushed = {};
     this.resolver = new PropResolver();
     this.gate = new ValueGate(REDUCED_MOTION_STEP_MS);
-    this.guard = createFlashGuard({ maxFlashesPerSecond: this.settings.maxFlashesPerSecond, encoding: 'linear', trace: this.trace });
+    this.guard = createFlashGuard({ maxFlashesPerSecond: this.settings.maxFlashesPerSecond, encoding: 'linear', measured: 'output', trace: this.trace });
+    this.sceneGuard = createFlashGuard({ maxFlashesPerSecond: this.settings.maxFlashesPerSecond, encoding: 'linear', measured: 'scene', trace: this.trace });
+    this.limitTail = createLimitTail();
     this.desatTarget = 0;
     this.desat = 0;
     /** @type {string | null} */
@@ -145,7 +147,7 @@ class Renderer {
     this.userPrograms = new Map();
     this.glyphs = new Map([['+', 0]]);
     this.glyphDirty = true;
-    this.guardPixels = new Uint8Array(GRID_W * GRID_H * 4);
+    this.guardPixels = new Uint8Array(GRID_W * GRID_H * 8); // output grid, then scene grid
     this.scratch = new Float32Array(8);
     this.unsubSky = this.sky ? ['enter', 'update', 'exit'].map((t) => this.sky.on(t, (e) => this.onSkyEvent(e))) : [];
     this.onLost = (/** @type {Event} */ e) => {
@@ -208,6 +210,7 @@ class Renderer {
     if (p.maxFlashesPerSecond !== undefined) {
       this.settings.maxFlashesPerSecond = p.maxFlashesPerSecond;
       this.guard.setMaxFlashes(p.maxFlashesPerSecond);
+      this.sceneGuard.setMaxFlashes(p.maxFlashesPerSecond);
     }
     if (p.observer) this.settings.observer = p.observer;
   }
@@ -253,7 +256,7 @@ class Renderer {
     for (const p of this.userPrograms.values()) if (p) gl.deleteProgram(p);
     for (const p of Object.values(this.prog ?? {})) gl.deleteProgram(p);
     for (const b of Object.values(this.buf ?? {})) gl.deleteBuffer(b);
-    for (const t of [...(this.targets ?? []), this.guardTarget]) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    for (const t of [...(this.targets ?? []), this.guardTarget, this.boxTarget]) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
     gl.deleteTexture(this.atlas);
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
@@ -286,6 +289,7 @@ class Renderer {
       aurora: this.program(S.FULLSCREEN_VS, S.AURORA_FS),
       composite: this.program(S.FULLSCREEN_VS, S.COMPOSITE_FS),
       copy: this.program(S.FULLSCREEN_VS, S.COPY_FS),
+      guardBox: this.program(S.FULLSCREEN_VS, S.GUARD_BOX_FS),
       guard: this.program(S.FULLSCREEN_VS, S.GUARD_FS),
     };
     this.buf = { quad: gl.createBuffer(), sprite: gl.createBuffer(), segment: gl.createBuffer() };
@@ -296,9 +300,13 @@ class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, this.atlas);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array(1));
     this.glyphDirty = true;
+    // Float output targets keep storage rounding out of the limited step (doc/visuals.md, Visual safety).
+    this.floatTargets = !!gl.getExtension('EXT_color_buffer_float');
     this.targets = [];
     this.size = { w: 0, h: 0 };
-    this.guardTarget = this.target(GRID_W, GRID_H);
+    this.primed = false;
+    this.guardTarget = this.target(GRID_W, GRID_H * 2);
+    this.boxTarget = this.target(GRID_W * 8, GRID_H * 8, this.floatTargets);
     for (const l of this.order) if (l.type === 'shader') this.compileUser(l);
   }
 
@@ -376,14 +384,16 @@ class Renderer {
     return vao;
   }
 
-  /** @param {number} w @param {number} h */
-  target(w, h) {
+  /** @param {number} w @param {number} h @param {boolean} [float] 32-bit float storage, sampled NEAREST */
+  target(w, h, float = false) {
     const gl = this.gl;
     const tex = /** @type {WebGLTexture} */ (gl.createTexture());
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    if (float) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const filter = float ? gl.NEAREST : gl.LINEAR;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const fbo = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer());
@@ -403,12 +413,26 @@ class Renderer {
     const gl = this.gl;
     this.canvas.width = w;
     this.canvas.height = h;
-    for (const t of this.targets) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    const old = this.targets;
+    const lastOut = old.length ? old[this.outIndex === 1 ? 2 : 1] : null;
     // scene, output A, output B
-    this.targets = [this.target(w, h), this.target(w, h), this.target(w, h)];
+    this.targets = [this.target(w, h), this.target(w, h, this.floatTargets), this.target(w, h, this.floatTargets)];
     this.outIndex = 1;
     this.size = { w, h };
-    this.primed = false;
+    if (lastOut && this.primed) {
+      // The next frame limits change against the last output, scaled, so a resize never lifts the limit.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.targets[2].fbo);
+      gl.viewport(0, 0, w, h);
+      gl.disable(gl.BLEND);
+      gl.useProgram(this.prog.copy);
+      this.bindTex(this.prog.copy, 'uSrc', lastOut.tex, 0);
+      this.u2(this.prog.copy, 'uRes', w, h);
+      this.fullscreen();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    } else {
+      this.primed = false;
+    }
+    for (const t of old) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
   }
 
   // ---- frame ----
@@ -423,7 +447,7 @@ class Renderer {
     this.resize();
     const { w, h } = this.size;
     const reduced = isReducedMotion(this.settings.reducedMotion, this.systemReduced);
-    const holding = this.guard.limiting;
+    const holding = this.guard.limiting || this.sceneGuard.limiting;
 
     let frameVals = null;
     const audioTime = this.audioClock ? this.audioClock() : null;
@@ -524,7 +548,7 @@ class Renderer {
     if (key !== this.pathKey) { this.pathKey = key; this.propagator?.setPaths(pathRequests); }
 
     // Composite: desaturate and limit change, into the output target.
-    const desatStep = reduced ? 1 : DESAT_RATE_PER_SEC * dt;
+    const desatStep = DESAT_RATE_PER_SEC * Math.min(Math.max(dt, 0), MAX_LIMIT_DT_SEC);
     this.desat += Math.max(-desatStep, Math.min(desatStep, this.desatTarget - this.desat));
     gl.disable(gl.BLEND);
     gl.bindFramebuffer(gl.FRAMEBUFFER, out.fbo);
@@ -534,7 +558,8 @@ class Renderer {
     this.bindTex(this.prog.composite, 'uPrev', prev.tex, 1);
     this.u2(this.prog.composite, 'uRes', w, h);
     this.u1(this.prog.composite, 'uDesat', this.desat);
-    this.u1(this.prog.composite, 'uStep', this.guard.limiting && this.primed ? limitStep(dt) : -1);
+    this.u1(this.prog.composite, 'uStep', this.limitTail.active(holding) && this.primed ? limitStep(dt) : -1);
+    this.u1(this.prog.composite, 'uQuantize', this.floatTargets ? 0 : 1);
     this.fullscreen();
 
     // Present.
@@ -545,20 +570,44 @@ class Renderer {
     this.u2(this.prog.copy, 'uRes', w, h);
     this.fullscreen();
 
-    // Flash guard readback of the final output.
+    // Flash guard readback: the output in rows 0–47, the scene before the limit in rows 48–95.
+    this.measure(out.tex, 0, w, h);
+    this.measure(scene.tex, GRID_H, w, h);
     const gt = this.guardTarget;
     gl.bindFramebuffer(gl.FRAMEBUFFER, gt.fbo);
-    gl.viewport(0, 0, gt.w, gt.h);
-    gl.useProgram(this.prog.guard);
-    this.bindTex(this.prog.guard, 'uSrc', out.tex, 0);
-    this.u2(this.prog.guard, 'uGrid', gt.w, gt.h);
-    this.fullscreen();
     gl.readPixels(0, 0, gt.w, gt.h, gl.RGBA, gl.UNSIGNED_BYTE, this.guardPixels);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    this.guard.frame(this.guardPixels, perfMs);
+    const cells = GRID_W * GRID_H * 4;
+    this.guard.frame(this.guardPixels.subarray(0, cells), perfMs);
+    this.sceneGuard.frame(this.guardPixels.subarray(cells), perfMs);
+    this.limitTail.after(holding, this.guard.limiting || this.sceneGuard.limiting, dt);
 
     this.outIndex = this.outIndex === 1 ? 2 : 1;
     this.primed = true;
+  }
+
+  /**
+   * Averages `tex` into the guard grid at row `row` of the readback target; every pixel counts.
+   * @param {WebGLTexture} tex @param {number} row @param {number} w @param {number} h
+   */
+  measure(tex, row, w, h) {
+    const gl = this.gl;
+    const bt = this.boxTarget;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bt.fbo);
+    gl.viewport(0, 0, bt.w, bt.h);
+    gl.useProgram(this.prog.guardBox);
+    this.bindTex(this.prog.guardBox, 'uSrc', tex, 0);
+    this.u2(this.prog.guardBox, 'uSrcSize', w, h);
+    this.u2(this.prog.guardBox, 'uDstSize', bt.w, bt.h);
+    this.fullscreen();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.guardTarget.fbo);
+    gl.viewport(0, row, GRID_W, GRID_H);
+    gl.useProgram(this.prog.guard);
+    this.bindTex(this.prog.guard, 'uBoxes', bt.tex, 0);
+    this.u2(this.prog.guard, 'uSrcSize', w, h);
+    this.u2(this.prog.guard, 'uBoxSize', bt.w, bt.h);
+    this.u1(this.prog.guard, 'uRowOffset', row);
+    this.fullscreen();
   }
 
   // ---- drawing ----
