@@ -122,7 +122,7 @@ The chain processor follows the real-time rules of assignment 3's `a3-audio-impl
 ### Messages from the engine
 | `t` | Fields | Effect |
 |---|---|---|
-| `slots` | `slots: [{ id, type, params, bypass }]` | Replaces the slot list. `params` holds every parameter of the type (enum values as option indices). Slots with an unchanged `id` and `type` keep their kernel and state; their params move to the given values through smoothing. Other slots are created, with smoothers snapped to the given values; in a chain that has already processed audio a new slot fades in from dry over 10 ms. |
+| `slots` | `slots: [{ id, type, params, bypass }]` | Replaces the slot list. `params` holds every parameter of the type (enum values as option indices). Slots with an unchanged `id` and `type` keep their kernel and state; their params move to the given values through smoothing. Other slots are created, with smoothers snapped to the given values; in a chain that has already processed audio a new slot fades in from dry over 10 ms. A slot that leaves the list, or whose `type` changes under the same `id`, keeps its place and fades to dry over 10 ms before the processor drops it, so no `slots` message steps the level. |
 | `param` | `slot`, `name`, `value` | Sets one base value. The kernel clamps it through its `ParamDef`. |
 | `bypass` | `slot`, `on` | Bypasses or activates a slot with a 10 ms crossfade |
 | `tempo` | `bpm` (20–300), `at` (context seconds) | Sets the tempo used by `sync` params and synced LFOs; synced LFO phases re-anchor at `at` |

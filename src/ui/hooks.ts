@@ -32,13 +32,14 @@ const initial = () => INITIAL;
 /** Creates one piece session for the component's lifetime. */
 export function usePieceSession({ kiosk = false }: { kiosk?: boolean } = {}) {
   const { client, ready } = useSupabase();
-  const { settings } = useSettings();
+  const { settings, loaded } = useSettings();
   const [session, setSession] = useState<PieceSession | null>(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
+  // No session (so no Run) before settings load: it would start at the default level (doc/ui.md, Settings schema).
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !loaded) return;
     let s: PieceSession | null = null;
     let cancelled = false;
     import('@/src/ui/piece-session.js').then(({ createPieceSession }) => {
@@ -51,7 +52,7 @@ export function usePieceSession({ kiosk = false }: { kiosk?: boolean } = {}) {
       s?.dispose();
       setSession(null);
     };
-  }, [client, ready, kiosk]);
+  }, [client, ready, loaded, kiosk]);
 
   useEffect(() => { session?.setSettings(settings); }, [session, settings]);
 

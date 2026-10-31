@@ -85,7 +85,7 @@ export class InstrumentMod {
     const list = [...this.routes.values()].filter((R) => R.name === name);
     if (!list.length) return;
     const def = list[0].def;
-    const k = depthScale(def, this.inst.base[name], list.map((R) => R.depth));
+    const k = depthScale(def, this.inst.base[name], list.map((R) => R.depth), this.peak(name));
     for (const R of list) {
       const g = nativeGain(def, R.depth * k);
       if (g === R.value) continue;
@@ -95,11 +95,16 @@ export class InstrumentMod {
     }
   }
 
+  /** Highest value the instrument drives `name` to by itself (Subtractive: the filter envelope top). */
+  peak(name) {
+    return typeof this.inst.modPeak === 'function' ? this.inst.modPeak(name) : this.inst.base[name];
+  }
+
   /** Normalized headroom used by the routes on `name`: Σ|depth| after limiting. */
   used(name) {
     const list = [...this.routes.values()].filter((R) => R.name === name);
     if (!list.length) return 0;
-    const k = depthScale(list[0].def, this.inst.base[name], list.map((R) => R.depth));
+    const k = depthScale(list[0].def, this.inst.base[name], list.map((R) => R.depth), this.peak(name));
     return list.reduce((s, R) => s + Math.abs(R.depth) * k, 0);
   }
 
@@ -134,7 +139,7 @@ export class InstrumentMod {
       if (synthModPath(def) !== 'audio') continue;
       const p = voiceParam(v, def.mod.target);
       if (!p) continue;
-      const [lo, hi] = voiceOffsetRange(def, this.inst.base[name], this.used(name));
+      const [lo, hi] = voiceOffsetRange(def, this.inst.base[name], this.used(name), this.peak(name));
       const x = value < -1 ? -1 : value > 1 ? 1 : value;
       const g = nativeGain(def, x < lo ? lo : x > hi ? hi : x);
       v.voiceMods ??= new Map();

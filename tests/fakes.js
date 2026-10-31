@@ -167,6 +167,8 @@ export class FakeEngine {
 
   fadeOutAll(t) { this.calls.push(['fadeOutAll', t]); }
 
+  rebuild(type = null) { this.calls.push(['rebuild', type]); }
+
   /** Releases every voice and resets every chain (the real engine resets 30 ms later). */
   panic(t) {
     this.calls.push(['panic', t]);

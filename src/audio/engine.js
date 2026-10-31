@@ -13,7 +13,7 @@ import { Pluck } from './synths/pluck.js';
 import { Granular } from './synths/granular.js';
 import { VoicePool, MAX_VOICES_GLOBAL } from './voices.js';
 import { TrackedParam, GAIN_TAU, RISE_TAU } from './smoothing.js';
-import { dbToGain, tuningSemitones } from './synths/param-defs.js';
+import { dbToGain, tuningSemitones, VOLUME } from './synths/param-defs.js';
 import { hashSeed } from './random.js';
 import { buildMasterBus } from './master-bus.js';
 import { FxHost, PANIC_RESET_DELAY_S } from './fx/fx-host.js';
@@ -71,8 +71,10 @@ function sameValue(a, b) {
   return a === b;
 }
 
+/** Widget gain; volumeDb is capped at the taper's 0 dB here as well as by callers (audio-engine-core.md). */
 function gainTarget(w, soloActive) {
-  return isAudible(w, soloActive) ? dbToGain(w.volumeDb) : 0;
+  if (!isAudible(w, soloActive)) return 0;
+  return typeof w.volumeDb === 'number' && !Number.isNaN(w.volumeDb) ? dbToGain(Math.min(VOLUME.max, w.volumeDb)) : 0;
 }
 
 export class Engine {

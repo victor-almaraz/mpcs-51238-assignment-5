@@ -9,7 +9,21 @@ import { useAuth } from '@clerk/nextjs';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { browserClient } from '@/src/lib/supabase-browser';
-import { DEFAULT_SETTINGS, validateSettings } from '@/src/lib/settings.js';
+import { DEFAULT_SETTINGS, SAFETY_CACHE_KEY, safetyLimits, stricterSafety, validateSettings } from '@/src/lib/settings.js';
+
+const AUTH_WAIT_MS = 5000;
+
+/** Stores the safety limits for a later failed load (doc/ui.md, Settings schema). */
+function rememberSafety(s: Settings) {
+  try { window.localStorage.setItem(SAFETY_CACHE_KEY, JSON.stringify(safetyLimits(s))); } catch { /* storage unavailable */ }
+}
+
+/** The defaults, made stricter by the stored safety limits. */
+function fallbackSettings(): Settings {
+  let cached: unknown = null;
+  try { cached = JSON.parse(window.localStorage.getItem(SAFETY_CACHE_KEY) ?? 'null'); } catch { cached = null; }
+  return stricterSafety(DEFAULT_SETTINGS, cached) as Settings;
+}
 
 export type Settings = typeof DEFAULT_SETTINGS;
 export type SettingsWarning = { path: string; message: string };
@@ -60,18 +74,32 @@ function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // If auth has not loaded after AUTH_WAIT_MS, run with the strict fallback; a later load still applies.
+  useEffect(() => {
+    if (isLoaded) return;
+    const t = setTimeout(() => { setSettings(fallbackSettings()); setLoaded(true); }, AUTH_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [isLoaded]);
+
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn || !client) { setLoaded(true); return; }
     let stopped = false;
+    const failed = (message: string) => {
+      if (stopped) return;
+      setSettings(fallbackSettings());
+      setError(`Settings could not be loaded: ${message}`);
+      setLoaded(true);
+    };
     client.from('user_settings').select('settings').maybeSingle().then(({ data, error: e }) => {
       if (stopped) return;
-      if (e) { setError(`Settings could not be loaded: ${e.message}`); setLoaded(true); return; }
+      if (e) { failed(e.message); return; }
       const v = validateSettings(data?.settings ?? {});
       setSettings(v.settings as Settings);
       setWarnings(v.warnings);
+      rememberSafety(v.settings as Settings);
       setLoaded(true);
-    }, (err: Error) => { if (!stopped) { setError(`Settings could not be loaded: ${err.message}`); setLoaded(true); } });
+    }, (err: Error) => failed(err.message));
     return () => { stopped = true; };
   }, [isLoaded, isSignedIn, client]);
 
@@ -87,6 +115,7 @@ function SettingsProvider({ children }: { children: React.ReactNode }) {
     const { error: e } = await client.from('user_settings')
       .upsert({ settings: v.settings, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
     if (e) throw new Error(e.message);
+    rememberSafety(v.settings as Settings);
     setError(null);
     return { warnings: v.warnings };
   }, [isSignedIn, client]);

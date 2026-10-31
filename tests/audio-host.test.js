@@ -64,7 +64,7 @@ function setup() {
     engineModule, sky, trace, notify: (n) => notices.push(n), timers: clock, now: clock.now, wallNow: clock.wallNow,
     onVisualReaction: (d) => desat.push(d),
   });
-  return { host, clock, ctx, sky, trace, notices, desat, events, engine: () => engine, safety: (e) => safetyHandler(e) };
+  return { host, clock, ctx, sky, trace, notices, desat, events, engineModule, engine: () => engine, safety: (e) => safetyHandler(e) };
 }
 
 test('irToWidgets maps instruments as documented', () => {
@@ -145,6 +145,32 @@ test('safety events: duck notice; fault notice stops the bindings', async () => 
   assert.equal(s.trace.of({ stage: 'SAFETY', event: 'fault' })[0].level, 'error');
   s.sky.enter(skyObj('celestrak.stations', '99999', { p: 70 }));
   assert.equal(s.engine().get('i0').callsOf('noteOn').length, 1, 'nothing restarts until Run');
+  const calls = s.engine().calls.map((c) => c[0]);
+  assert.ok(calls.indexOf('releaseAll') >= 0 && calls.indexOf('releaseAll') < calls.indexOf('rebuild'), 'fault releases, then rebuilds');
+  assert.deepEqual(s.engine().calls.find((c) => c[0] === 'rebuild'), ['rebuild', null]);
+});
+
+test('safety-stage error: notice, Run refused until Restart Audio closes the context', async () => {
+  const s = setup();
+  let closed = 0;
+  await s.host.run(baseIr());
+  const engine = s.engine();
+  s.safety({ type: 'error' });
+  assert.deepEqual(s.notices.at(-1), { kind: 'safetyError', live: 'assertive', message: NOTICES.safetyError });
+  assert.equal(s.host.runtime, null);
+  assert.ok(engine.calls.some((c) => c[0] === 'releaseAll'));
+  assert.equal(s.host.safetyFailed, true);
+  await assert.rejects(s.host.run(baseIr()), /restart audio/);
+  s.engineModule.closeContext = async () => { closed++; };
+  const restarted = s.host.restartAudio();
+  s.clock.advance(60);
+  await restarted;
+  assert.equal(closed, 1);
+  assert.equal(engine.disposed, true);
+  assert.equal(s.host.engine, null);
+  await s.host.run(baseIr());
+  assert.notEqual(s.engine(), engine, 'a new engine after restart');
+  assert.ok(s.events.filter((e) => Array.isArray(e) && e[0] === 'buildMasterBus').length === 2, 'a new master bus');
 });
 
 test('reactions: only and detune go through engine.sync; followed params are kept; restore on fresh', async () => {
@@ -216,4 +242,20 @@ test('stop releases voices and removes instruments; a second Run reuses the engi
   await s.host.run(baseIr());
   assert.equal(s.engine(), e, 'same engine for the same context and seed');
   assert.equal(s.events.filter((x) => x === 'new Engine').length, 1);
+});
+
+test('dispose fades the engine out and disposes it 50 ms later', async () => {
+  const s = setup();
+  await s.host.run(baseIr());
+  const engine = s.engine();
+  const done = s.host.dispose();
+  const calls = engine.calls.map((c) => c[0]);
+  assert.ok(calls.includes('releaseAll') && calls.includes('fadeOutAll'));
+  assert.equal(engine.disposed, false, 'not disposed before the fade');
+  assert.equal(s.host.runtime, null);
+  s.clock.advance(49);
+  assert.equal(engine.disposed, false);
+  s.clock.advance(2);
+  await done;
+  assert.equal(engine.disposed, true);
 });

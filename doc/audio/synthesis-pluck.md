@@ -25,6 +25,7 @@ The pluck algorithm and its parameters. The AudioWorklet that runs it (file layo
   - Total loop delay `P = fs / f`. Subtract the averager's phase delay (≈ S samples): `D = P − S`.
   - Integer delay `M = floor(D − 0.1)`, fraction `d = D − M`. d stays in [0.1, 1.1), the allpass's well-conditioned range.
   - Allpass coefficient `C = (1 − d) / (1 + d)`.
+  - When `P` is so short that `M` reaches its minimum of 1 (high notes at low sample rates), `d` is clamped to at least 0.1, so `|C| < 1` and the allpass stays stable; such notes play slightly flat.
   - Without the allpass, integer-only delay lengths are audibly out of tune above ~C5.
 - **Decay → ρ:**
   - Each pass round the loop multiplies amplitude by ρ times the averager's gain at f.

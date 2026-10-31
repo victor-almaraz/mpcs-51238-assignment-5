@@ -55,3 +55,15 @@ test('enumerations, ranges and the time zone are checked', () => {
   assert.deepEqual(settings.data.observer, DEFAULT_SETTINGS.data.observer);
   assert.equal(warnings.length, 4);
 });
+
+test('stricterSafety keeps the stricter of each safety limit and ignores an invalid copy', async () => {
+  const { stricterSafety, safetyLimits } = await import('../src/lib/settings.js');
+  const stored = { masterDb: -40, maxMasterDb: -30, maxFlashesPerSecond: 1, reducedMotion: 'on' };
+  const s = stricterSafety(DEFAULT_SETTINGS, stored);
+  assert.deepEqual(safetyLimits(s), stored);
+  assert.equal(s.editor.fontSize, DEFAULT_SETTINGS.editor.fontSize);
+  const loose = stricterSafety(DEFAULT_SETTINGS, { masterDb: 6, maxMasterDb: 12, maxFlashesPerSecond: 9, reducedMotion: 'off' });
+  assert.deepEqual(safetyLimits(loose), safetyLimits(DEFAULT_SETTINGS), 'a looser copy never loosens');
+  assert.deepEqual(stricterSafety(DEFAULT_SETTINGS, 'junk'), structuredClone(DEFAULT_SETTINGS));
+  assert.equal(stricterSafety(DEFAULT_SETTINGS, { maxMasterDb: -20 }).audio.masterDb, -20, 'masterDb never above maxMasterDb');
+});

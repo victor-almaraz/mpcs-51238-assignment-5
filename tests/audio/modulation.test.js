@@ -169,3 +169,18 @@ test('LFO phase from frames in a chain equals phase from t − t₀; rate change
   near(clock.phaseAt(11) - clock.phaseAt(10), 3.1);
   assert.equal(SUB_BLOCK, 32);
 });
+
+test('depthScale and voiceOffsetRange measure upper headroom from an envelope peak', async () => {
+  const { depthScale, voiceOffsetRange } = await import('../../src/audio/mod/model.js');
+  const { PARAM_DEFS } = await import('../../src/audio/synths/param-defs.js');
+  const def = PARAM_DEFS.subtractive.find((d) => d.name === 'cutoff');
+  const k0 = depthScale(def, 2000, [1]);
+  const kEnv = depthScale(def, 2000, [1], 2000 * 2 ** 2);
+  assert.ok(kEnv < k0, 'an envelope two octaves up leaves less room');
+  const top = (base, peak, depth) => Math.log(peak / def.min) / Math.log(def.max / def.min) + depth;
+  assert.ok(top(2000, 8000, kEnv) <= 1 + 1e-9, 'envelope peak plus full route depth stays within range');
+  assert.equal(depthScale(def, 2000, [1], 16000), 0, 'an envelope at max leaves no room');
+  const [, hi] = voiceOffsetRange(def, 2000, 0, 8000);
+  assert.ok(top(2000, 8000, hi) <= 1 + 1e-9);
+  assert.equal(depthScale(def, 2000, [0.1], 1000), depthScale(def, 2000, [0.1]), 'a peak below base changes nothing');
+});

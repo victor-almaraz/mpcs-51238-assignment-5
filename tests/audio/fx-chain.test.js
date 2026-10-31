@@ -75,6 +75,22 @@ test('slots: unchanged id and type keep the kernel; a new slot in a running chai
   assert.ok(L[0] > 0.45, 'starts from dry');
 });
 
+test('slots: a removed slot or a type change under the same id fades to dry over 10 ms, then is dropped', () => {
+  for (const next of [[slot('f1', 'eq3')], [slot('f0', 'delay', { mix: 0 }), slot('f1', 'eq3')]]) {
+    const { c } = core();
+    c.handle({ t: 'slots', slots: [slot('f0', 'saturation', { drive: 0, output: -24 }), slot('f1', 'eq3')] });
+    render(c, 20, () => 0.5);
+    c.handle({ t: 'slots', slots: next });
+    const [L] = render(c, 8, () => 0.5);
+    let maxStep = 0;
+    for (let i = 1; i < L.length; i++) maxStep = Math.max(maxStep, Math.abs(L[i] - L[i - 1]));
+    assert.ok(maxStep < 0.01, `step ${maxStep}`);
+    assert.ok(L[0] < 0.05, 'starts from the old wet level');
+    assert.ok(L[L.length - 1] > 0.45, 'reaches dry');
+    assert.deepEqual(c.slots.map((e) => [e.id, e.type]), next.map((e) => [e.id, e.type]), 'faded slot dropped');
+  }
+});
+
 test('EffectSlot rules in the chain: a fault is reported once; non-finite input is silenced without a fault', () => {
   const { c, posted } = core();
   c.handle({ t: 'slots', slots: [slot('f0', 'filter', { cutoff: 500 })] });

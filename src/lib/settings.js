@@ -93,3 +93,38 @@ export function validateSettings(input) {
 export function reducedMotion(settings, systemPrefersReduced) {
   return settings.visual.reducedMotion === 'on' || systemPrefersReduced === true;
 }
+
+/** localStorage key of the last known safety limits (doc/ui.md, Settings schema). */
+export const SAFETY_CACHE_KEY = 'sphaerenmusik.safety';
+
+/** The safety limits of validated settings, for the local copy. */
+export function safetyLimits(settings) {
+  return {
+    masterDb: settings.audio.masterDb,
+    maxMasterDb: settings.audio.maxMasterDb,
+    maxFlashesPerSecond: settings.visual.maxFlashesPerSecond,
+    reducedMotion: settings.visual.reducedMotion,
+  };
+}
+
+/**
+ * `settings` with each safety limit set to the stricter of its value and the stored copy.
+ * An invalid copy changes nothing.
+ * @param {typeof DEFAULT_SETTINGS} settings validated settings
+ * @param {unknown} cached parsed safetyLimits() output
+ */
+export function stricterSafety(settings, cached) {
+  const out = structuredClone(settings);
+  if (!cached || typeof cached !== 'object') return out;
+  const c = /** @type {any} */ (cached);
+  const v = validateSettings({
+    audio: { maxMasterDb: c.maxMasterDb, masterDb: c.masterDb },
+    visual: { maxFlashesPerSecond: c.maxFlashesPerSecond, reducedMotion: c.reducedMotion },
+  }).settings;
+  if (isNum(c.maxMasterDb)) out.audio.maxMasterDb = Math.min(out.audio.maxMasterDb, v.audio.maxMasterDb);
+  if (isNum(c.masterDb)) out.audio.masterDb = Math.min(out.audio.masterDb, v.audio.masterDb);
+  out.audio.masterDb = Math.min(out.audio.masterDb, out.audio.maxMasterDb);
+  if (isNum(c.maxFlashesPerSecond)) out.visual.maxFlashesPerSecond = Math.min(out.visual.maxFlashesPerSecond, v.visual.maxFlashesPerSecond);
+  if (c.reducedMotion === 'on') out.visual.reducedMotion = 'on';
+  return out;
+}

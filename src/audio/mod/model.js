@@ -48,14 +48,15 @@ export function nativeGain(def, depth) {
 
 /**
  * Scale applied to every depth of one target on the native path, so toNorm(base) ± Σ|depthᵢ|
- * stays within 0–1: min(1, h / S) with h = min(u₀, 1 − u₀), S = Σ|depthᵢ|.
+ * stays within 0–1: min(1, h / S) with h = min(u₀, 1 − toNorm(peak)), S = Σ|depthᵢ|. `peak` is the
+ * highest value the instrument itself drives the parameter to (an envelope), at least `base`.
  */
-export function depthScale(def, base, depths) {
+export function depthScale(def, base, depths, peak = base) {
   let S = 0;
   for (const d of depths) S += Math.abs(d);
   if (S === 0) return 1;
   const u0 = toNorm(def, base);
-  const h = Math.min(u0, 1 - u0);
+  const h = Math.min(u0, 1 - Math.max(u0, toNorm(def, peak)));
   return h >= S ? 1 : Math.max(0, h) / S;
 }
 
@@ -67,11 +68,13 @@ export function limitedGains(def, base, depths) {
 
 /**
  * Range of a per-voice offset (normalized units) on a target whose routes already use `used`
- * of the headroom: the voice's value with every route at full depth stays within 0–1.
+ * of the headroom: the voice's value with every route at full depth stays within 0–1, with the
+ * upper headroom measured from `peak` (depthScale).
  */
-export function voiceOffsetRange(def, base, used) {
+export function voiceOffsetRange(def, base, used, peak = base) {
   const u0 = toNorm(def, base);
-  return [Math.min(0, used - u0), Math.max(0, 1 - u0 - used)];
+  const top = Math.max(u0, toNorm(def, peak));
+  return [Math.min(0, used - u0), Math.max(0, 1 - top - used)];
 }
 
 /** Modulation path of a synth ParamDef: 'audio', 'control' or null (modulation.md, Synth targets). */

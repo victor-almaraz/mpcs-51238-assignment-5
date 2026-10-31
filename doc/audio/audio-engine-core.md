@@ -54,6 +54,7 @@ voice → widget.output (volume × mute/solo × polyGain) → [insert chain] →
 - `buildEngine(ctx: BaseAudioContext, seed: number)` (`src/audio/engine.js`) builds the master bus and one instrument per widget from rack state. The offline render (`recording.md`) uses it; the live page builds the bus itself and constructs `new Engine(ctx, bus, opts)` (`bindings.md`, Audio host). Both paths create the same graph.
 - `seed` initializes every `mulberry32` PRNG (`src/audio/random.js`) used by instruments. Audio code does not call `Math.random()`.
 - Per-voice headroom: velocity gain ≤ 0.3 before widget volume.
+- The engine caps each widget's `volumeDb` at 0 dB itself (non-numbers count as Off), so no caller can boost an instrument above unity.
 - `latencyHint` is `'interactive'` (the default). `'playback'` increases output latency in exchange for fewer dropouts, which delays live parameter changes and live input.
 
 ## Common widget interface

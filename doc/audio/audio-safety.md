@@ -83,8 +83,8 @@ masterGain → preMeter (AnalyserNode), drives the limiting indicator
 
 ### Non-finite guard and recovery
 - On the first non-finite or out-of-threshold input sample, the worklet zeroes the rest of the render quantum, resets its state (DC blocker, delay line, gain), holds silence for 250 ms, fades in over 50 ms and posts `{type:'fault'}` once.
-- On `fault`, `master-bus.js`:
-  1. Stops the transport and calls `releaseAll()` (`midi-playback-scheduling.md`).
+- `master-bus.js` forwards `fault` to the handler set with `bus.setHandler`; the audio host (`src/audio-host/host.js`) then:
+  1. Stops the transport (the piece's bindings) and calls `releaseAll()` (`midi-playback-scheduling.md`).
   2. Disconnects and recreates every BiquadFilterNode and every worklet node that may hold NaN state (`ks-processor`): `engine.rebuild()`, which also posts `reset` to every effect chain (`effects.md`). Effect chains sit before `masterGain`, so their output always passes the safety stage.
   3. Announces "Audio fault — output muted and reset" in the assertive live region.
 - Worklets flush state variables with `if (Math.abs(s) < 1e-20) s = 0` (project limit). Applies to `ks-processor.js` and `safety-limiter.js`.
@@ -255,7 +255,7 @@ export async function buildMasterBus(ctx: BaseAudioContext) {
 }
 ```
 - No widget output connects to `mixBus` until `buildMasterBus` resolves.
-- `onSafetyError` stops the transport, calls `releaseAll()` and shows "Restart Audio", which closes the context and creates a new one on the next gesture.
+- `onSafetyError` (the bus handler receives `{type:'error'}`; the audio host handles it) stops the transport, calls `releaseAll()`, announces "Audio stopped — the safety stage failed. Restart audio to continue." in the assertive live region and shows "Restart Audio". Restart Audio disposes the engine and closes the context (`closeContext()`); the next Run creates a new context and master bus. Run refuses to start until then.
 - Meters and the recorder attach to `safetyOut` (and `preMeter` to `masterGain`) only in an `AudioContext`, not in offline renders.
 
 ### Fallback without AudioWorklet

@@ -106,7 +106,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
   const notify = (n) => {
     const notice = { id: ++noticeId, kind: n.kind, live: n.live, message: n.message };
     set({ notices: [...state.notices.filter((x) => x.kind !== n.kind || n.kind === 'fxFault'), notice] });
-    if (n.kind === 'fault' || n.kind === 'engineFault') set({ audio: 'fault' });
+    if (n.kind === 'fault' || n.kind === 'engineFault' || n.kind === 'safetyError') set({ audio: 'fault' });
   };
 
   function makeHost(mod) {
@@ -246,6 +246,17 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
     restoreLevel() {
       master?.ack();
       set({ notices: state.notices.filter((n) => n.kind !== 'duck') });
+    },
+
+    /** Restart Audio after a safety-stage error (doc/audio/audio-safety.md, Wiring). */
+    restartAudio() {
+      if (!host) return Promise.resolve();
+      if (valuesTimer !== null) clearInterval(valuesTimer);
+      valuesTimer = null;
+      renderer?.setLayerValues({});
+      return host.restartAudio().then(() => {
+        set({ audio: 'stopped', playingIr: null, notices: state.notices.filter((n) => n.kind !== 'safetyError' && n.kind !== 'fault') });
+      });
     },
 
     /** @param {number} id */

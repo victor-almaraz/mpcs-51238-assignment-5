@@ -29,6 +29,7 @@ Every other module receives the engine, the sky store, the clock and the `trace(
 4. Call `engine.pump(ctx.currentTime + 0.1)` every 25 ms (granular schedules grains ahead).
    - A realtime bus starts with `masterGain` at 0. The host calls `bus.fadeIn(level)` once the engine exists and after every resume of the context (a Run that resumes a suspended context, or a `statechange` back to `running`), with `level` from its `masterLevel` option (`src/audio-host/master.js`); `null` while muted after Panic skips the fade.
    - A seed change replaces the engine: the host calls `releaseAll(t)` and `fadeOutAll(t)` on the old engine, disposes it 50 ms later, then constructs the new one on the same bus.
+   - Teardown (`host.dispose()`, when the page leaves or for Restart Audio) does the same: `releaseAll(t)`, `fadeOutAll(t)`, then `dispose()` 50 ms later, so leaving a playing piece never clicks.
 5. Map IR instruments to engine widgets and call `engine.sync(widgets)` on start and after each hot reload:
    ```js
    const widgets = ir.instruments.map((i) => ({

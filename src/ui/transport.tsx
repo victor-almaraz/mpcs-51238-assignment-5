@@ -134,10 +134,11 @@ export function Notices({ session, state }: { session: PieceSession | null; stat
       {state.notices.length > 0 && (
         <ul className="flex flex-col gap-1 font-mono text-xs">
           {state.notices.map((n) => (
-            <li key={n.id} className={`flex items-center gap-2 border px-2 py-1 ${n.kind === 'fault' || n.kind === 'engineFault' ? 'border-down' : 'border-line'}`}>
+            <li key={n.id} className={`flex items-center gap-2 border px-2 py-1 ${n.kind === 'fault' || n.kind === 'engineFault' || n.kind === 'safetyError' ? 'border-down' : 'border-line'}`}>
               <span className="flex-1">{n.message}</span>
               {n.kind === 'duck' && <button type="button" className={btn} onClick={() => session?.restoreLevel()}>Restore Level</button>}
-              {n.kind !== 'duck' && n.kind !== 'panic' && <button type="button" className={btn} aria-label="Dismiss" onClick={() => session?.dismiss(n.id)}>×</button>}
+              {n.kind === 'safetyError' && <button type="button" className={btn} onClick={() => { session?.restartAudio().catch(() => {}); }}>Restart Audio</button>}
+              {n.kind !== 'duck' && n.kind !== 'panic' && n.kind !== 'safetyError' && <button type="button" className={btn} aria-label="Dismiss" onClick={() => session?.dismiss(n.id)}>×</button>}
             </li>
           ))}
         </ul>

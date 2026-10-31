@@ -29,6 +29,13 @@ export class Subtractive extends Instrument {
     return Math.max(0, Math.min(this.params.envAmount * 1200, room));
   }
 
+  /** Top of `name` before modulation: for cutoff, the filter envelope's peak (modulation.md, Synth targets). */
+  modPeak(name) {
+    if (name !== 'cutoff') return this.base[name];
+    const hz = this.cutoffHz();
+    return hz * Math.pow(2, this.envCents(hz) / 1200);
+  }
+
   /** Base cutoff for voice `v`: the knob, lowered if needed so its envelope peak fits. */
   voiceCutoff(v, hz) {
     return Math.min(hz, this.limitHz() / Math.pow(2, v.envCents / 1200));
@@ -75,6 +82,8 @@ export class Subtractive extends Instrument {
     if (name === 'cutoff') {
       const hz = this.cutoffHz();
       for (const v of this.activeVoices()) v.filter.frequency.setTargetAtTime(this.voiceCutoff(v, hz), now, FILTER_TAU);
+    } else if (name === 'envAmount') {
+      this.mod?.baseChanged('cutoff');   // the envelope's top bounds cutoff routes
     } else if (name === 'resonance') {
       for (const v of this.activeVoices()) v.filter.Q.setTargetAtTime(value, now, FILTER_TAU);
     }

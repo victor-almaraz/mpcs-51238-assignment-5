@@ -201,6 +201,10 @@ Opened with `Mod-Shift-P` or `Mod-K`. Typing filters commands by fuzzy match on 
 
 Unknown keys are dropped. Invalid values fall back to defaults with a warning shown in the settings view.
 
+Safety limits before and without stored settings:
+- No piece session starts until settings have loaded (or the visitor is known to be signed out), so Run stays disabled and nothing plays at the default level above a stored `maxMasterDb`. When sign-in state is still unknown after 5 s, the page starts with the fallback below; settings that load later still apply.
+- After each successful load or save, the page keeps the safety limits (`audio.masterDb`, `audio.maxMasterDb`, `visual.maxFlashesPerSecond`, `visual.reducedMotion`) in `localStorage` under `sphaerenmusik.safety`. When loading fails, or for the 5 s fallback, the page uses the defaults with each safety limit set to the stricter of the default and the stored copy.
+
 ## Sources
 - CodeMirror, Autocompletion example: https://codemirror.net/examples/autocompletion/
 - val-town/codemirror-ts: https://github.com/val-town/codemirror-ts

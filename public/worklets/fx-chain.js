@@ -130,8 +130,9 @@ const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
     }
   }
 
+  /** The live slot with `id`; slots fading out after removal are not found. */
   findSlot(id) {
-    for (const s of this.slots) if (s.id === id) return s;
+    for (const s of this.slots) if (s.id === id && !s.leaving) return s;
     return null;
   }
 
@@ -176,12 +177,33 @@ const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
         slot.bypassed = s.bypass;
         slot.target = s.bypass ? 0 : 1;
         slot.wet = s.bypass || this.started ? 0 : 1;   // a new slot in a running chain fades in
-        e = { id: s.id, type: s.type, slot, kernel, defs: entry.params, defById: new Map(entry.params.map((d) => [d.id, d])), base };
+        e = { id: s.id, type: s.type, slot, kernel, defs: entry.params, defById: new Map(entry.params.map((d) => [d.id, d])), base, leaving: false };
       }
       next.push(e);
     }
+    // Slots that left the list, or changed type, fade to dry in place before process() drops them.
+    const kept = new Set(next);
+    this.slots.forEach((old, i) => {
+      if (kept.has(old)) return;
+      if (!this.started || old.slot.wet === 0) return;
+      old.leaving = true;
+      old.slot.setBypass(true);
+      next.splice(Math.min(i, next.length), 0, old);
+    });
     this.slots = next;
     this.compile();
+  }
+
+  /** Drops faded-out leaving slots in place (no allocation). */
+  dropLeft() {
+    const slots = this.slots;
+    let w = 0;
+    for (let r = 0; r < slots.length; r++) {
+      const e = slots[r];
+      if (e.leaving && e.slot.wet === 0) continue;
+      slots[w++] = e;
+    }
+    slots.length = w;
   }
 
   onParam(m) {
@@ -363,9 +385,12 @@ const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
       if (routed || this.lfos.length > 0) this.evaluate((frame + s) / fs);
       for (let k = 0; k < slots.length; k++) slots[k].slot.process(oL, oR, s, e);
     }
+    let left = false;
     for (let k = 0; k < slots.length; k++) {
-      if (slots[k].slot.takeFault()) this.post({ t: 'fault', slot: slots[k].id });
+      if (slots[k].slot.takeFault() && !slots[k].leaving) this.post({ t: 'fault', slot: slots[k].id });
+      if (slots[k].leaving && slots[k].slot.wet === 0) left = true;
     }
+    if (left) this.dropLeft();
     this.reportCount += n;
     if (this.reportCount >= this.reportFrames) {
       this.reportCount = 0;
@@ -937,14 +962,15 @@ const clamp01 = (u) => (u < 0 ? 0 : u > 1 ? 1 : u);
 
 /**
  * Scale applied to every depth of one target on the native path, so toNorm(base) ± Σ|depthᵢ|
- * stays within 0–1: min(1, h / S) with h = min(u₀, 1 − u₀), S = Σ|depthᵢ|.
+ * stays within 0–1: min(1, h / S) with h = min(u₀, 1 − toNorm(peak)), S = Σ|depthᵢ|. `peak` is the
+ * highest value the instrument itself drives the parameter to (an envelope), at least `base`.
  */
- function depthScale(def, base, depths) {
+ function depthScale(def, base, depths, peak = base) {
   let S = 0;
   for (const d of depths) S += Math.abs(d);
   if (S === 0) return 1;
   const u0 = _paramsjs.toNorm.call(void 0, def, base);
-  const h = Math.min(u0, 1 - u0);
+  const h = Math.min(u0, 1 - Math.max(u0, _paramsjs.toNorm.call(void 0, def, peak)));
   return h >= S ? 1 : Math.max(0, h) / S;
 } exports.depthScale = depthScale;
 
@@ -956,11 +982,13 @@ const clamp01 = (u) => (u < 0 ? 0 : u > 1 ? 1 : u);
 
 /**
  * Range of a per-voice offset (normalized units) on a target whose routes already use `used`
- * of the headroom: the voice's value with every route at full depth stays within 0–1.
+ * of the headroom: the voice's value with every route at full depth stays within 0–1, with the
+ * upper headroom measured from `peak` (depthScale).
  */
- function voiceOffsetRange(def, base, used) {
+ function voiceOffsetRange(def, base, used, peak = base) {
   const u0 = _paramsjs.toNorm.call(void 0, def, base);
-  return [Math.min(0, used - u0), Math.max(0, 1 - u0 - used)];
+  const top = Math.max(u0, _paramsjs.toNorm.call(void 0, def, peak));
+  return [Math.min(0, used - u0), Math.max(0, 1 - top - used)];
 } exports.voiceOffsetRange = voiceOffsetRange;
 
 /** Modulation path of a synth ParamDef: 'audio', 'control' or null (modulation.md, Synth targets). */

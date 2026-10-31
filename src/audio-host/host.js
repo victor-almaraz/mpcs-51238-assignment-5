@@ -15,6 +15,7 @@ export const ENGINE_SWAP_MS = 50;
 
 export const NOTICES = Object.freeze({
   fault: 'Audio fault — output muted and reset',
+  safetyError: 'Audio stopped — the safety stage failed. Restart audio to continue.',
   duck: 'Level reduced — sustained loud output',
   /** @param {string} type @param {string} owner */
   fxFault: (type, owner) => `Effect ${type} on ${owner} was reset and bypassed.`,
@@ -25,9 +26,10 @@ export const NOTICES = Object.freeze({
  * @property {() => Promise<any>} ensureRunning
  * @property {(ctx: any, opts: { realtime: boolean, masterGain: number }) => Promise<any>} buildMasterBus
  * @property {new (ctx: any, bus: any, opts: any) => any} Engine
+ * @property {() => Promise<void>} [closeContext]  closes the context for Restart Audio
  *
  * @typedef {object} Notice
- * @property {'fault' | 'duck' | 'fxFault' | 'engineFault'} kind
+ * @property {'fault' | 'duck' | 'fxFault' | 'engineFault' | 'safetyError'} kind
  * @property {'assertive' | 'polite'} live   live region (doc/audio/audio-safety.md, Safety UI)
  * @property {string} message
  *
@@ -84,6 +86,8 @@ export function createAudioHost(options) {
   let reactions = { detuneCents: 0, muted: [], desaturate: 0 };
   /** Faulted slot ids; each is reported once and un-bypassed on the next reload or Run. */
   const faulted = new Set();
+  /** The safety stage threw (processorerror) and is silent for good: only Restart Audio recovers. */
+  let safetyFailed = false;
 
   const followed = (keep = null) => {
     /** @type {Record<string, Record<string, number>>} */
@@ -98,14 +102,33 @@ export function createAudioHost(options) {
   function onSafety(e) {
     const type = typeof e === 'string' ? e : e && typeof e.type === 'string' ? e.type : 'unknown';
     if (type === 'fault') {
+      // The limiter holds silence for 250 ms, so the rebuild's unfaded disposal is inaudible (audio-safety.md).
       emit('SAFETY', 'master-bus', 'fault', { event: 'fault' }, { level: 'error' });
       notify({ kind: 'fault', live: 'assertive', message: NOTICES.fault });
       stopBindings();
+      releaseAndRebuild(true);
+    } else if (type === 'error') {
+      safetyFailed = true;
+      emit('SAFETY', 'master-bus', 'error', { event: 'processorerror' }, { level: 'error' });
+      notify({ kind: 'safetyError', live: 'assertive', message: NOTICES.safetyError });
+      stopBindings();
+      releaseAndRebuild(false);
     } else if (type === 'duck') {
       emit('SAFETY', 'master-bus', 'duck', { event: 'duck' }, { level: 'warn' });
       notify({ kind: 'duck', live: 'polite', message: NOTICES.duck });
     } else {
       emit('SAFETY', 'master-bus', type, { event: type }, { level: 'info' });
+    }
+  }
+
+  /** Releases every voice and, when `rebuild`, recreates nodes that may hold NaN state. */
+  function releaseAndRebuild(rebuild) {
+    if (!engine) return;
+    try {
+      if (typeof engine.releaseAll === 'function') engine.releaseAll(ctx ? ctx.currentTime : undefined);
+      if (rebuild && typeof engine.rebuild === 'function') engine.rebuild();
+    } catch (err) {
+      emit('SAFETY', 'engine', 'error', { event: 'rebuild', message: err instanceof Error ? err.message : String(err) }, { level: 'error' });
     }
   }
 
@@ -223,6 +246,7 @@ export function createAudioHost(options) {
      * @param {any} pieceIr validated IR
      */
     async run(pieceIr) {
+      if (safetyFailed) throw new Error('The safety stage failed; restart audio before running');
       const wasRunning = !!ctx && ctx.state === 'running';
       starting = true;
       let c;
@@ -319,14 +343,36 @@ export function createAudioHost(options) {
       if (engine) engine.sync([]);
     },
 
-    /** Stops the piece and the pump, and disposes the engine. */
+    /**
+     * Stops the bindings and the pump, fades the engine out and disposes it ENGINE_SWAP_MS later.
+     * @returns {Promise<void>} resolves once the engine is disposed
+     */
     dispose() {
-      host.stop();
+      stopBindings();
       if (pumpTimer !== null) timers.clearInterval(pumpTimer);
       pumpTimer = null;
-      if (engine && typeof engine.dispose === 'function') engine.dispose();
+      const old = engine;
       engine = null;
+      if (!old) return Promise.resolve();
+      try {
+        const t = ctx ? ctx.currentTime : 0;
+        if (typeof old.releaseAll === 'function') old.releaseAll(t);
+        if (typeof old.fadeOutAll === 'function') old.fadeOutAll(t);
+      } catch { /* already torn down */ }
+      return sleep(ENGINE_SWAP_MS).then(() => { if (typeof old.dispose === 'function') old.dispose(); });
     },
+
+    /** Restart Audio after a safety-stage error: disposes the engine and closes the context. */
+    async restartAudio() {
+      await host.dispose();
+      bus = null;
+      ctx = null;
+      engineSeed = null;
+      if (typeof engineModule.closeContext === 'function') await engineModule.closeContext();
+      safetyFailed = false;
+    },
+
+    get safetyFailed() { return safetyFailed; },
 
     /** Forwards a propagator post (2 Hz) to the runtime. */
     orbitTick() { if (runtime) runtime.orbitTick(); },

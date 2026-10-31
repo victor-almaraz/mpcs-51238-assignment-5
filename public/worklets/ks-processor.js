@@ -101,7 +101,8 @@ class KSProcessor extends AudioWorkletProcessor {
     const M = Math.max(1, Math.floor(P - 1.1));
     const N = M + 1;
     v.P = P; v.M = M; v.N = N; v.w = 0;
-    const d = P - damping - M;
+    // Clamped so |C| < 1 when M is at its minimum (synthesis-pluck.md, Tuning).
+    const d = Math.max(0.1, P - damping - M);
     v.C = (1 - d) / (1 + d);
     const t60 = Math.max(0.05, m.decay);
     v.rho = Math.min(0.9999, Math.pow(10, -3 / (t60 * f)));
@@ -206,7 +207,7 @@ class KSProcessor extends AudioWorkletProcessor {
     for (let vi = 0; vi < MAX_VOICES; vi++) {
       const v = this.voices[vi];
       if (!v.active) continue;
-      const d = v.P - S - v.M;
+      const d = Math.max(0.1, v.P - S - v.M);
       v.C = (1 - d) / (1 + d);
       const buf = v.buf, N = v.N, C = v.C;
       const i0 = v.startFrame > blockStart ? v.startFrame - blockStart : 0;

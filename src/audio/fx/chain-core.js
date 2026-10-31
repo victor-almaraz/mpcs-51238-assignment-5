@@ -88,8 +88,9 @@ export class ChainCore {
     }
   }
 
+  /** The live slot with `id`; slots fading out after removal are not found. */
   findSlot(id) {
-    for (const s of this.slots) if (s.id === id) return s;
+    for (const s of this.slots) if (s.id === id && !s.leaving) return s;
     return null;
   }
 
@@ -134,12 +135,33 @@ export class ChainCore {
         slot.bypassed = s.bypass;
         slot.target = s.bypass ? 0 : 1;
         slot.wet = s.bypass || this.started ? 0 : 1;   // a new slot in a running chain fades in
-        e = { id: s.id, type: s.type, slot, kernel, defs: entry.params, defById: new Map(entry.params.map((d) => [d.id, d])), base };
+        e = { id: s.id, type: s.type, slot, kernel, defs: entry.params, defById: new Map(entry.params.map((d) => [d.id, d])), base, leaving: false };
       }
       next.push(e);
     }
+    // Slots that left the list, or changed type, fade to dry in place before process() drops them.
+    const kept = new Set(next);
+    this.slots.forEach((old, i) => {
+      if (kept.has(old)) return;
+      if (!this.started || old.slot.wet === 0) return;
+      old.leaving = true;
+      old.slot.setBypass(true);
+      next.splice(Math.min(i, next.length), 0, old);
+    });
     this.slots = next;
     this.compile();
+  }
+
+  /** Drops faded-out leaving slots in place (no allocation). */
+  dropLeft() {
+    const slots = this.slots;
+    let w = 0;
+    for (let r = 0; r < slots.length; r++) {
+      const e = slots[r];
+      if (e.leaving && e.slot.wet === 0) continue;
+      slots[w++] = e;
+    }
+    slots.length = w;
   }
 
   onParam(m) {
@@ -321,9 +343,12 @@ export class ChainCore {
       if (routed || this.lfos.length > 0) this.evaluate((frame + s) / fs);
       for (let k = 0; k < slots.length; k++) slots[k].slot.process(oL, oR, s, e);
     }
+    let left = false;
     for (let k = 0; k < slots.length; k++) {
-      if (slots[k].slot.takeFault()) this.post({ t: 'fault', slot: slots[k].id });
+      if (slots[k].slot.takeFault() && !slots[k].leaving) this.post({ t: 'fault', slot: slots[k].id });
+      if (slots[k].leaving && slots[k].slot.wet === 0) left = true;
     }
+    if (left) this.dropLeft();
     this.reportCount += n;
     if (this.reportCount >= this.reportFrames) {
       this.reportCount = 0;
