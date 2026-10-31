@@ -102,5 +102,20 @@ begin
 end $$;
 reset role;
 
+-- worker grants (doc/database.md, Worker grants)
+set local role service_role;
+do $$
+begin
+  perform 1 from public.source_status;
+  insert into public.source_status as s (source_id, interval_sec) values ('test.grant', 60)
+    on conflict (source_id) do update set interval_sec = excluded.interval_sec;
+  insert into public.source_status as s (source_id, interval_sec) values ('test.grant', 61)
+    on conflict (source_id) do update set interval_sec = excluded.interval_sec;
+  insert into public.source_samples as s (source_id, fetched_at, http_status, body) values ('test.grant', now(), 200, '[]')
+    on conflict (source_id) do update set body = excluded.body;
+  insert into public.runs (source_id, started_at, finished_at, ok) values ('test.grant', now(), now(), true);
+end $$;
+reset role;
+
 select 'upsert.sql: all assertions passed' as result;
 rollback;

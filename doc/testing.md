@@ -42,7 +42,7 @@ The tests run the pipeline with a fake fetch and a fake store that implements `u
 13. A CelesTrak 200 with `[]`, a row that is not an object, and duplicate ids are normalize errors.
 
 ## SQL tests
-`supabase/tests/upsert.sql` runs in the Supabase SQL editor inside `begin; ... rollback;`, raises an exception on the first failed assertion, and checks the RPC on enter, unchanged, update, exit and re-enter, the claim and host lease RPCs, and checks that `anon` cannot read `projects` or execute the RPC.
+`supabase/tests/upsert.sql` runs in the Supabase SQL editor inside `begin; ... rollback;`, raises an exception on the first failed assertion, and checks the RPC on enter, unchanged, update, exit and re-enter, the claim and host lease RPCs, checks that `anon` cannot read `projects` or execute the RPC, and checks that `service_role` can make the worker's direct writes to `source_status`, `source_samples` and `runs`.
 
 ## Page tests
 | Area | Assertions |

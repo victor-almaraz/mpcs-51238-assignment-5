@@ -338,6 +338,13 @@ create policy settings_update on public.user_settings for update to authenticate
 ```
 The `subs_insert` check prevents a user from attaching subscriptions to another user's project.
 
+### Worker grants
+The worker connects with the secret key and runs as `service_role`, which bypasses RLS but still needs table grants. Default privileges in `public` give `service_role` no `select`, `insert`, `update` or `delete` on tables that `postgres` creates, so each grant is explicit. The worker writes `sky_objects`, `changes` and `host_leases` only through the security-definer RPCs, and reaches three tables directly (`store.js`): it reads and upserts `source_status` and clears halts there, upserts `source_samples`, and inserts `runs`.
+```sql
+grant select, insert, update on public.source_status, public.source_samples to service_role;
+grant insert on public.runs to service_role;
+```
+
 ## Realtime publication
 ```sql
 alter publication supabase_realtime add table public.sky_objects;
