@@ -46,8 +46,8 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
             className={`px-2 py-1 ${tab === t.id ? 'border-b border-accent text-fg' : 'text-fg-muted hover:text-fg'}`}
           >
             {t.label}{t.id === 'problems' && problems.length ? <span className="ml-1 inline-flex items-center gap-1 align-middle">
-              {errors ? <span className="inline-flex items-center gap-0.5 text-down"><Icon as={CircleX} size={12} />{errors}<span className="sr-only"> errors</span></span> : null}
-              {warnings ? <span className="inline-flex items-center gap-0.5 text-stale"><Icon as={TriangleAlert} size={12} />{warnings}<span className="sr-only"> warnings</span></span> : null}
+              {errors ? <span className="inline-flex items-center gap-0.5 text-error"><Icon as={CircleX} size={12} />{errors}<span className="sr-only"> errors</span></span> : null}
+              {warnings ? <span className="inline-flex items-center gap-0.5 text-warn"><Icon as={TriangleAlert} size={12} />{warnings}<span className="sr-only"> warnings</span></span> : null}
             </span> : null}
           </button>
         ))}

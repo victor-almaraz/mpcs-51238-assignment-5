@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import { visit } from 'unist-util-visit';
 import { parse as parseYaml } from 'yaml';
+import { rehypeHighlight } from './highlight.js';
 
 
 const SLUG = /^[a-z0-9-]+$/;
@@ -119,6 +120,7 @@ export async function renderMarkdown(markdown, { slug, codeAnchors = false }) {
     .use(remarkRehype)
     .use(rehypeSlug)
     .use(codeAnchors ? rehypeCodeAnchors : () => undefined)
+    .use(rehypeHighlight)
     .use(rehypeStringify)
     .process(markdown);
   return String(file);

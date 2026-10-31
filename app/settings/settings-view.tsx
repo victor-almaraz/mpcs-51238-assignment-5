@@ -88,7 +88,7 @@ export function SettingsView() {
       </header>
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
         <h1 className="mb-4 text-xl font-semibold">Settings</h1>
-        {(loadError || saveError) && <p role="alert" className="mb-4 text-xs text-down">{saveError ?? loadError}</p>}
+        {(loadError || saveError) && <p role="alert" className="mb-4 text-xs text-error">{saveError ?? loadError}</p>}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
             type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings" aria-label="Search settings"
@@ -100,7 +100,7 @@ export function SettingsView() {
           </div>
         </div>
         {warnings.length > 0 && (
-          <ul aria-label="Warnings" className="mb-4 border border-stale p-2 text-xs text-stale">
+          <ul aria-label="Warnings" className="mb-4 border border-warn p-2 text-xs text-warn">
             {warnings.map((w, i) => <li key={i}>{w.path || 'settings'}: {w.message}</li>)}
           </ul>
         )}
@@ -125,7 +125,7 @@ export function SettingsView() {
               aria-invalid={parseError ? true : undefined}
               className="h-96 w-full border border-line bg-panel p-2 font-mono text-sm"
             />
-            {parseError && <p role="alert" className="mt-1 text-xs text-down">Not saved: {parseError}</p>}
+            {parseError && <p role="alert" className="mt-1 text-xs text-error">Not saved: {parseError}</p>}
           </div>
         )}
         <section aria-labelledby="account" className="mt-10">

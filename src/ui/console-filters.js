@@ -84,10 +84,10 @@ export function diffSummary(diff, max = 4) {
   return shown.join(', ');
 }
 
-/** `REPLAY ×<speed>`, `SYNTHETIC` or null. @param {TraceRecord} r */
+/** `Replay ×<speed>`, `Synthetic` or null. @param {TraceRecord} r */
 export function recordBadge(r) {
-  if (r.replay) return `REPLAY ×${r.replay}`;
-  if (r.synthetic) return 'SYNTHETIC';
+  if (r.replay) return `Replay ×${r.replay}`;
+  if (r.synthetic) return 'Synthetic';
   return null;
 }
 

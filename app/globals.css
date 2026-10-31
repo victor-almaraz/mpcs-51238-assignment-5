@@ -1,32 +1,47 @@
 @import "tailwindcss";
 
-/* Design tokens (doc/ui.md, Style). Dark is the default theme; [data-theme="dark"] re-applies it
-   inside a light page (the preview and run mode, drawn on black). */
+/* Design tokens (doc/ui.md, Style). Chosen in OKLCH: cool blue-grey neutrals (hue 262), an
+   analogous periwinkle accent for interaction, and status and syntax hues held at one lightness per
+   theme so none shouts. Every text token keeps 4.5:1 or more on bg, panel and panel-2.
+   Dark is the default theme; [data-theme="dark"] re-applies it inside a light page (the preview
+   and run mode, drawn on black). */
 :root, [data-theme="dark"] {
-  --bg: #1b1d1f;
-  --panel: #222426;
-  --panel-2: #2a2c2f;
-  --line: #3a3d41;
-  --fg: #d7d9dc;
-  --fg-muted: #9a9ea4;
-  --accent: #4fc3a1;
-  --stale: #e0a43a;
-  --down: #e5534b;
-  --focus: #6ea8fe;
+  --bg: #13161c;
+  --panel: #181c22;
+  --panel-2: #21252d;
+  --line: #32373f;
+  --fg: #e2e5ea;
+  --fg-muted: #a5abb5;
+  --accent: #9db6f5;
+  --ok: #77d0a2;
+  --warn: #eabc6e;
+  --error: #ee8582;
+  --syn-keyword: #d0aeea;
+  --syn-string: #a0d4a0;
+  --syn-number: #f0b788;
+  --syn-function: #8cc4f4;
+  --syn-type: #86d8d7;
   color-scheme: dark;
+  accent-color: var(--accent);
 }
 :root[data-theme="light"] {
-  --bg: #f6f6f5;
-  --panel: #ffffff;
-  --panel-2: #efefee;
-  --line: #d6d6d3;
-  --fg: #1f2124;
-  --fg-muted: #5e6268;
-  --accent: #127a5e;
-  --stale: #8a5a00;
-  --down: #b42318;
-  --focus: #1f5fbf;
+  --bg: #f5f7f9;
+  --panel: #fdfdff;
+  --panel-2: #eaedf2;
+  --line: #d5d9e0;
+  --fg: #1f242d;
+  --fg-muted: #555b66;
+  --accent: #3f5bb8;
+  --ok: #0b764d;
+  --warn: #975c16;
+  --error: #b63132;
+  --syn-keyword: #773f9b;
+  --syn-string: #286f2f;
+  --syn-number: #964d09;
+  --syn-function: #175d9b;
+  --syn-type: #006c70;
   color-scheme: light;
+  accent-color: var(--accent);
 }
 
 /* inline: utilities read the tokens where they are used, so a [data-theme] scope takes effect. */
@@ -38,8 +53,9 @@
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-accent: var(--accent);
-  --color-stale: var(--stale);
-  --color-down: var(--down);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-error: var(--error);
   --radius-sm: 2px;
   --radius-md: 4px;
   --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -49,7 +65,13 @@
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; }
 .tabular { font-variant-numeric: tabular-nums; }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.syn-keyword { color: var(--syn-keyword); }
+.syn-string { color: var(--syn-string); }
+.syn-number { color: var(--syn-number); }
+.syn-function { color: var(--syn-function); }
+.syn-type { color: var(--syn-type); }
+.syn-comment { color: var(--fg-muted); font-style: italic; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Guide prose (doc/guide.md) */
 .prose-guide { line-height: 1.6; max-width: 46rem; }
@@ -59,14 +81,14 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); f
 .prose-guide p, .prose-guide ul, .prose-guide ol, .prose-guide table, .prose-guide pre { margin: 0 0 1rem; }
 .prose-guide ul { list-style: disc; padding-left: 1.5rem; }
 .prose-guide ol { list-style: decimal; padding-left: 1.5rem; }
-.prose-guide a { color: var(--focus); text-decoration: underline; text-underline-offset: 2px; }
+.prose-guide a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .prose-guide code { font-family: var(--font-mono); font-size: 0.9em; background: var(--panel-2); padding: 0 0.25rem; border-radius: 2px; }
 .prose-guide pre { font-family: var(--font-mono); background: var(--panel); border: 1px solid var(--line); padding: 0.75rem 1rem; overflow-x: auto; border-radius: 4px; }
 .prose-guide pre code { background: none; padding: 0; }
 .prose-guide table { border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
 .prose-guide th, .prose-guide td { border: 1px solid var(--line); padding: 0.3rem 0.6rem; text-align: left; vertical-align: top; }
 .prose-guide th { background: var(--panel-2); font-weight: 600; }
-.prose-guide tr:target { outline: 2px solid var(--focus); }
+.prose-guide tr:target { outline: 2px solid var(--accent); }
 .prose-guide .try-it { margin-top: -0.5rem; }
 .prose-guide .try-it a { display: inline-block; font-size: 0.85rem; text-decoration: none; color: var(--fg); border: 1px solid var(--line); padding: 0.15rem 0.6rem; border-radius: 4px; }
 .prose-guide .try-it a:hover { background: var(--panel-2); }
@@ -76,9 +98,54 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); f
 }
 
 /* Landing page (doc/ui.md, Landing) */
-.prose-landing { max-width: 48rem; }
-.prose-hero h1 { font-size: 2.25rem; letter-spacing: -0.01em; }
-.prose-hero p { font-size: 1.05rem; color: var(--fg); }
-.prose-quadrivium table { display: table; width: 100%; max-width: 40rem; font-size: 0.95rem; }
-.prose-quadrivium th, .prose-quadrivium td { padding: 0.75rem 1rem; }
-.prose-quadrivium tbody td:not(:first-child) { background: var(--panel); }
+.landing-hero { background: radial-gradient(60rem 30rem at 85% -10%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%); }
+.prose-landing { max-width: 42rem; font-size: 1.0625rem; line-height: 1.75; }
+.prose-landing > * + * { margin-top: 1.25rem; }
+.prose-landing em { font-style: italic; }
+.prose-landing strong { font-weight: 600; }
+.prose-landing a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.prose-lead { font-size: 1.1875rem; line-height: 1.65; color: var(--fg-muted); max-width: 36rem; }
+.prose-lead em { color: var(--fg); }
+
+/* Spheres: the sources as a timeline */
+.landing-timeline ul { list-style: none; padding: 0.25rem 0 0.25rem 1.75rem; border-left: 1px solid var(--line); margin-left: 0.3rem; }
+.landing-timeline li { position: relative; color: var(--fg-muted); }
+.landing-timeline li + li { margin-top: 1.5rem; }
+.landing-timeline li::before { content: ""; position: absolute; left: calc(-1.75rem - 5px); top: 0.55rem; width: 9px; height: 9px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); }
+.landing-timeline li strong { display: block; color: var(--fg); margin-bottom: 0.15rem; }
+
+/* Quadrivium: pull quote and the 2 × 2 division */
+.landing-quadrivium blockquote { border-left: 2px solid var(--accent); padding: 0.25rem 0 0.25rem 1.5rem; margin: 0 0 2rem; }
+.landing-quadrivium blockquote p:first-child { font-size: 1.5rem; line-height: 1.45; font-weight: 400; letter-spacing: -0.01em; text-wrap: balance; }
+.landing-quadrivium blockquote p + p { margin-top: 0.75rem; font-size: 0.875rem; color: var(--fg-muted); }
+.landing-quadrivium table { width: 100%; max-width: 40rem; border-collapse: separate; border-spacing: 0.5rem; margin-left: -0.5rem; font-size: 0.95rem; line-height: 1.5; }
+.landing-quadrivium th, .landing-quadrivium td { text-align: left; vertical-align: top; padding: 0.875rem 1rem; }
+.landing-quadrivium thead th { font-size: 0.8125rem; font-weight: 500; color: var(--fg-muted); padding-bottom: 0; }
+.landing-quadrivium tbody td:first-child { padding-left: 0; color: var(--fg-muted); }
+.landing-quadrivium tbody td:first-child strong { display: block; color: var(--fg); }
+.landing-quadrivium tbody td:not(:first-child) { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+.landing-quadrivium tbody td:last-child { background: color-mix(in srgb, var(--accent) 9%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+
+/* What Sphärenmusik does: the four kinds of motion as cards */
+.landing-cards ul { list-style: none; padding: 0; display: grid; gap: 1rem; max-width: 48rem; }
+@media (min-width: 640px) { .landing-cards ul { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.landing-cards { max-width: 48rem; }
+.landing-cards li { background: var(--bg); border: 1px solid var(--line); border-top: 2px solid var(--accent); border-radius: 4px; padding: 1.1rem 1.25rem; font-size: 0.95rem; line-height: 1.6; color: var(--fg-muted); }
+.landing-cards li strong { display: block; color: var(--fg); margin-bottom: 0.35rem; }
+
+/* How it works: numbered steps beside the code */
+.landing-how { max-width: 48rem; }
+.landing-how ol { list-style: none; padding: 0; counter-reset: step; display: grid; gap: 1.25rem 2rem; }
+@media (min-width: 640px) { .landing-how ol { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.landing-how pre { margin-top: 2rem; }
+.landing-how ol li { counter-increment: step; position: relative; padding-left: 2.75rem; min-height: 1.75rem; }
+.landing-how ol li::before { content: counter(step); position: absolute; left: 0; top: 0.1rem; width: 1.75rem; height: 1.75rem; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); display: grid; place-items: center; font: 500 0.8rem/1 var(--font-mono); color: var(--accent); }
+.landing-how pre { font-family: var(--font-mono); font-size: 0.875rem; line-height: 1.7; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1rem 1.25rem; overflow-x: auto; }
+.landing-how pre + p { font-size: 0.9375rem; color: var(--fg-muted); }
+
+/* What is real; Further reading */
+.landing-statement { font-size: 1.3125rem; line-height: 1.65; text-wrap: pretty; }
+.landing-reading { font-size: 0.9375rem; color: var(--fg-muted); }
+.landing-reading ul { list-style: none; padding: 0; }
+.landing-reading li + li { margin-top: 0.5rem; }
+.landing-reading em { color: var(--fg); }

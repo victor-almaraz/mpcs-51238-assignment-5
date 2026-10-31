@@ -125,10 +125,10 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
           <h1 className="text-xl font-semibold">Projects</h1>
           {!error && templateMenu}
         </div>
-        {actionError && <p role="alert" className="mb-4 text-xs text-down">{actionError} <button type="button" className={btn} onClick={() => setActionError(null)}>Dismiss</button></p>}
+        {actionError && <p role="alert" className="mb-4 text-xs text-error">{actionError} <button type="button" className={btn} onClick={() => setActionError(null)}>Dismiss</button></p>}
         {error ? (
           <div role="alert" className="border border-line p-4 text-sm">
-            <p className="mb-3 text-down">{error}</p>
+            <p className="mb-3 text-error">{error}</p>
             <button type="button" className={btn} onClick={() => router.refresh()}>Retry</button>
           </div>
         ) : rows.length === 0 ? (

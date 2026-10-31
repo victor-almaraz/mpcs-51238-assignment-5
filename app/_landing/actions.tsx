@@ -2,8 +2,8 @@ import Link from 'next/link';
 
 type Props = { signedIn: boolean; learn?: { href: string; label: string }; highlight?: boolean };
 
-const primary = 'inline-block rounded-sm bg-accent px-3 py-1.5 text-sm text-bg';
-const secondary = 'inline-block rounded-sm border border-line px-3 py-1.5 text-sm hover:bg-panel-2';
+const primary = 'inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-bg hover:brightness-110';
+const secondary = 'inline-block rounded-md border border-line px-4 py-2 text-sm hover:bg-panel-2';
 
 /** `highlight`: Listen Now is the view's one accent action (doc/ui.md, Style); repeats are bordered. */
 export function Actions({ signedIn, learn = { href: '/learn', label: 'Learn the Piece Script' }, highlight = true }: Props) {

@@ -23,8 +23,9 @@ test('front matter, one h1 and the section headings of doc/ui.md', async () => {
     [2, 'What is real'],
     [2, 'Further reading'],
   ]);
+  // The page renders the headings itself; the section bodies hold none.
   const html = (await loadLanding()).sections.map((s) => s.html).join('');
-  assert.equal((html.match(/<h1[ >]/g) ?? []).length, 1);
+  assert.equal((html.match(/<h[12][ >]/g) ?? []).length, 0);
 });
 
 test('the How it works script is the first runnable example of first-piece', () => {
@@ -87,4 +88,13 @@ test('ground track: ISS stays within its inclination; subsolar latitude at the s
 
 test('objects with invalid elements are omitted', () => {
   assert.equal(satrecs([{ id: 'x', fields: { name: 'bad' } }, iss]).length, 1);
+});
+
+test('the How it works code is highlighted with the editor classes and keeps its text', async () => {
+  const how = (await loadLanding()).sections.find((s) => s.heading === 'How it works');
+  const code = how.html.match(/<pre><code[^>]*>([\s\S]*?)<\/code><\/pre>/)[1];
+  assert.match(code, /<span class="syn-keyword">const<\/span>/);
+  assert.match(code, /<span class="syn-function">additive<\/span>/);
+  const text = code.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'").replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+  assert.equal(text.trimEnd(), how.code[0]);
 });

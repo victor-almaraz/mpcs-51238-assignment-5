@@ -42,7 +42,7 @@ Most data changes slowly. Two editor tools play changes on demand.
 **Go Live** returns to live data.
 
 ### Test events
-Opening the editor with `?dev=1` in the address shows a panel that sends test events to any group: an object entering, a field changing, a source becoming stale. Test events are marked `SYNTHETIC` in the console and never reach other users.
+Opening the editor with `?dev=1` in the address shows a panel that sends test events to any group: an object entering, a field changing, a source becoming stale. Test events are marked `Synthetic` in the console and never reach other users.
 
 ## Seeing what drives the sound
 The **Console** tab in the bottom panel (`Mod-J`) shows each change as one chain, from the source update to the notes, parameter values and drawing it caused. **Sounding voices** lists every note with the object that plays it. **Modulation** lists every modulated parameter with its base value, its current value and its sources.

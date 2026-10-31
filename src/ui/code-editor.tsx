@@ -48,23 +48,12 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
     let worker: Worker | null = null;
     (async () => {
       try {
-        const [{ EditorView, basicSetup }, { EditorState, Compartment, Prec }, { javascript }, ac, lint, { keymap }, lang, hl, defsMod, completionMod] = await Promise.all([
+        const [{ EditorView, basicSetup }, { EditorState, Compartment, Prec }, { javascript }, ac, lint, { keymap }, lang, { syntaxHighlighter }, defsMod, completionMod] = await Promise.all([
           import('codemirror'), import('@codemirror/state'), import('@codemirror/lang-javascript'), import('@codemirror/autocomplete'),
-          import('@codemirror/lint'), import('@codemirror/view'), import('@codemirror/language'), import('@lezer/highlight'),
+          import('@codemirror/lint'), import('@codemirror/view'), import('@codemirror/language'), import('@/src/ui/syntax.js'),
           import('@/src/dsl/load-defs.js'), import('@/src/ui/completion.js'),
         ]);
         if (disposed || !host.current) return;
-        const { tags: t } = hl;
-        const darkHighlight = lang.HighlightStyle.define([
-          { tag: [t.keyword, t.modifier, t.operatorKeyword], color: '#c792ea' },
-          { tag: [t.string, t.special(t.string)], color: '#c3e88d' },
-          { tag: [t.number, t.bool, t.null], color: '#f78c6c' },
-          { tag: [t.lineComment, t.blockComment, t.comment], color: '#7f8790', fontStyle: 'italic' },
-          { tag: [t.function(t.variableName), t.function(t.propertyName)], color: '#82aaff' },
-          { tag: [t.propertyName], color: '#d7d9dc' },
-          { tag: [t.typeName, t.className], color: '#ffcb6b' },
-          { tag: [t.variableName], color: '#d7d9dc' },
-        ]);
         const themeComp = new Compartment();
         const themeFor = (size: number, mode: string) => [
           EditorView.theme({
@@ -72,12 +61,14 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
             '.cm-scroller': { fontFamily: 'var(--font-mono)' },
             '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--fg-muted)', borderRight: '1px solid var(--line)' },
             '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--panel-2)' },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)' },
+            '.cm-cursor': { borderLeftColor: 'var(--fg)' },
             '.cm-content': { caretColor: 'var(--fg)' },
             '.cm-tooltip': { backgroundColor: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--fg)' },
-            '.cm-lintRange-warning': { backgroundImage: 'none', textDecoration: 'underline wavy var(--stale)' },
-            '.cm-lintRange-error': { backgroundImage: 'none', textDecoration: 'underline wavy var(--down)' },
+            '.cm-lintRange-warning': { backgroundImage: 'none', textDecoration: 'underline wavy var(--warn)' },
+            '.cm-lintRange-error': { backgroundImage: 'none', textDecoration: 'underline wavy var(--error)' },
           }, { dark: mode === 'dark' }),
-          lang.syntaxHighlighting(mode === 'dark' ? darkHighlight : lang.defaultHighlightStyle),
+          lang.syntaxHighlighting(syntaxHighlighter),
         ];
 
         // Type-check worker (doc/piece-dsl.md, Type checking).
@@ -198,7 +189,7 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
           {[60, 40, 75, 30].map((w) => <div key={w} className="h-3 animate-pulse bg-panel-2" style={{ width: `${w}%` }} />)}
         </div>
       )}
-      {status === 'error' && <p role="alert" className="p-3 font-mono text-xs text-down">The editor failed to load. Reload the page to retry.</p>}
+      {status === 'error' && <p role="alert" className="p-3 font-mono text-xs text-error">The editor failed to load. Reload the page to retry.</p>}
       {workerState === 'failed' && <p className="absolute bottom-0 right-0 bg-panel px-2 font-mono text-xs text-fg-muted">Type checking unavailable</p>}
     </div>
   );

@@ -104,7 +104,7 @@ export function Transport({ session, state, onRun, canRun, runHint, compact = fa
   const muted = state.audio === 'muted';
   return (
     <div className="flex flex-wrap items-center gap-2" role="toolbar" aria-label="Transport">
-      <button type="button" className={`${btn} ${playing ? 'border-accent text-accent' : ''}`} onClick={request} disabled={!canRun || !state.ready} title={runHint ?? 'Run (Mod-Enter)'}>
+      <button type="button" className={`${btn} ${playing ? 'border-ok text-ok' : ''}`} onClick={request} disabled={!canRun || !state.ready} title={runHint ?? 'Run (Mod-Enter)'}>
         <Icon as={Play} size={12} />Run
       </button>
       <button type="button" className={btn} onClick={() => session?.stop()} disabled={!playing} title="Stop (Mod-.)"><Icon as={Square} size={12} />Stop</button>
@@ -123,7 +123,7 @@ export function Transport({ session, state, onRun, canRun, runHint, compact = fa
         </label>
       )}
       <Meter session={session} />
-      {session?.master?.reduced && <span className="text-xs text-stale" title="The safety limiter worklet is unavailable; the fallback stage caps the master at −6 dB">Reduced safety mode</span>}
+      {session?.master?.reduced && <span className="text-xs text-warn" title="The safety limiter worklet is unavailable; the fallback stage caps the master at −6 dB">Reduced safety mode</span>}
       {dialog}
     </div>
   );
@@ -139,7 +139,7 @@ export function Notices({ session, state }: { session: PieceSession | null; stat
       {state.notices.length > 0 && (
         <ul className="flex flex-col gap-1 text-xs">
           {state.notices.map((n) => (
-            <li key={n.id} className={`flex items-center gap-2 border px-2 py-1 ${n.kind === 'fault' || n.kind === 'engineFault' || n.kind === 'safetyError' ? 'border-down' : 'border-line'}`}>
+            <li key={n.id} className={`flex items-center gap-2 border px-2 py-1 ${n.kind === 'fault' || n.kind === 'engineFault' || n.kind === 'safetyError' ? 'border-error' : 'border-line'}`}>
               <span className="flex-1">{n.message}</span>
               {n.kind === 'duck' && <button type="button" className={btn} onClick={() => session?.restoreLevel()}>Restore Level</button>}
               {n.kind === 'safetyError' && <button type="button" className={btn} onClick={() => { session?.restartAudio().catch(() => {}); }}>Restart Audio</button>}
@@ -149,7 +149,7 @@ export function Notices({ session, state }: { session: PieceSession | null; stat
         </ul>
       )}
       {state.error && (
-        <p role="alert" className="flex items-center gap-2 text-xs text-down">
+        <p role="alert" className="flex items-center gap-2 text-xs text-error">
           {state.error} <button type="button" className={btn} onClick={() => session?.clearError()}>Dismiss</button>
         </p>
       )}

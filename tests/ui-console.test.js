@@ -45,8 +45,8 @@ test('diffSummary formats before → after', () => {
 });
 
 test('recordBadge labels replayed and synthetic records', () => {
-  assert.equal(recordBadge({ ...records[0], replay: 100 }), 'REPLAY ×100');
-  assert.equal(recordBadge({ ...records[0], synthetic: true }), 'SYNTHETIC');
+  assert.equal(recordBadge({ ...records[0], replay: 100 }), 'Replay ×100');
+  assert.equal(recordBadge({ ...records[0], synthetic: true }), 'Synthetic');
   assert.equal(recordBadge(records[0]), null);
 });
 

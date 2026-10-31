@@ -136,7 +136,7 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
 
       {(problem || state.notices.length > 0 || state.error) && (
         <div className="absolute inset-x-0 top-12 mx-auto w-fit max-w-xl bg-black/80 p-2">
-          {problem && <p role="alert" className="text-xs text-down">This piece cannot run: {problem}</p>}
+          {problem && <p role="alert" className="text-xs text-error">This piece cannot run: {problem}</p>}
           <Notices session={session} state={state} />
         </div>
       )}

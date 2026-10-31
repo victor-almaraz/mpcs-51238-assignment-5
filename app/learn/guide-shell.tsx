@@ -16,7 +16,7 @@ export function GuideShell({ pages, current, headings, html }: { pages: PageLink
                 <Link
                   href={p.slug === 'index' ? '/learn' : `/learn/${p.slug}`}
                   aria-current={p.slug === current ? 'page' : undefined}
-                  className={p.slug === current ? 'text-accent' : 'hover:underline'}
+                  className={p.slug === current ? 'font-medium text-accent' : 'hover:underline'}
                 >
                   {p.title}
                 </Link>

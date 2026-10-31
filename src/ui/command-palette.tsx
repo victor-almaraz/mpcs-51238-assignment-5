@@ -88,7 +88,7 @@ export function CommandPalette({ open, root, onClose, isMac }: { open: boolean; 
         />
         <ul id="palette-list" role="listbox" className="max-h-80 overflow-y-auto py-1">
           {items === null && <li className="px-3 py-1 text-fg-muted">Loading…</li>}
-          {error && <li className="px-3 py-1 text-down">{error}</li>}
+          {error && <li className="px-3 py-1 text-error">{error}</li>}
           {items !== null && shown.length === 0 && !error && <li className="px-3 py-1 text-fg-muted">No matches</li>}
           {shown.map((item, i) => (
             <li

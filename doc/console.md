@@ -77,7 +77,7 @@ createTraceBus({ capacity, now });   // separate bus with the same methods; test
 | Modulation | One row per routed target: base value, modulated value (`modulatedValue`, refreshed every 100 ms), and each route with its source and depth, for example `f1.decay 6.0 s → 7.4 s ← lfo0 sine 0.03 Hz (0.2)`. Data sources show their class (`vlfo`, `random-walk`, `step`), their expression's latest raw and posted values, and for VLFOs the orbit period and `time-scaled ×n` when applicable. |
 | Effects | Each chain in order with slot type, bypass state and fault state |
 
-Controls: pause, resume, follow-live toggle, clear. Pause freezes the displayed list; records keep entering the bus. Follow live scrolls to the newest record; scrolling up turns it off. Clear empties the bus. Replayed records show the label `REPLAY ×<speed>`; synthetic records show `SYNTHETIC`.
+Controls: pause, resume, follow-live toggle, clear. Pause freezes the displayed list; records keep entering the bus. Follow live scrolls to the newest record; scrolling up turns it off. Clear empties the bus. Replayed records show the label `Replay ×<speed>`; synthetic records show `Synthetic`.
 
 ## Export
 "Download Trace" writes the buffer as JSON Lines (`.jsonl`), one record per line. `tests/trace-replay.test.js` accepts an exported file as a fixture (`testing.md`).

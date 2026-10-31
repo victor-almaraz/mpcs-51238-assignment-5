@@ -14,47 +14,79 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: { absolute: title }, description, openGraph: { title, description } };
 }
 
+type Section = Awaited<ReturnType<typeof loadLanding>>['sections'][number];
+
+const Prose = ({ s, className = '' }: { s: Section; className?: string }) => (
+  <div className={`prose-landing ${className}`} dangerouslySetInnerHTML={{ __html: s.html }} />
+);
+
+/** One band: the heading in a narrow left column on wide windows, the body on the right. */
+function Band({ s, n, tone = 'plain', children }: { s: Section; n: number; tone?: 'plain' | 'panel'; children: React.ReactNode }) {
+  return (
+    <section aria-labelledby={s.id} className={tone === 'panel' ? 'border-y border-line bg-panel' : ''}>
+      <div className="mx-auto grid w-full max-w-6xl gap-x-12 gap-y-6 px-4 py-16 sm:px-6 lg:grid-cols-[15rem_1fr] lg:py-24">
+        <div className="lg:sticky lg:top-20 lg:self-start">
+          <p aria-hidden="true" className="tabular font-mono text-xs text-accent">{String(n).padStart(2, '0')}</p>
+          <h2 id={s.id} className="mt-2 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">{s.heading}</h2>
+        </div>
+        <div className="min-w-0">{children}</div>
+      </div>
+    </section>
+  );
+}
+
 /** Section order and headings are fixed by doc/ui.md, Landing; tests/landing.test.js checks them. */
 export default async function Landing() {
   const [{ sections }, { userId }] = await Promise.all([loadLanding(), auth()]);
   const signedIn = Boolean(userId);
   const [hero, spheres, quadrivium, app, how, honesty, reading] = sections;
-  const prose = (s: (typeof sections)[number], extra = '') => (
-    <div className={`prose-guide prose-landing ${extra}`} dangerouslySetInnerHTML={{ __html: s.html }} />
-  );
-  const section = (s: (typeof sections)[number], body: React.ReactNode) => (
-    <section key={s.id} aria-labelledby={s.id} className="border-t border-line py-10">{body}</section>
-  );
+  const link = 'rounded-sm px-2 py-1 text-fg-muted hover:bg-panel-2 hover:text-fg';
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-line px-4 py-2 text-sm">
-        <span>Sphärenmusik</span>
-        <nav aria-label="Site" className="flex gap-4">
-          <Link href="/learn" className="hover:underline">Guide</Link>
-          <Link href="/console" className="hover:underline">Console</Link>
-          {signedIn
-            ? <Link href="/projects" className="hover:underline">Projects</Link>
-            : <Link href="/sign-in" className="hover:underline">Sign in</Link>}
-        </nav>
+      <header className="sticky top-0 z-10 border-b border-line bg-bg/85 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-2.5 text-sm sm:px-6">
+          <Link href="/" className="flex items-center gap-2 font-semibold">
+            <img src="/icon.svg" alt="" width={20} height={20} className="rounded-sm" />
+            Sphärenmusik
+          </Link>
+          <nav aria-label="Site" className="flex gap-1">
+            <Link href="/learn" className={link}>Guide</Link>
+            <Link href="/console" className={link}>Console</Link>
+            {signedIn
+              ? <Link href="/projects" className={link}>Projects</Link>
+              : <Link href="/sign-in" className={link}>Sign In</Link>}
+          </nav>
+        </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4">
+      <main className="flex-1">
         <LiveSnapshot>
-          <section aria-labelledby={hero.id} className="grid items-center gap-8 py-10 lg:grid-cols-[1fr_1.1fr]">
-            <div className="flex flex-col gap-5">
-              {prose(hero, 'prose-hero')}
-              <Actions signedIn={signedIn} />
-              <LiveStrip />
+          <section aria-labelledby={hero.id} className="landing-hero">
+            <div className="mx-auto w-full max-w-6xl px-4 pt-14 pb-16 sm:px-6 lg:pt-24 lg:pb-24">
+              <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.15fr] lg:gap-14">
+                <div className="flex flex-col gap-7">
+                  <h1 id={hero.id} className="text-5xl font-semibold tracking-tight sm:text-6xl">{hero.heading}</h1>
+                  <Prose s={hero} className="prose-lead" />
+                  <Actions signedIn={signedIn} />
+                </div>
+                <figure className="flex flex-col gap-2">
+                  <OrbitMap />
+                  <figcaption className="text-xs text-fg-muted">Space stations now, with their last 45 minutes of ground track. The shaded half is night.</figcaption>
+                </figure>
+              </div>
+              <div className="mt-12"><LiveStrip /></div>
             </div>
-            <OrbitMap />
           </section>
         </LiveSnapshot>
-        {section(spheres, <>{prose(spheres)}<StringRatios /></>)}
-        {section(quadrivium, prose(quadrivium, 'prose-quadrivium'))}
-        {section(app, prose(app))}
-        {section(how, <>{prose(how)}<div className="mt-6"><Actions signedIn={signedIn} highlight={false} learn={{ href: '/learn/first-piece', label: 'Your First Piece' }} /></div></>)}
-        {section(honesty, prose(honesty))}
-        {section(reading, prose(reading, 'text-sm'))}
+        <Band s={spheres} n={1}><Prose s={spheres} className="landing-timeline" /><StringRatios /></Band>
+        <Band s={quadrivium} n={2}><Prose s={quadrivium} className="landing-quadrivium" /></Band>
+        <Band s={app} n={3} tone="panel"><Prose s={app} className="landing-cards" /></Band>
+        <Band s={how} n={4}>
+          <Prose s={how} className="landing-how" />
+          <div className="mt-8"><Actions signedIn={signedIn} highlight={false} learn={{ href: '/learn/first-piece', label: 'Your First Piece' }} /></div>
+        </Band>
+        <Band s={honesty} n={5} tone="panel"><Prose s={honesty} className="landing-statement" /></Band>
+        <Band s={reading} n={6}><Prose s={reading} className="landing-reading" /></Band>
       </main>
       <Attribution />
     </div>

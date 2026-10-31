@@ -15,8 +15,8 @@ import { useInterval, type Freshness, type PieceSession, type TraceRecord } from
 import { CircleX, TriangleAlert } from 'lucide-react';
 import { FRESHNESS_ICON, Icon } from './icons';
 
-const STATE_CLASS: Record<string, string> = { loading: 'text-fg-muted', fresh: 'text-accent', stale: 'text-stale', down: 'text-down' };
-const LEVEL_CLASS: Record<string, string> = { info: '', warn: 'text-stale', error: 'text-down' };
+const STATE_CLASS: Record<string, string> = { loading: 'text-fg-muted', fresh: 'text-ok', stale: 'text-warn', down: 'text-error' };
+const LEVEL_CLASS: Record<string, string> = { info: '', warn: 'text-warn', error: 'text-error' };
 const btn = 'rounded-sm border border-line px-2 py-0.5 hover:bg-panel-2 disabled:opacity-50';
 
 export function downloadTrace() {
@@ -102,7 +102,7 @@ export function SourcesPanel({ client, freshness, timeZone = 'UTC' }: { client: 
   return (
     <div className="font-mono text-xs">
       {error && (
-        <p role="alert" className="mb-2 text-down">{error} <button type="button" className={btn} onClick={() => { setLoading(true); load(); }}>Retry</button></p>
+        <p role="alert" className="mb-2 text-error">{error} <button type="button" className={btn} onClick={() => { setLoading(true); load(); }}>Retry</button></p>
       )}
       <table className="w-full border-collapse">
         <thead>
@@ -129,7 +129,7 @@ export function SourcesPanel({ client, freshness, timeZone = 'UTC' }: { client: 
                 <td className="pr-3">{r.lastRun ? `${formatHHMM(r.lastRun, timeZone)} (${relativeTime(r.lastRun, Date.now())})` : '—'}</td>
                 <td className="pr-3">{r.rowsChanged ?? '—'}</td>
                 <td className="pr-3">{r.ms === null ? '—' : `${r.ms} ms`}</td>
-                <td className={r.lastError ? 'text-down' : 'text-fg-muted'}>{r.lastError ? `${r.lastError}${r.lastErrorAt ? ` (${formatHHMM(r.lastErrorAt, timeZone)})` : ''}` : '—'}</td>
+                <td className={r.lastError ? 'text-error' : 'text-fg-muted'}>{r.lastError ? `${r.lastError}${r.lastErrorAt ? ` (${formatHHMM(r.lastErrorAt, timeZone)})` : ''}` : '—'}</td>
               </tr>,
               open === r.source && (
                 <tr key={`${r.source}-sample`}>
@@ -203,10 +203,10 @@ export function EventsPanel({ records, followed, groups, timeZone = 'UTC', pause
               title={fieldDiff(d.diff).map((x) => `${x.field}: ${formatValue(x.before)} → ${formatValue(x.after)}`).join('\n')}
             >
               <span className="text-fg-muted">{clockTime(r.t, timeZone)}</span>{' '}
-              <span>CHANGE</span> <span>{d.objectId}</span> <span className="text-accent">{d.kind}</span>
+              <span>CHANGE</span> <span>{d.objectId}</span> <span className="text-fg-muted">{d.kind}</span>
               {d.initial ? <span className="text-fg-muted"> initial</span> : null}
               {d.history ? <span className="text-fg-muted"> history</span> : null}
-              {badge && <span className="text-stale"> {badge}</span>}{' '}
+              {badge && <span className="text-warn"> {badge}</span>}{' '}
               <span className="text-fg-muted">{diffSummary(d.diff)}</span>
             </button>
           );
@@ -231,7 +231,7 @@ export function TracePanel({ records, selected, onSelect, timeZone = 'UTC' }: { 
       className={`block w-full truncate text-left hover:bg-panel-2 ${sel ? 'bg-panel-2' : ''} ${LEVEL_CLASS[r.level] ?? ''}`}
     >
       <span className="text-fg-muted">{clockTime(r.t, timeZone)}</span> {r.stage.padEnd(8)} {r.component} {r.event}
-      {recordBadge(r) && <span className="text-stale"> {recordBadge(r)}</span>}{' '}
+      {recordBadge(r) && <span className="text-warn"> {recordBadge(r)}</span>}{' '}
       <span className="text-fg-muted">{JSON.stringify(r.data).slice(0, 160)}</span>
     </button>
   );
@@ -249,7 +249,7 @@ export function TracePanel({ records, selected, onSelect, timeZone = 'UTC' }: { 
         <ol aria-label="Causal chain" className="min-h-0 flex-1 overflow-y-auto">
           {chainRecords.map((r, i) => (
             <li key={i} className={`border-b border-line py-0.5 ${LEVEL_CLASS[r.level] ?? ''}`}>
-              <div>{r.stage} · {r.component} · {r.event} <span className="text-fg-muted">{clockTime(r.t, timeZone)}</span>{recordBadge(r) && <span className="text-stale"> {recordBadge(r)}</span>}</div>
+              <div>{r.stage} · {r.component} · {r.event} <span className="text-fg-muted">{clockTime(r.t, timeZone)}</span>{recordBadge(r) && <span className="text-warn"> {recordBadge(r)}</span>}</div>
               <pre className="whitespace-pre-wrap text-fg-muted">{JSON.stringify(r.data, null, 1)}</pre>
             </li>
           ))}
@@ -387,7 +387,7 @@ export function EffectsPanel({ session, records }: { session: PieceSession | nul
       {chains.filter(([, s]) => s.length).map(([owner, slots]) => (
         <li key={owner} className="border-b border-line py-0.5">
           {owner}: {slots.map((s, i) => (
-            <span key={s.id}>{i > 0 ? ' → ' : ''}{s.id} {s.type}{s.bypass ? ' (bypassed)' : ''}{faulted.has(s.id) ? <span className="text-down"> fault, reset and bypassed</span> : ''}</span>
+            <span key={s.id}>{i > 0 ? ' → ' : ''}{s.id} {s.type}{s.bypass ? ' (bypassed)' : ''}{faulted.has(s.id) ? <span className="text-error"> fault, reset and bypassed</span> : ''}</span>
           ))}
         </li>
       ))}
@@ -402,7 +402,7 @@ export function ProblemsPanel({ problems, onGoto }: { problems: { severity: stri
     <ul className="font-mono text-xs" aria-label="Problems">
       {problems.map((p, i) => (
         <li key={i} className="flex gap-2 border-b border-line py-0.5">
-          <span className={`inline-flex items-center gap-1 ${p.severity === 'error' ? 'text-down' : 'text-stale'}`}><Icon as={p.severity === 'error' ? CircleX : TriangleAlert} size={12} />{p.severity === 'error' ? 'error' : 'warning'}</span>
+          <span className={`inline-flex items-center gap-1 ${p.severity === 'error' ? 'text-error' : 'text-warn'}`}><Icon as={p.severity === 'error' ? CircleX : TriangleAlert} size={12} />{p.severity === 'error' ? 'error' : 'warning'}</span>
           {p.line !== null && onGoto
             ? <button type="button" className="hover:underline" onClick={() => onGoto(p.line as number)}>piece.ts:{p.line}</button>
             : <span className="text-fg-muted">{p.path || 'piece'}</span>}

@@ -48,9 +48,9 @@ export function ReplayControls({ session, mode, replay, defaultSpeed = 100, disa
       <button type="button" className={btn} onClick={start} disabled={disabled || busy || !session}>Replay</button>
       <button type="button" className={btn} onClick={live} disabled={busy || !session || mode === 'live'}>Go Live</button>
       {mode === 'replay' && replay && (
-        <span className="text-stale">REPLAY ×{replay.speed} from {new Date(replay.from).toISOString().slice(0, 16).replace('T', ' ')} UTC{replay.ended ? ', ended' : ''}</span>
+        <span className="text-warn">Replay ×{replay.speed} from {new Date(replay.from).toISOString().slice(0, 16).replace('T', ' ')} UTC{replay.ended ? ', ended' : ''}</span>
       )}
-      {error && <span role="alert" className="text-down">{error}</span>}
+      {error && <span role="alert" className="text-error">{error}</span>}
     </div>
   );
 }

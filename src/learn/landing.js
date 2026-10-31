@@ -43,12 +43,13 @@ export function parseLanding(markdown) {
 }
 
 /**
- * Landing copy with each section rendered to HTML.
+ * Landing copy with each section's body rendered to HTML. The heading is left out: the page
+ * renders it from `heading` and `id` (doc/ui.md, Landing).
  * @returns {Promise<{ title: string, description: string, sections: { id: string, depth: number, heading: string, markdown: string, code: string[], html: string }[] }>}
  */
 export async function loadLanding() {
   const landing = parseLanding(readFileSync(join(process.cwd(), 'content', 'landing.md'), 'utf8'));
   const sections = [];
-  for (const sec of landing.sections) sections.push({ ...sec, html: await renderMarkdown(sec.markdown, { slug: 'landing' }) });
+  for (const sec of landing.sections) sections.push({ ...sec, html: await renderMarkdown(sec.markdown.replace(/^#{1,2} .*\n?/, ''), { slug: 'landing' }) });
   return { ...landing, sections };
 }

@@ -71,7 +71,7 @@ function draw(canvas: HTMLCanvasElement, sats: ReturnType<typeof satrecs>, date:
     ctx.fill();
     if (s.id === ISS_ID) {
       ctx.fillStyle = fg;
-      ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.font = `11px ${cssVar(canvas, '--font-mono')}`;
       ctx.fillText('ISS', m.x + 6, m.y - 6);
     }
   }
@@ -110,5 +110,5 @@ export function OrbitMap() {
   const label = sats.length
     ? `Map of Earth with the current positions and recent ground tracks of ${sats.length} space station objects, including the ISS. The shaded area is the night side.`
     : 'Map of Earth. Station positions appear when live data arrives.';
-  return <canvas ref={canvasRef} role="img" aria-label={label} className="block aspect-[2/1] w-full border border-line" />;
+  return <canvas ref={canvasRef} role="img" aria-label={label} className="block aspect-[2/1] w-full rounded-md border border-line" />;
 }

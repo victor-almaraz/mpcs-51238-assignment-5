@@ -102,7 +102,7 @@ export function ConsoleView() {
             {historyLoading && <span className="text-xs text-fg-muted">Loading recent changes…</span>}
           </div>
           {(skyError || historyError) && (
-            <p role="alert" className="border-b border-line px-3 py-1 text-xs text-down">
+            <p role="alert" className="border-b border-line px-3 py-1 text-xs text-error">
               {skyError ?? historyError} {historyError && <button type="button" className={btn} onClick={loadHistory}>Retry</button>}
             </p>
           )}
