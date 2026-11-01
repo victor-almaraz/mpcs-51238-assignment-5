@@ -30,6 +30,7 @@ export const LAYER_VALUES_MS = 250;
  *   replay: { speed: number, from: number, to: number, ended: boolean } | null,
  *   notices: Notice[], error: string | null, followed: string[], playingIr: any | null,
  *   visualsAvailable: boolean | null,
+ *   runtimeProblems: { severity: 'error', code: string, path: string, line: number | null, message: string }[],
  * }} SessionState
  */
 
@@ -60,8 +61,10 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
   /** @type {SessionState} */
   let state = {
     ready: false, audio: 'stopped', mode: 'live', replay: null, notices: [], error: null, followed: [], playingIr: null,
-    visualsAvailable: null,
+    visualsAvailable: null, runtimeProblems: [],
   };
+  /** Problems from the running program, shown next to build problems (doc/ui.md, Editor). */
+  const MAX_RUNTIME_PROBLEMS = 50;
   let noticeId = 0;
   let cfg = settings;
   /** @type {any} */ let ir = null;
@@ -119,6 +122,11 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
       notify,
       orbit: (objectId, quantity, timeScale) => propagator.orbitValue(objectId, quantity, timeScale),
       local,
+      vm: { program: (msg) => getSandbox().program(msg) },
+      onProgramProblem: (p) => set({
+        runtimeProblems: [...state.runtimeProblems, { severity: 'error', code: p.code, path: '/program', line: p.line, message: p.message }].slice(-MAX_RUNTIME_PROBLEMS),
+      }),
+      onLayerValues: () => pushValues(),
       groupSource: (g) => sourceOf(g) ?? g,
       onVisualReaction: (d) => renderer?.setDesaturate(d),
       masterLevel: () => (master ? master.level() : null),
@@ -143,7 +151,9 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
     if (!renderer || !ir || !rt) return;
     const props = (/** @type {any} */ layer, /** @type {any} */ obj) => rt.layerProps(layer, obj);
     try {
-      renderer.setLayerValues(computeLayerValues(ir, sky, props));
+      const values = computeLayerValues(ir, sky, props);
+      for (const [id, v] of Object.entries(host?.program?.layerValues() ?? {})) values[id] = { ...values[id], ...v };
+      renderer.setLayerValues(values);
       const bg = backgroundValue(ir, props);
       if (bg) renderer.setBackground(bg);
     } catch (err) {
@@ -181,6 +191,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
      */
     load(next) {
       ir = next;
+      if (state.runtimeProblems.length) set({ runtimeProblems: [] });
       const groups = next.groups ?? [];
       // The sky store traces the cause and keeps retrying (doc/sky-contract.md); the notice stays plain.
       sky.follow(groups).catch(() => set({ error: `Live data for ${groups.join(', ')} is unavailable. Sphärenmusik keeps trying; the console shows the details.` }));
@@ -206,7 +217,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
       const pieceIr = ir;
       const token = ++runToken;
       const p = host.run(pieceIr);
-      set({ audio: master?.muted ? 'muted' : 'starting' });
+      set({ audio: master?.muted ? 'muted' : 'starting', runtimeProblems: [] });
       return p.then(() => {
         // Stop, Panic or Restart Audio came while starting (doc/ui.md, Editor): they win.
         if (token !== runToken) { host?.stop(); return; }

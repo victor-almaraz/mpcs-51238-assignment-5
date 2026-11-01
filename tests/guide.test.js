@@ -9,7 +9,7 @@ import { PARAM_DEFS } from '../src/audio/synths/param-defs.js';
 import { MAX_VOICES_GLOBAL } from '../src/audio/voices.js';
 import { EFFECTS } from '../src/audio/fx/effects/registry.js';
 import { DEFS } from '../src/dsl/load-defs.js';
-import { LIMITS } from '../src/dsl/limits.js';
+import { LIMITS, PROGRAM } from '../src/dsl/limits.js';
 import { unitLabel } from '../src/dsl/units.js';
 import { buildPiece } from '../src/dsl/run-script.js';
 import { loadGuide, readPageSource, renderPage } from '../src/learn/guide.js';
@@ -169,6 +169,11 @@ test('limits in reference.md match the validator and engine constants', () => {
     'Expression nesting': `${LIMITS.exprDepth} levels`,
     'Script length': `${LIMITS.sourceChars.toLocaleString('en-US')} characters`,
     'Script run time': `${LIMITS.timeoutMs / 1000} s`,
+    Handlers: `${LIMITS.handlers}`,
+    'Handler run time per round': `${PROGRAM.batchTimeoutMs} ms`,
+    'New notes per second from handlers': `${PROGRAM.noteStartsPerSecond}`,
+    'Commands per round': `${PROGRAM.commandsPerBatch}`,
+    'Waiting after() calls': `${PROGRAM.pendingTimers}`,
   };
   assert.deepEqual(Object.fromEntries(rows), expect);
 });

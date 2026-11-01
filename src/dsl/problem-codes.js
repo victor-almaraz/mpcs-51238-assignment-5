@@ -8,7 +8,7 @@
 /** Items of the `limit_<item>` family. */
 export const LIMIT_ITEMS = Object.freeze([
   'instruments', 'bindings', 'voices', 'slots', 'reverbs', 'lfos', 'retrigger_lfos',
-  'routes', 'routes_per_target', 'layers', 'orbit_sources', 'source',
+  'routes', 'routes_per_target', 'layers', 'orbit_sources', 'handlers', 'source',
 ]);
 
 /** @type {Readonly<Record<string, CodeDef>>} */
@@ -31,6 +31,9 @@ export const PROBLEM_CODES = Object.freeze({
   orbit_no_elements: { severity: 'error', userFacing: true, condition: '`orbit` or `sky.orbit` on a group or object without orbital elements' },
   orbit_quantity: { severity: 'error', userFacing: true, condition: 'Unknown orbit quantity' },
   orbit_no_object: { severity: 'error', userFacing: true, condition: '`orbit(...)` where no current object exists' },
+  io_outside_handler: { severity: 'error', userFacing: true, condition: 'Setup calls an output method or `read.*`, which work only inside handlers' },
+  handler_error: { severity: 'error', userFacing: true, condition: 'A handler threw while the piece played' },
+  handler_timeout: { severity: 'error', userFacing: true, condition: 'One batch of handler calls ran longer than 250 ms' },
   ...Object.fromEntries(LIMIT_ITEMS.map((item) => [
     `limit_${item}`,
     { severity: 'error', userFacing: true, condition: `The ${item.replaceAll('_', ' ')} limit is exceeded` },

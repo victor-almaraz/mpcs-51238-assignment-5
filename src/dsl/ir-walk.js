@@ -102,6 +102,8 @@ export function collectGroups(ir) {
   const out = new Set();
   for (const b of ir.bindings) if (typeof b.group === 'string') out.add(b.group);
   for (const l of ir.layers) if (typeof l.group === 'string') out.add(l.group);
+  for (const h of ir.program?.handlers ?? []) if (h.kind === 'on' && typeof h.group === 'string') out.add(h.group);
+  for (const g of ir.program?.follow ?? []) if (typeof g === 'string') out.add(g);
   forEachExprPosition(ir, (value, path) => forEachNode(value, path, (node) => {
     const g = nodeGroup(node);
     if (g) out.add(g);

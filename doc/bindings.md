@@ -1,13 +1,13 @@
 # Bindings
 
 ## Scope
-The binding runtime that turns sky events into instrument calls, the audio host that connects IR instruments to the engine, and the instrument contracts the runtime calls. Synthesis and `Instrument` internals are user-owned and documented in `audio/`.
+The binding runtime that turns sky events into instrument calls, the program host that turns program commands into instrument calls, the audio host that connects IR instruments to the engine, and the instrument contracts both call. Synthesis and `Instrument` internals are user-owned and documented in `audio/`.
 
 ## Job
-Apply each IR binding and data-driven modulation source to sky events as bounded, traced calls on the engine.
+Apply each IR binding and data-driven modulation source to sky events, and each program command, as bounded, traced calls on the engine.
 
 ## Interface
-- **Input:** validated IR (`piece-dsl.md`), `SkyEvent` stream (`sky-contract.md`), engine handle.
+- **Input:** validated IR (`piece-dsl.md`), `SkyEvent` stream (`sky-contract.md`), engine handle, and for a program the VM handle (`piece-dsl.md`, VM).
 - **Output:** `noteOn`, `noteOff`, `setParam`, voice-control, effect and modulation calls; layer property values for the renderer; trace records.
 - **Errors:** a call that throws is caught, traced at level `error` with the binding id, and the binding is disabled until the next reload. The rest of the piece keeps running.
 
@@ -15,7 +15,7 @@ Apply each IR binding and data-driven modulation source to sky events as bounded
 | Module | Exports |
 |---|---|
 | `src/expr/` | `evaluate(node, obj, ctx)`, `collectDeps(node)`, `quantize`, `rand01` |
-| `src/bind/` | `createBindingRuntime(options)`, `buildModConfig(ir)`, `computeReactionState(...)`, `evaluateLayerProps(...)` |
+| `src/bind/` | `createBindingRuntime(options)`, `createProgramHost(options)`, `buildModConfig(ir)`, `computeReactionState(...)`, `evaluateLayerProps(...)` |
 | `src/audio-host/` | `createAudioHost(options)`, `irToWidgets(ir, ...)` |
 | `src/audio-host/engine-imports.js` | The only module that imports the user's engine: `ensureRunning`, `buildMasterBus`, `Engine` |
 
@@ -46,8 +46,34 @@ On a hot reload the host passes the full widget list to `engine.sync`, calls `se
 
 The master level, master fade-in, safety limiter and duck are engine behavior. Effect chains sit before the safety stage, so the safety stage applies to effect output.
 
+## Program host
+`src/bind/program.js` (`createProgramHost`) runs a piece's program (`piece-dsl.md`, Program) next to the binding runtime. The audio host creates it in `run` when the IR has `program.handlers` and a VM is attached, and creates it again on every reload of such a piece.
+
+1. **Start.** Records the audio time `t0`, sends `start` with the IR's groups, their current objects from `sky.get` and every source's freshness from `sky.sources`, and applies the reply.
+2. **Batches.** Subscribes to `enter`, `update`, `exit` and `freshness` events of the followed groups and queues them as plain objects. Every 25 ms, when no batch is outstanding, it sends one `batch` with `now = (audioTime − t0) × 1000` and the queued events, then applies the reply. Events that arrive while a batch is outstanding go into the next one.
+3. **Scheduling.** A command's audio time is `t0 + at / 1000 + 0.1`, or the current audio time when that has passed.
+4. **Stop.** Unsubscribes, stops the batches, releases every held note at the current audio time and sends `stop`. Stop, Panic, a safety `fault`, a safety `error` and a hot reload stop the program host. So does a reply with an error from handler `setup` or `vm`, which means the VM no longer holds the program; the host reports it once as `handler_error`.
+
+Every command is checked again at this boundary, whatever the VM sent:
+
+| Command | Engine call | Checks |
+|---|---|---|
+| `play` `{ inst, pitch, velocity, pan, durationMs }` | `noteOn(pitch, velocity, t, tag)`, `setVoicePan(tag, pan)`, `noteOff(pitch, t + durationMs / 1000, tag)`; `tag` is `prog:<inst>:n<k>` | Pitch 0–127, velocity 1–127, pan −1–1 (`values.js`); `durationMs` 20–10,000. At most 200 note starts per second for the whole program (token bucket, `createTokenBucket`); the rest are dropped and traced `BIND` / `dropped`. |
+| `hold` `{ inst, key, pitch, velocity, pan }` | `noteOff` of a note held under `key`, then `noteOn` with tag `prog:<inst>:k:<key>` and `setVoicePan` | As `play`, and the same note-start budget |
+| `glide` `{ inst, key, pitch, ms }` | `setVoicePitch(tag, pitch, ms)`; without it, `noteOff` and `noteOn`, traced `fallback` | `ms` 0–10,000; ignored when `key` is not held |
+| `stop` `{ inst, key }`, `stopAll` `{ inst }` | `noteOff(pitch, max(t, start + 0.005), tag)` | Ignored when nothing is held |
+| `set` `{ target, value, smoothMs }` | `setParam` (instrument) or `setFxParam` (slot), through a one-pole smoother (`createSmoother`) on the 25 ms tick | `target` names a numeric parameter of an IR instrument or slot; `smoothMs` 0–60,000 |
+| `set` `{ target: '<slot>.bypass', value }` | `setFxBypass(slot, on)` | `value` is a boolean |
+| `layer` `{ layer, props }` | Merged into the values the session pushes to the renderer | Properties exist for the layer type (`LAYER_DEFS`) and are coerced with `coerceProp`; others are dropped. The flash guard applies in the renderer |
+
+- A command with an unknown `op`, instrument, slot or layer, or with a value of the wrong kind, is dropped and traced `BIND` / `invalid` at level `warn`.
+- More than 256 commands in one reply: the rest are dropped and traced.
+- Every engine call is traced at stage `AUDIO`, component `program`. A command's trace id is its `trace` (the sky event that caused it), so the console's Trace panel shows event, handler and note in one chain. Timer commands get one new trace id per handler per batch.
+- Handler errors are traced `BIND` / `handlerError` at level `error` and reported to the session as `handler_error` problems.
+- **Watchdog.** A `start` or `batch` without a reply within 250 ms makes the sandbox terminate the worker. The program host releases its notes, traces `SAFETY` / `programTimeout` at level `error`, reports `handler_timeout`, and stops. The binding runtime keeps running.
+
 ## Voice identity
-Each sustained voice is identified by a source tag `sky:<bindingId>:<objectId>`, passed as the `source` argument of `noteOn` and `noteOff`. Each trigger note uses `trig:<bindingId>`. `noteOff(pitch, time, source)` releases the oldest matching voice with that pitch and source tag, so the runtime always passes the pitch it started the voice with.
+Each sustained voice is identified by a source tag `sky:<bindingId>:<objectId>`, passed as the `source` argument of `noteOn` and `noteOff`. Each trigger note uses `trig:<bindingId>`. Program notes use `prog:<instrumentId>:n<k>` (`play`) and `prog:<instrumentId>:k:<key>` (`hold`). `noteOff(pitch, time, source)` releases the oldest matching voice with that pitch and source tag, so the runtime always passes the pitch it started the voice with.
 
 ## Sustained voices
 For a `voices` binding:

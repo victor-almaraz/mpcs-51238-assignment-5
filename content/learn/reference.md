@@ -1,6 +1,6 @@
 ---
 title: Reference
-order: 9
+order: 10
 ---
 
 # Reference
@@ -198,6 +198,29 @@ Actions: `detuneCents`, `mute`, `only`, `desaturate`. See [Live data states](liv
 | `aurora` | `intensity` | 0–1 | 0 |
 | | `drift` | 0–1 | 0.2 |
 
+## Program
+Handlers are registered in the setup; commands and `read.*` work inside handlers only ([Programs](programs)).
+
+| Call | Effect |
+|---|---|
+| `on(group, kind, fn)` | Calls `fn(o, e)` for each `'enter'`, `'update'`, `'exit'` or `'*'` event; `e` is `{ kind, traceId, initial, prev }` |
+| `every(interval, fn)` | Calls `fn(t)` every 10–3,600,000 ms, or every sync value such as `'1/8'` |
+| `after(ms, fn)` | Calls `fn(t)` once, 0–3,600,000 ms later; returns a function that cancels it |
+| `onFreshness(source, fn)` | Calls `fn({ source, state })` when a source's freshness changes |
+| `follow(...groups)` | Follows groups read only with `read.*` |
+| `inst.play(pitch, { velocity, pan, durationMs })` | One note; defaults velocity 100, pan 0, 250 ms (20–10,000) |
+| `inst.hold(key, pitch, { velocity, pan })` | A held note named `key` (1–64 characters) |
+| `inst.glide(key, pitch, ms)` | Slides a held note; `ms` 0–10,000, default 150 |
+| `inst.stop(key)`, `inst.stopAll()` | Releases held notes |
+| `inst.<param>.set(value, { smoothMs })`, `slot.<param>.set(...)` | Sets a numeric parameter; `smoothMs` default 250 |
+| `slot.bypass.set(on)` | Bypasses an effect |
+| `layerHandle.set(props)` | Sets constant layer properties |
+| `read.swpc(path)`, `read.group(key)`, `read.object(id)`, `read.freshness(source)` | Current sky values |
+| `time()` | Milliseconds since the program started |
+| `random()`, `randInt(n)`, `choose(list)` | Choices seeded by `seed()`; `Math.random` is the same generator |
+
+`setTimeout`, `setInterval`, `Date` and `performance` are not available in scripts.
+
 ## Escape hatches
 | Call | Effect |
 |---|---|
@@ -222,3 +245,8 @@ A piece using either runs in your editor only and cannot be shared. `fn` is not 
 | Expression nesting | 32 levels |
 | Script length | 200,000 characters |
 | Script run time | 1.5 s |
+| Handlers | 64 |
+| Handler run time per round | 250 ms |
+| New notes per second from handlers | 200 |
+| Commands per round | 256 |
+| Waiting after() calls | 256 |

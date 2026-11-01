@@ -195,7 +195,8 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
     return build(sourceRef.current);
   }, [autosave, build]);
 
-  const problems = useMemo(() => [...buildProblems, ...typeProblems], [buildProblems, typeProblems]);
+  const runtimeProblems = state.runtimeProblems;
+  const problems = useMemo(() => [...buildProblems, ...(runtimeProblems ?? []), ...typeProblems], [buildProblems, runtimeProblems, typeProblems]);
   const canRun = !!ir && !blocking(buildProblems) && state.ready;
   const runNow = useCallback(() => {
     if (!session || !session.ir) return;

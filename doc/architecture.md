@@ -39,6 +39,8 @@ flowchart LR
   SS -->|REST poll 30 s| ST
   PR -->|followed groups| ST
   DSL -->|IR| BR
+  BR -->|events, clock| DSL
+  DSL -->|program commands| BR
   ST -->|enter, update, exit, freshness| BR
   BR -->|noteOn, noteOff, setParam| AU
   BR -->|layer state| VI
@@ -56,11 +58,12 @@ flowchart LR
 | Upserter | Writes changed objects and their diffs | `SkyObject[]` | `changes` rows | RPC error: run fails |
 | Run logger | Records each run | Run result | `runs`, `source_status` | Write error: logged to stderr |
 | Sky store | Holds followed objects and source freshness; emits events | Realtime, REST | `SkyEvent` stream | Channel error: sources show `down` |
-| DSL sandbox | Removes TypeScript syntax, runs the script and returns IR | Script text | IR, problems | Timeout after 1500 ms: problem `timeout` |
+| DSL sandbox (VM) | Removes TypeScript syntax, runs the script's setup and returns IR; while the piece plays, runs its handlers | Script text; batches of sky events and clock time | IR, problems; program commands | Setup timeout after 1500 ms: problem `timeout`. Batch without reply after 250 ms: worker terminated, problem `handler_timeout` |
 | Type checker | Type-checks the script in the editor | Script text, `builder.d.ts` | Diagnostics, completions, hover text | Diagnostics are warnings; never blocks Run |
 | IR validator | Accepts or rejects IR | IR | Problems list | Any error blocks Run and Save |
 | Expression interpreter | Evaluates expression nodes | Node, object, context | Number, string or boolean | Non-finite result: `null` |
 | Binding runtime | Turns sky events into instrument calls and layer state | IR, `SkyEvent` | Engine calls, layer props | Over-limit events: dropped and traced |
+| Program host | Feeds sky events and clock time to the VM and checks its commands | IR, `SkyEvent`, VM replies | Engine calls, layer props | Invalid or over-limit commands: dropped and traced |
 | Audio host | Starts the engine and syncs IR instruments to it | IR instruments | `Engine.sync(widgets)` | Engine fault: Run stops, UI shows error |
 | Visual renderer | Draws layers | Layer state, positions | Frames | No WebGL2: 2D summary |
 | SGP4 worker | Propagates orbital elements | OMM fields | Positions at 2 Hz | Failed object: omitted, traced |
@@ -69,7 +72,7 @@ flowchart LR
 ## Interfaces between halves
 - The worker and the page share only the database schema (`database.md`).
 - The page's data side and sound side share only the sky contract (`sky-contract.md`) and the instrument contracts (`bindings.md`).
-- Scripts share only the builder API. The sandbox returns data; no script code runs during playback.
+- Scripts share only the builder API. During playback, script code runs only in the sandbox worker, and it reaches the page only as program commands, which the program host checks before the engine or renderer sees them (`bindings.md`, Program host).
 
 ## Trace of one change
 1. **SOURCE.** The cron job invokes the Edge Function. The scheduler claims `swpc.wind`. The fetcher receives HTTP 200.

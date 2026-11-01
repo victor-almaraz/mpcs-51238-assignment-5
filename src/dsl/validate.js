@@ -8,8 +8,8 @@ import { own } from './defs.js';
 import { problem } from './problem-codes.js';
 import { collectGroups, escapePointer, forEachExprPosition, forEachNode, isNode, objectGroup } from './ir-walk.js';
 import {
-  COLOR_HEX, CURRENT_IR_VERSION, CURVES, EVENT_KINDS, LFO_SHAPES, LIMITS, NOTE_ROOT, ORBIT_QUANTITIES, PROJECTIONS,
-  RANGES, REACTION_KINDS, SCALE_MODES,
+  COLOR_HEX, CURRENT_IR_VERSION, CURVES, EVENT_KINDS, HANDLER_EVENTS, HANDLER_KINDS, LFO_SHAPES, LIMITS, NOTE_ROOT,
+  ORBIT_QUANTITIES, PROGRAM, PROJECTIONS, RANGES, REACTION_KINDS, SCALE_MODES,
 } from './limits.js';
 
 /** @typedef {import('./problem-codes.js').Problem} Problem */
@@ -108,6 +108,7 @@ class Checker {
     this.reactions();
     this.view();
     this.layers();
+    this.program();
     this.expressions();
     this.groupList();
     this.localOnly();
@@ -383,6 +384,37 @@ class Checker {
         }
       }
     });
+  }
+
+  /** Registered handlers and followed groups (doc/piece-dsl.md, Program). */
+  program() {
+    const pr = this.ir.program;
+    if (pr === undefined) return;
+    if (pr.handlers.length > LIMITS.handlers) this.add('limit_handlers', `/program/handlers/${LIMITS.handlers}`, `A piece registers at most ${LIMITS.handlers} handlers`);
+    pr.handlers.forEach((/** @type {any} */ h, /** @type {number} */ i) => {
+      const p = `/program/handlers/${i}`;
+      if (h.id !== `h${i}`) this.add('ir_reference', `${p}/id`, `Handler ${i} must have id h${i}`);
+      if (!HANDLER_KINDS.includes(h.kind)) { this.add('ir_schema', `${p}/kind`, `Unknown handler kind ${h.kind}`); return; }
+      const keys = { on: ['group', 'event'], every: h.sync !== undefined ? ['sync'] : ['intervalMs'], after: ['ms'], freshness: ['source'] }[/** @type {'on'} */ (h.kind)];
+      for (const k of Object.keys(h)) if (k !== 'id' && k !== 'kind' && !keys.includes(k)) this.add('ir_schema', `${p}/${k}`, `A ${h.kind} handler takes no ${k}`);
+      for (const k of keys) if (h[k] === undefined) this.add('ir_schema', `${p}/${k}`, `A ${h.kind} handler needs ${k}`);
+      if (h.kind === 'on') {
+        if (typeof h.group === 'string') this.group(h.group, `${p}/group`);
+        if (!HANDLER_EVENTS.includes(h.event)) this.add('ir_schema', `${p}/event`, `event must be one of ${HANDLER_EVENTS.join(', ')}`);
+      } else if (h.kind === 'every') {
+        if (h.sync !== undefined) {
+          if (!this.defs.syncNames.includes(h.sync)) this.add('ir_schema', `${p}/sync`, `Unknown sync value ${h.sync}`);
+        } else if (typeof h.intervalMs !== 'number') this.add('ir_schema', `${p}/intervalMs`, 'intervalMs must be a number');
+        else this.range(h.intervalMs, PROGRAM.intervalMs, `${p}/intervalMs`, 'intervalMs');
+      } else if (h.kind === 'after') {
+        if (typeof h.ms !== 'number') this.add('ir_schema', `${p}/ms`, 'ms must be a number');
+        else this.range(h.ms, PROGRAM.afterMs, `${p}/ms`, 'ms');
+      } else if (typeof h.source !== 'string' || !h.source) this.add('ir_schema', `${p}/source`, 'source must be text');
+      else if (h.source !== '*' && !this.defs.sources.includes(h.source) && !own(this.defs.groups, h.source)) {
+        this.add('unknown_group', `${p}/source`, `No source or group ${h.source}`);
+      }
+    });
+    pr.follow.forEach((/** @type {string} */ g, /** @type {number} */ i) => this.group(g, `/program/follow/${i}`));
   }
 
   /** @param {string} key @param {string} path @returns {boolean} */

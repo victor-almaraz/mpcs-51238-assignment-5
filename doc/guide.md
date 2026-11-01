@@ -26,6 +26,7 @@ Render the guide's Markdown pages and make every example runnable in one click.
 | Sky data | `sky-data` |
 | Expressions | `expressions` |
 | Sound | `sound` |
+| Programs | `programs` |
 | Effects and modulation | `effects-and-modulation` |
 | Visuals | `visuals` |
 | Live data states | `live-data-states` |

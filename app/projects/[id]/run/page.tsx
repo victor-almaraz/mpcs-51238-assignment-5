@@ -17,7 +17,7 @@ export default async function RunPage({ params, searchParams }: { params: Promis
   const kiosk = sp.kiosk === '1';
   return (
     <AppProviders>
-      <RunView ir={project.ir} name={project.name} projectId={project.id} backHref={kiosk ? null : `/projects/${id}`} kiosk={kiosk} />
+      <RunView ir={project.ir} source={project.source} name={project.name} projectId={project.id} backHref={kiosk ? null : `/projects/${id}`} kiosk={kiosk} />
     </AppProviders>
   );
 }

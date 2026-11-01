@@ -6,12 +6,14 @@
 export const BUILDER_NAMES = Object.freeze([
   'scale', 'seed', 'tempo', 'master', 'lfo', 'sky', 'field', 'num', 'rand', 'orbit', 'onStale', 'onDown',
   'view', 'layer', 'color', 'audio', 'fn',
+  'on', 'every', 'after', 'onFreshness', 'follow', 'read', 'time', 'random', 'randInt', 'choose',
 ]);
 
 export const MEMBERS = Object.freeze({
   sky: ['group', 'swpc', 'value', 'orbit'],
   view: ['projection', 'background'],
   audio: ['level', 'spectrum', 'voice'],
+  read: ['swpc', 'group', 'object', 'freshness'],
 });
 
 export const ORBIT_QUANTITIES = Object.freeze(['latitude', 'phaseSin', 'phaseCos', 'altitude', 'longitude', 'sunlit', 'elevation']);

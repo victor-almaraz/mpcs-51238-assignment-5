@@ -4,7 +4,8 @@
 // cursor and chrome start hidden, appear on movement or a key and hide after 3 s idle, overlays toggle with C (console), N (sounding
 // voices) and S (status bar), Escape is Panic and E returns to the editor. `?kiosk=1` is installation mode:
 // no cursor, no chrome, one "Begin listening" click starts audio, and the sky store ignores the
-// hidden-tab disconnect. Run mode never loads the type-check worker.
+// hidden-tab disconnect. Run mode never loads the type-check worker. A piece whose IR has a
+// program is built from `source` first, since its handlers live only in the sandbox VM.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -26,9 +27,9 @@ import { button } from './styles';
 
 export const CHROME_HIDE_MS = 3000;
 
-type Props = { ir: unknown; name: string; projectId?: string | null; backHref?: string | null; kiosk?: boolean; links?: React.ReactNode };
+type Props = { ir: unknown; source?: string | null; name: string; projectId?: string | null; backHref?: string | null; kiosk?: boolean; links?: React.ReactNode };
 
-export function RunView({ ir, name, projectId = null, backHref = null, kiosk = false, links = null }: Props) {
+export function RunView({ ir, source = null, name, projectId = null, backHref = null, kiosk = false, links = null }: Props) {
   const router = useRouter();
   const { settings } = useSettings();
   const { session, state } = usePieceSession({ kiosk });
@@ -49,8 +50,19 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
     const errors = r.problems.filter((p: any) => p.severity === 'error');
     if (!r.ir || errors.length) { setProblem(errors[0]?.message ?? 'The stored piece is invalid'); return; }
     setProblem(null);
-    session.load(r.ir);
-  }, [session, ir]);
+    if (!r.ir.program) { session.load(r.ir); return; }
+    // Programs run from source: build it so the sandbox VM holds the handlers before the piece
+    // can start (doc/ui.md, Running).
+    if (typeof source !== 'string') { setProblem('This piece needs its source to run; open it in the editor'); return; }
+    let live = true;
+    session.sandbox.build(source, DEFS, {}).then((b: any) => {
+      if (!live) return;
+      const err = b.problems.find((p: any) => p.severity === 'error');
+      if (!b.ir || err) { setProblem(err?.message ?? 'The piece did not build'); return; }
+      session.load(b.ir);
+    });
+    return () => { live = false; };
+  }, [session, ir, source]);
 
   const run = useCallback(() => {
     if (!session?.ir) return;

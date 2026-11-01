@@ -168,7 +168,8 @@ export class PropResolver {
         out[name] = pdef.reducedMotion;
         continue;
       }
-      if (!layer.exprProps.has(name)) {
+      // A constant property becomes driven once a program pushes a value for it (layerHandle.set).
+      if (!layer.exprProps.has(name) && pushed?.[layer.id]?.[name] === undefined) {
         out[name] = layer.constants[name] ?? pdef.default;
         continue;
       }

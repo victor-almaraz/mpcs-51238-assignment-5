@@ -20,7 +20,35 @@ export const LIMITS = Object.freeze({
   irBytes: 256 * 1024,
   sourceChars: 200_000,
   timeoutMs: 1500,
+  handlers: 64,
 });
+
+/** Program limits (doc/piece-dsl.md, Program, Errors and limits). */
+export const PROGRAM = Object.freeze({
+  /** Longest wait for a reply to a program message, ms. */
+  batchTimeoutMs: 250,
+  commandsPerBatch: 256,
+  pendingTimers: 256,
+  /** Timer calls the VM makes in one batch before it yields. */
+  timerCallsPerBatch: 1024,
+  /** A timer later than this fires once and skips its missed calls, ms. */
+  lateMs: 1000,
+  intervalMs: [10, 3_600_000],
+  afterMs: [0, 3_600_000],
+  glideMs: [0, 10_000],
+  keyChars: 64,
+  defaultGlideMs: 150,
+  /** Delay between a command's program time and its audio time, s. */
+  latencyS: 0.1,
+  /** Period of the page's batch loop, ms. */
+  batchMs: 25,
+  noteStartsPerSecond: 200,
+});
+
+/** Event kinds of `on(group, kind, fn)`. */
+export const HANDLER_EVENTS = Object.freeze(['enter', 'update', 'exit', '*']);
+/** Kinds of IR program handlers. */
+export const HANDLER_KINDS = Object.freeze(['on', 'every', 'after', 'freshness']);
 
 /** Inclusive [min, max] ranges. The builder clamps into them; the validator rejects values outside. */
 export const RANGES = Object.freeze({
