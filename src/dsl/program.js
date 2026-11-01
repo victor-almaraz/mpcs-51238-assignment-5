@@ -218,11 +218,12 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
 
   /** Runs every timer due at or before `now`, in time order. @param {number} now */
   const runTimers = (now) => {
+    const live = (/** @type {Timer} */ t) => !t.cancelled && !t.handler?.disabled;
+    io.timers = io.timers.filter(live);
     for (let fired = 0; fired < PROGRAM.timerCallsPerBatch; fired++) {
-      io.timers = io.timers.filter((t) => !t.cancelled && !t.handler?.disabled);
       let next = null;
-      for (const t of io.timers) if (t.due <= now && (next === null || t.due < next.due)) next = t;
-      if (!next) return;
+      for (const t of io.timers) if (t.due <= now && live(t) && (next === null || t.due < next.due)) next = t;
+      if (!next) break;
       const late = now - next.due > PROGRAM.lateMs;
       io.now = late ? now : next.due;
       if (next.period === null) next.cancelled = true;
@@ -233,6 +234,7 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
       }
       call(next.handler, next.fn, [io.now], { trace: null, src: next.src });
     }
+    io.timers = io.timers.filter(live);
   };
 
   /** @param {WireEvent} ev */
@@ -265,17 +267,22 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
 
   return {
     /**
-     * Starts the program: fills the sky copy, schedules timers and calls the initial enters.
-     * @param {{ groups: string[], objects: WireObject[] }} msg
+     * Starts the program: fills the sky copy and freshness, schedules timers and calls the
+     * initial enters.
+     * @param {{ groups: string[], objects: WireObject[], freshness?: { source: string, state: string }[] }} msg
      * @returns {RunResult}
      */
-    start({ groups, objects }) {
+    start({ groups, objects, freshness = [] }) {
       begin();
       io.phase = 'idle';
       io.now = 0;
       io.groups = new Set(Array.isArray(groups) ? groups : []);
       io.byGroup.clear();
       io.objects.clear();
+      io.fresh.clear();
+      for (const f of Array.isArray(freshness) ? freshness : []) {
+        if (f && typeof f.source === 'string' && typeof f.state === 'string') io.fresh.set(f.source, f.state);
+      }
       io.timers = [];
       for (const h of handlers) {
         if (h.kind === 'every') {

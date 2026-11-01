@@ -71,9 +71,12 @@ export function handleProgram(msg, state) {
       return { ...emptyRun(id), errors: [{ handler: 'setup', line: p?.line ?? null, message: p?.message ?? 'The piece did not build' }] };
     }
     state.runner = createRunner(built.program);
-    return { id, ...state.runner.start({ groups: msg.groups, objects: msg.objects }) };
+    return { id, ...state.runner.start({ groups: msg.groups, objects: msg.objects, freshness: msg.freshness }) };
   }
-  if (msg?.op === 'batch') return state.runner ? { id, ...state.runner.batch(msg) } : emptyRun(id);
+  if (msg?.op === 'batch') {
+    if (!state.runner) return { ...emptyRun(id), errors: [{ handler: 'vm', line: null, message: 'The sandbox holds no running program; save or press Run to start it again' }] };
+    return { id, ...state.runner.batch(msg) };
+  }
   if (msg?.op === 'stop') {
     state.runner?.stop();
     state.runner = null;

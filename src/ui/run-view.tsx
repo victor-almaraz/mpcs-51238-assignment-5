@@ -50,9 +50,9 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
     const errors = r.problems.filter((p: any) => p.severity === 'error');
     if (!r.ir || errors.length) { setProblem(errors[0]?.message ?? 'The stored piece is invalid'); return; }
     setProblem(null);
-    session.load(r.ir);
-    if (!r.ir.program) return;
-    // Programs run from source: build it so the sandbox VM holds the handlers (doc/ui.md, Running).
+    if (!r.ir.program) { session.load(r.ir); return; }
+    // Programs run from source: build it so the sandbox VM holds the handlers before the piece
+    // can start (doc/ui.md, Running).
     if (typeof source !== 'string') { setProblem('This piece needs its source to run; open it in the editor'); return; }
     let live = true;
     session.sandbox.build(source, DEFS, {}).then((b: any) => {

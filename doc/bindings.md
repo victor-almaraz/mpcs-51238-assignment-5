@@ -49,10 +49,10 @@ The master level, master fade-in, safety limiter and duck are engine behavior. E
 ## Program host
 `src/bind/program.js` (`createProgramHost`) runs a piece's program (`piece-dsl.md`, Program) next to the binding runtime. The audio host creates it in `run` when the IR has `program.handlers` and a VM is attached, and creates it again on every reload of such a piece.
 
-1. **Start.** Records the audio time `t0`, sends `start` with the IR's groups and their current objects from `sky.get`, and applies the reply.
+1. **Start.** Records the audio time `t0`, sends `start` with the IR's groups, their current objects from `sky.get` and every source's freshness from `sky.sources`, and applies the reply.
 2. **Batches.** Subscribes to `enter`, `update`, `exit` and `freshness` events of the followed groups and queues them as plain objects. Every 25 ms, when no batch is outstanding, it sends one `batch` with `now = (audioTime − t0) × 1000` and the queued events, then applies the reply. Events that arrive while a batch is outstanding go into the next one.
 3. **Scheduling.** A command's audio time is `t0 + at / 1000 + 0.1`, or the current audio time when that has passed.
-4. **Stop.** Unsubscribes, stops the batches, releases every held note at the current audio time and sends `stop`. Stop, Panic, a safety `fault`, a safety `error` and a hot reload stop the program host.
+4. **Stop.** Unsubscribes, stops the batches, releases every held note at the current audio time and sends `stop`. Stop, Panic, a safety `fault`, a safety `error` and a hot reload stop the program host. So does a reply with an error from handler `setup` or `vm`, which means the VM no longer holds the program; the host reports it once as `handler_error`.
 
 Every command is checked again at this boundary, whatever the VM sent:
 
@@ -64,7 +64,7 @@ Every command is checked again at this boundary, whatever the VM sent:
 | `stop` `{ inst, key }`, `stopAll` `{ inst }` | `noteOff(pitch, max(t, start + 0.005), tag)` | Ignored when nothing is held |
 | `set` `{ target, value, smoothMs }` | `setParam` (instrument) or `setFxParam` (slot), through a one-pole smoother (`createSmoother`) on the 25 ms tick | `target` names a numeric parameter of an IR instrument or slot; `smoothMs` 0–60,000 |
 | `set` `{ target: '<slot>.bypass', value }` | `setFxBypass(slot, on)` | `value` is a boolean |
-| `layer` `{ layer, props }` | Merged into the values the session pushes to the renderer | Properties exist for the layer type; the renderer clamps them (`coerceProp`) and the flash guard applies |
+| `layer` `{ layer, props }` | Merged into the values the session pushes to the renderer | Properties exist for the layer type (`LAYER_DEFS`) and are coerced with `coerceProp`; others are dropped. The flash guard applies in the renderer |
 
 - A command with an unknown `op`, instrument, slot or layer, or with a value of the wrong kind, is dropped and traced `BIND` / `invalid` at level `warn`.
 - More than 256 commands in one reply: the rest are dropped and traced.

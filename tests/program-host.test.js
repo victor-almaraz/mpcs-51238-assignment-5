@@ -103,6 +103,39 @@ test('the start message carries the followed groups and their current objects', 
 const IR = { instruments: [{ id: 'i0', type: 'fm', fx: [{ id: 'f0', type: 'delay', params: { mix: 0.3 }, bypass: false }] }], master: { fx: [] }, layers: [{ id: 'l0', type: 'glyph', props: { size: 12, color: '#ffffff' } }], groups: [], program: { handlers: [], follow: [] } };
 const cmd = (c) => ({ at: 0, trace: 'x', src: 'h0', ...c });
 
+test('the start message carries every source\'s freshness, which read.freshness returns', async () => {
+  const src = `const b = fm({}); on('jpl.scout', 'enter', () => { if (read.freshness('jpl.scout') === 'fresh') b.play(61); });`;
+  const vm = localVm(src);
+  const s = setup(vm, src);
+  s.sky.setFreshness('jpl.scout', 'fresh');
+  await s.host.start();
+  assert.deepEqual(vm.msgs[0].freshness, [{ source: 'jpl.scout', state: 'fresh' }]);
+  s.sky.enter(skyObj('jpl.scout', 'A', { objectName: 'A' }));
+  s.clock.advance(25);
+  await flush();
+  assert.deepEqual(s.inst().callsOf('noteOn').map((c) => c[1]), [61]);
+});
+
+test('a layer property the constructor did not set applies; invalid values are dropped', async () => {
+  const s = setup(scriptedVm([{ commands: [
+    cmd({ op: 'layer', layer: 'l0', props: { opacity: 2, color: 'red', size: 99 } }),
+  ], errors: [], dropped: 0 }]), null, { ir: IR });
+  await s.host.start();
+  assert.deepEqual(s.host.layerValues(), { l0: { opacity: 1, size: 48 } });
+  assert.equal(s.trace.of({ stage: 'BIND', event: 'invalid' }).length, 1);
+});
+
+test('a VM that lost the program is reported once and stops the host', async () => {
+  const lost = { commands: [], errors: [{ handler: 'vm', line: null, message: 'gone' }], dropped: 0 };
+  const s = setup(scriptedVm([{ commands: [cmd({ op: 'hold', inst: 'i0', key: 'a', pitch: 60 })], errors: [], dropped: 0 }, lost, lost]), null, { ir: IR });
+  await s.host.start();
+  for (let i = 0; i < 4; i++) { s.clock.advance(25); await flush(); }
+  assert.deepEqual(s.problems.map((p) => p.code), ['handler_error']);
+  assert.equal(s.host.running, false);
+  assert.equal(s.inst().callsOf('noteOff').length, 1);
+  assert.equal(s.clock.pending(), 0);
+});
+
 test('values are clamped and invalid commands are dropped and traced', async () => {
   const vm = scriptedVm([{ commands: [
     cmd({ op: 'play', inst: 'i0', pitch: 500, velocity: 0, pan: 9, durationMs: 1 }),

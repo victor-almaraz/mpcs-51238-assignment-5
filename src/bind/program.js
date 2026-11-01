@@ -7,6 +7,8 @@ import { createTokenBucket } from './trigger.js';
 import { LIMITS } from './limits.js';
 import { numberOr, panOf, pitchOf, velocityOf } from './values.js';
 import { PROGRAM } from '../dsl/limits.js';
+import { LAYER_DEFS } from '../visual/layer-defs.js';
+import { coerceProp } from '../visual/layer-state.js';
 
 /**
  * @typedef {{ program(msg: Record<string, unknown> & { op: string }): Promise<any> }} Vm
@@ -14,6 +16,8 @@ import { PROGRAM } from '../dsl/limits.js';
  */
 
 const OPS = new Set(['play', 'hold', 'glide', 'stop', 'stopAll', 'set', 'layer']);
+/** Error sources that mean the VM no longer holds the program. */
+const FATAL = new Set(['setup', 'vm']);
 /** Most events queued between two batches; older ones are dropped. */
 const MAX_QUEUED = 4096;
 
@@ -128,19 +132,19 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
         initial = numberOr(slots.get(id)?.params?.[param], NaN);
         send = (v) => engine.setFxParam(id, param, v);
       }
-      entry = { sm: createSmoother(smoothMs), send, lastSent: -Infinity };
+      entry = { sm: createSmoother(0), send, lastSent: -Infinity };
       if (Number.isFinite(initial)) entry.sm.value = initial;
       smoothers.set(target, entry);
     }
+    // Each set starts a new smoother from the current value, so its time constant is this call's.
+    const from = entry.sm.value;
+    entry.sm = createSmoother(smoothMs);
     if (smoothMs === 0) {
       entry.sm.value = value;
-      entry.sm.target = value;
-      entry.sm.moving = false;
       entry.send(value);
       entry.lastSent = clock.now();
     } else {
-      entry.sm = Object.assign(createSmoother(smoothMs), { value: entry.sm.value });
-      entry.sm.set(value, clock.now(), entry.sm.value);
+      entry.sm.set(value, clock.now(), from);
     }
     audio(insts.has(id) ? 'setParam' : 'setFxParam', { target, value, smoothMs }, traceId);
     return true;
@@ -217,8 +221,16 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
       }
       case 'layer': {
         const layer = layers.get(cmd.layer);
-        if (!layer || typeof cmd.props !== 'object' || cmd.props === null) { invalid(cmd, 'layer', traceId); return; }
-        const props = Object.fromEntries(Object.entries(cmd.props).filter(([k]) => k in (layer.props ?? {})));
+        const defs = LAYER_DEFS[layer?.type]?.props;
+        if (!layer || !defs || typeof cmd.props !== 'object' || cmd.props === null) { invalid(cmd, 'layer', traceId); return; }
+        /** @type {Record<string, number | string>} */
+        const props = {};
+        for (const [k, v] of Object.entries(cmd.props)) {
+          const c = Object.hasOwn(defs, k) ? coerceProp(defs[k], v) : undefined;
+          if (c === undefined) invalid(cmd, `property ${k}`, traceId);
+          else props[k] = c;
+        }
+        if (Object.keys(props).length === 0) return;
         layerValues = { ...layerValues, [layer.id]: { ...layerValues[layer.id], ...props } };
         emit('VISUAL', 'program', 'layerSet', { layer: layer.id, props }, { traceId });
         onLayerValues();
@@ -236,11 +248,14 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
       halt(false);
       return;
     }
+    let lost = false;
     for (const e of Array.isArray(reply.errors) ? reply.errors : []) {
       const message = `${String(e?.message ?? 'error')}`;
       bind('handlerError', { handler: String(e?.handler ?? ''), line: e?.line ?? null, message }, null, 'error');
       onProblem({ code: 'handler_error', line: Number.isInteger(e?.line) ? e.line : null, message });
+      if (FATAL.has(e?.handler)) lost = true;
     }
+    if (lost) { halt(false); return; }
     const commands = Array.isArray(reply.commands) ? reply.commands : [];
     const dropped = numberOr(reply.dropped, 0) + Math.max(0, commands.length - PROGRAM.commandsPerBatch);
     if (dropped > 0) bind('dropped', { count: dropped, reason: 'commands per batch' }, null, 'warn');
@@ -317,10 +332,11 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
       unsub.push(sky.on('freshness', onFresh));
       const objects = [];
       for (const g of groups) for (const o of sky.get(g) ?? []) objects.push(wire(o));
+      const freshness = (sky.sources?.() ?? []).map((/** @type {any} */ f) => ({ source: f.source, state: f.state }));
       emit('RELOAD', 'program', 'start', { handlers: (ir.program?.handlers ?? []).map((/** @type {any} */ h) => h.id) }, {});
       let reply;
       try {
-        reply = await vm.program({ op: 'start', groups: [...groups], objects });
+        reply = await vm.program({ op: 'start', groups: [...groups], objects, freshness });
       } catch (err) {
         reply = { errors: [{ handler: 'vm', line: null, message: String(/** @type {any} */ (err)?.message ?? err) }], commands: [], dropped: 0 };
       }

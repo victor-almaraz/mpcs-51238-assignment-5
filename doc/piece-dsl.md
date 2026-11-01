@@ -539,14 +539,14 @@ The worker keeps the source and handlers of its last build without errors. Build
 
 | Page → worker | Worker → page |
 |---|---|
-| `{ program: { id, op: 'start', groups, objects } }` | `{ program: { id, commands, errors, dropped } }` |
+| `{ program: { id, op: 'start', groups, objects, freshness } }` | `{ program: { id, commands, errors, dropped } }` |
 | `{ program: { id, op: 'batch', now, events, freshness } }` | `{ program: { id, commands, errors, dropped } }` |
 | `{ program: { id, op: 'stop' } }` | `{ program: { id, commands: [], errors: [], dropped: 0 } }` |
 
-- `start` runs the kept source again, so setup starts from fresh variables, then calls the initial `enter` handlers (Program, Handlers). `groups` are the IR's groups; `objects` are their current objects as `{ id, group, fields }`.
+- `start` runs the kept source again, so setup starts from fresh variables, then calls the initial `enter` handlers (Program, Handlers). `groups` are the IR's groups; `objects` are their current objects as `{ id, group, fields }`; `freshness` is the current state of every source as `{ source, state }`.
 - `batch` advances the program clock to `now` (ms since start). The VM first runs due timers in time order, each at its scheduled time. A timer more than 1000 ms late fires once and skips the missed calls. It then applies `events` (`{ kind, obj, prev, traceId, initial }`) to its copy of the followed groups and calls the matching `on` handlers, then `freshness` changes (`{ source, state }`) and the matching `onFreshness` handlers.
 - A command is `{ op, at, trace, src, ...args }`. `op` is `play`, `hold`, `glide`, `stop`, `stopAll`, `set` or `layer`; `at` is the handler's program time, `trace` the event's trace id (`null` for timers), `src` the handler id. At most 256 per batch; `dropped` counts the rest.
-- An error is `{ handler, line, message }`. The VM disables that handler.
+- An error is `{ handler, line, message }`. The VM disables that handler. An error from `setup` or `vm` (the kept build failed, or the worker holds no running program) means the program is gone; the page reports it once and stops the program.
 - The page waits up to 250 ms for each `program` reply. Past that it terminates the worker and reports `handler_timeout` (`bindings.md`, Program host). The next build starts a new worker.
 - A build that times out also terminates the worker, which stops a running program.
 

@@ -78,9 +78,12 @@ const emptyRun = (id) => ({ id, commands: [], errors: [], dropped: 0 });
       return { ...emptyRun(id), errors: [{ handler: 'setup', line: _nullishCoalesce(_optionalChain([p, 'optionalAccess', _6 => _6.line]), () => ( null)), message: _nullishCoalesce(_optionalChain([p, 'optionalAccess', _7 => _7.message]), () => ( 'The piece did not build')) }] };
     }
     state.runner = _programjs.createRunner.call(void 0, built.program);
-    return { id, ...state.runner.start({ groups: msg.groups, objects: msg.objects }) };
+    return { id, ...state.runner.start({ groups: msg.groups, objects: msg.objects, freshness: msg.freshness }) };
   }
-  if (_optionalChain([msg, 'optionalAccess', _8 => _8.op]) === 'batch') return state.runner ? { id, ...state.runner.batch(msg) } : emptyRun(id);
+  if (_optionalChain([msg, 'optionalAccess', _8 => _8.op]) === 'batch') {
+    if (!state.runner) return { ...emptyRun(id), errors: [{ handler: 'vm', line: null, message: 'The sandbox holds no running program; save or press Run to start it again' }] };
+    return { id, ...state.runner.batch(msg) };
+  }
   if (_optionalChain([msg, 'optionalAccess', _9 => _9.op]) === 'stop') {
     _optionalChain([state, 'access', _10 => _10.runner, 'optionalAccess', _11 => _11.stop, 'call', _12 => _12()]);
     state.runner = null;
@@ -617,11 +620,12 @@ const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group })
 
   /** Runs every timer due at or before `now`, in time order. @param {number} now */
   const runTimers = (now) => {
+    const live = (/** @type {Timer} */ t) => !t.cancelled && !_optionalChain([t, 'access', _7 => _7.handler, 'optionalAccess', _8 => _8.disabled]);
+    io.timers = io.timers.filter(live);
     for (let fired = 0; fired < _limitsjs.PROGRAM.timerCallsPerBatch; fired++) {
-      io.timers = io.timers.filter((t) => !t.cancelled && !_optionalChain([t, 'access', _7 => _7.handler, 'optionalAccess', _8 => _8.disabled]));
       let next = null;
-      for (const t of io.timers) if (t.due <= now && (next === null || t.due < next.due)) next = t;
-      if (!next) return;
+      for (const t of io.timers) if (t.due <= now && live(t) && (next === null || t.due < next.due)) next = t;
+      if (!next) break;
       const late = now - next.due > _limitsjs.PROGRAM.lateMs;
       io.now = late ? now : next.due;
       if (next.period === null) next.cancelled = true;
@@ -632,6 +636,7 @@ const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group })
       }
       call(next.handler, next.fn, [io.now], { trace: null, src: next.src });
     }
+    io.timers = io.timers.filter(live);
   };
 
   /** @param {WireEvent} ev */
@@ -664,17 +669,22 @@ const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group })
 
   return {
     /**
-     * Starts the program: fills the sky copy, schedules timers and calls the initial enters.
-     * @param {{ groups: string[], objects: WireObject[] }} msg
+     * Starts the program: fills the sky copy and freshness, schedules timers and calls the
+     * initial enters.
+     * @param {{ groups: string[], objects: WireObject[], freshness?: { source: string, state: string }[] }} msg
      * @returns {RunResult}
      */
-    start({ groups, objects }) {
+    start({ groups, objects, freshness = [] }) {
       begin();
       io.phase = 'idle';
       io.now = 0;
       io.groups = new Set(Array.isArray(groups) ? groups : []);
       io.byGroup.clear();
       io.objects.clear();
+      io.fresh.clear();
+      for (const f of Array.isArray(freshness) ? freshness : []) {
+        if (f && typeof f.source === 'string' && typeof f.state === 'string') io.fresh.set(f.source, f.state);
+      }
       io.timers = [];
       for (const h of handlers) {
         if (h.kind === 'every') {
@@ -18449,3 +18459,4 @@ var _typescript = require('./typescript');
   }
   load(0);
 })();
+

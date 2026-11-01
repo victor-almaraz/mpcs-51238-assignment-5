@@ -212,6 +212,11 @@ test('the validator rejects too many handlers', () => {
   assert.ok(codes(r).includes('limit_handlers /program/handlers/64'));
 });
 
+test('start seeds the state read.freshness returns', () => {
+  const { runner } = vm(`const b = fm({}); every(100, () => { if (read.freshness('swpc.kp') === 'stale') b.play(40); });`);
+  assert.deepEqual(ops(runner.start({ groups: [], objects: [], freshness: [{ source: 'swpc.kp', state: 'stale' }] })), ['play']);
+});
+
 test('freshness handlers receive changes of their source', () => {
   const { runner } = vm(`const b = fm({}); onFreshness('swpc.kp', (f) => { if (f.state === 'stale') b.play(40); });`);
   runner.start({ groups: [], objects: [] });
