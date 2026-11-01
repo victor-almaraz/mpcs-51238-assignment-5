@@ -100,14 +100,48 @@ interface SetParam {
   /** Sets the parameter's base value from an expression. */
   follow(value: Num<GlobalCtx>, opts?: FollowOptions): void;
 }
+/** A numeric parameter. */
+interface NumParam extends SetParam {
+  /** Program output, inside handlers only: sets the base value. */
+  set(value: number, opts?: { /** Default 250. */ smoothMs?: number }): void;
+}
 /** A modulatable parameter. */
-interface ModParam extends SetParam {
+interface ModParam extends NumParam {
   /** Adds a modulation route from an LFO or a −1..1 expression. */
   mod(source: Lfo | NumExpr<GlobalCtx>, opts: ModOptions): void;
 }
 interface BypassParam {
   /** Bypasses the effect while value is true. */
   follow(value: Cond<GlobalCtx>): void;
+  /** Program output, inside handlers only. */
+  set(on: boolean): void;
+}
+interface PlayOptions {
+  /** 1–127. Default 100. */
+  velocity?: number;
+  /** −1 to 1. Default 0. */
+  pan?: number;
+  /** 20–10000 ms. Default 250. */
+  durationMs?: number;
+}
+interface HoldOptions {
+  /** 1–127. Default 100. */
+  velocity?: number;
+  /** −1 to 1. Default 0. */
+  pan?: number;
+}
+/** Program output of an instrument, inside handlers only (doc/piece-dsl.md, Program). */
+interface Playable {
+  /** Plays one note. A null pitch plays nothing. */
+  play(pitch: number | null, opts?: PlayOptions): void;
+  /** Starts a sustained note named key; holding a sounding key restarts it. */
+  hold(key: string, pitch: number | null, opts?: HoldOptions): void;
+  /** Moves a held note to pitch over ms (default 150). */
+  glide(key: string, pitch: number | null, ms?: number): void;
+  /** Releases one held note. */
+  stop(key: string): void;
+  /** Releases every held note of this instrument. */
+  stopAll(): void;
 }
 
 interface OrbitOptions {
@@ -381,7 +415,7 @@ interface SubtractiveOptions {
   /** 0.01–4 s. Default 0.3. */
   release?: number;
 }
-interface SubtractiveHandle {
+interface SubtractiveHandle extends Playable {
   readonly __instrument: 'subtractive';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
@@ -426,7 +460,7 @@ interface FmOptions {
   /** 0.01–4 s. Default 0.4. */
   release?: number;
 }
-interface FmHandle {
+interface FmHandle extends Playable {
   readonly __instrument: 'fm';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
@@ -469,7 +503,7 @@ interface AdditiveOptions {
   /** 0–100 cents. Default 0. */
   vibratoDepth?: number;
 }
-interface AdditiveHandle {
+interface AdditiveHandle extends Playable {
   readonly __instrument: 'additive';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
@@ -504,7 +538,7 @@ interface PluckOptions {
   /** 0.02–2 s. Default 0.1. */
   release?: number;
 }
-interface PluckHandle {
+interface PluckHandle extends Playable {
   readonly __instrument: 'pluck';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
@@ -543,7 +577,7 @@ interface GranularOptions {
   /** 0.01–4 s. Default 0.4. */
   release?: number;
 }
-interface GranularHandle {
+interface GranularHandle extends Playable {
   readonly __instrument: 'granular';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
@@ -836,6 +870,17 @@ interface PointsLayerProps<C extends Ctx> {
   /** 0–3600 s. Default 0. */
   trail?: Num<C>;
 }
+/** Constant values of a points layer, for set() in handlers. */
+interface PointsLayerValues {
+  opacity?: number;
+  size?: number;
+  color?: Hex;
+  trail?: number;
+}
+interface PointsLayer {
+  /** Program output, inside handlers only: sets constant property values. */
+  set(props: PointsLayerValues): void;
+}
 interface RingsLayerProps<C extends Ctx> {
   /** 0–1. Default 1. */
   opacity?: Num<C>;
@@ -846,6 +891,17 @@ interface RingsLayerProps<C extends Ctx> {
   /** Default '#ffffff'. */
   color?: ColorLike<C>;
 }
+/** Constant values of a rings layer, for set() in handlers. */
+interface RingsLayerValues {
+  opacity?: number;
+  radius?: number;
+  width?: number;
+  color?: Hex;
+}
+interface RingsLayer {
+  /** Program output, inside handlers only: sets constant property values. */
+  set(props: RingsLayerValues): void;
+}
 interface LinesLayerProps<C extends Ctx> {
   /** 0–1. Default 1. */
   opacity?: Num<C>;
@@ -853,6 +909,16 @@ interface LinesLayerProps<C extends Ctx> {
   span?: Num<C>;
   /** Default '#ffffff'. */
   color?: ColorLike<C>;
+}
+/** Constant values of a lines layer, for set() in handlers. */
+interface LinesLayerValues {
+  opacity?: number;
+  span?: number;
+  color?: Hex;
+}
+interface LinesLayer {
+  /** Program output, inside handlers only: sets constant property values. */
+  set(props: LinesLayerValues): void;
 }
 interface GlyphLayerProps<C extends Ctx> {
   /** 0–1. Default 1. */
@@ -866,6 +932,18 @@ interface GlyphLayerProps<C extends Ctx> {
   /** 0–60 s. Default 0. */
   fade?: Num<C>;
 }
+/** Constant values of a glyph layer, for set() in handlers. */
+interface GlyphLayerValues {
+  opacity?: number;
+  char?: string;
+  size?: number;
+  color?: Hex;
+  fade?: number;
+}
+interface GlyphLayer {
+  /** Program output, inside handlers only: sets constant property values. */
+  set(props: GlyphLayerValues): void;
+}
 interface FieldLayerProps<C extends Ctx> {
   /** 0–1. Default 1. */
   opacity?: Num<C>;
@@ -873,6 +951,16 @@ interface FieldLayerProps<C extends Ctx> {
   value?: Num<C>;
   /** 'night', 'ember', 'ice'. Default 'night'. */
   colormap?: 'night' | 'ember' | 'ice' | StrExpr<C>;
+}
+/** Constant values of a field layer, for set() in handlers. */
+interface FieldLayerValues {
+  opacity?: number;
+  value?: number;
+  colormap?: 'night' | 'ember' | 'ice';
+}
+interface FieldLayer {
+  /** Program output, inside handlers only: sets constant property values. */
+  set(props: FieldLayerValues): void;
 }
 interface AuroraLayerProps<C extends Ctx> {
   /** 0–1. Default 1. */
@@ -882,13 +970,23 @@ interface AuroraLayerProps<C extends Ctx> {
   /** 0–1. Default 0.2. */
   drift?: Num<C>;
 }
+/** Constant values of a aurora layer, for set() in handlers. */
+interface AuroraLayerValues {
+  opacity?: number;
+  intensity?: number;
+  drift?: number;
+}
+interface AuroraLayer {
+  /** Program output, inside handlers only: sets constant property values. */
+  set(props: AuroraLayerValues): void;
+}
 interface Layers {
-  points<G extends GroupKey>(group: Group<G>, props: PointsLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => PointsLayerProps<LayerCtx>)): void;
-  rings<G extends GroupKey>(group: Group<G>, props: RingsLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => RingsLayerProps<LayerCtx>)): void;
-  lines<G extends GroupKey>(group: Group<G>, props: LinesLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => LinesLayerProps<LayerCtx>)): void;
-  glyph<G extends GroupKey>(group: Group<G>, props: GlyphLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => GlyphLayerProps<LayerCtx>)): void;
-  field(props: FieldLayerProps<ScreenCtx>): void;
-  aurora(props: AuroraLayerProps<ScreenCtx>): void;
+  points<G extends GroupKey>(group: Group<G>, props: PointsLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => PointsLayerProps<LayerCtx>)): PointsLayer;
+  rings<G extends GroupKey>(group: Group<G>, props: RingsLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => RingsLayerProps<LayerCtx>)): RingsLayer;
+  lines<G extends GroupKey>(group: Group<G>, props: LinesLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => LinesLayerProps<LayerCtx>)): LinesLayer;
+  glyph<G extends GroupKey>(group: Group<G>, props: GlyphLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => GlyphLayerProps<LayerCtx>)): GlyphLayer;
+  field(props: FieldLayerProps<ScreenCtx>): FieldLayer;
+  aurora(props: AuroraLayerProps<ScreenCtx>): AuroraLayer;
   /** A fragment-shader layer. The piece becomes local-only. */
   shader(glsl: string, props?: Record<string, Num<ScreenCtx> | SpectrumExpr>): void;
 }
@@ -935,6 +1033,43 @@ declare const master: {
   /** Sets the master chain, in order. */
   fx(...slots: Effect[]): void;
 };
+/** A sky object as a program sees it: its id, its group and its current field values. */
+type SkyRecord<G extends GroupKey> = { readonly id: ObjectId<G>; readonly group: G } & { readonly [K in FieldName<G>]: Fields<G>[K] | null };
+interface SkyChange<G extends GroupKey> {
+  readonly kind: 'enter' | 'update' | 'exit';
+  readonly traceId: string | null;
+  /** True for objects already in the group when the program starts. */
+  readonly initial: boolean;
+  /** The record before an update or exit, otherwise null. */
+  readonly prev: SkyRecord<G> | null;
+}
+type FreshState = 'loading' | 'fresh' | 'stale' | 'down';
+/** Live reads, inside handlers only. */
+interface Read {
+  swpc(path: SwpcPath): number | null;
+  group<G extends GroupKey>(key: G): readonly SkyRecord<G>[];
+  object<G extends GroupKey>(id: ObjectId<G>): SkyRecord<G> | null;
+  freshness(source: SourceId | GroupKey): FreshState;
+}
+/** Calls fn for each event of kind in group while the piece plays. Setup only. */
+declare function on<G extends GroupKey>(group: G, kind: EventKind | '*', fn: (o: SkyRecord<G>, e: SkyChange<G>) => void): void;
+/** Calls fn every interval: 10–3600000 ms, or a sync value at the piece tempo. Setup only. */
+declare function every(interval: number | SyncName, fn: (t: number) => void): void;
+/** Calls fn once, ms (0–3600000) from now. Returns a function that cancels the call. */
+declare function after(ms: number, fn: (t: number) => void): () => void;
+/** Calls fn when the freshness of source changes. Setup only. */
+declare function onFreshness(source: SourceId | GroupKey | '*', fn: (f: { readonly source: string; readonly state: FreshState }) => void): void;
+/** Follows groups that the script reads with read.* but names nowhere else. Setup only. */
+declare function follow(...groups: GroupKey[]): void;
+declare const read: Read;
+/** Milliseconds since the program started. */
+declare function time(): number;
+/** A number in [0, 1), seeded by seed(). */
+declare function random(): number;
+/** An integer in [0, n), seeded by seed(). */
+declare function randInt(n: number): number;
+/** One element of list, seeded by seed(). */
+declare function choose<T>(list: readonly T[]): T;
 declare const sky: Sky;
 declare const view: View;
 declare const layer: Layers;

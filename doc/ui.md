@@ -162,6 +162,7 @@ Every account receives simple example projects on its first visit to `/projects`
 Behavior:
 - Run is the user gesture that starts the AudioContext (`bindings.md`). Before the first Run, the preview shows "Press Run to start sound".
 - Saving rebuilds the IR and hot-reloads the running piece (`piece-dsl.md`). A failed build focuses Problems and leaves the running piece unchanged.
+- A piece with handlers restarts its program on every successful save (`piece-dsl.md`, Hot reload). `handler_error` and `handler_timeout` problems from the running program appear in Problems next to the build problems and clear on the next Run or save.
 - Autosave writes `source` and `ir` to `projects` 2 s after the last edit. Save state: `Saved`, `Saving…`, `Unsaved changes`, `Offline`.
 - Hot reload never starts audio; only Run does.
 - The preview toolbar holds Run, Stop, Panic, the master volume and the level meter with its Limit badge (`audio/audio-safety.md`, Safety UI). The master volume starts at `audio.masterDb` and cannot exceed `audio.maxMasterDb`.
@@ -183,6 +184,7 @@ Behavior:
 - `Escape` returns to the editor, which stops the piece. Panic stays available as a button in the chrome.
 - Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin Listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
 - Freshness is shown in the status bar and is also audible and visible through the project's reactions.
+- A piece whose stored IR has `program` is built from its `source` in the sandbox before it plays, since its handlers live only in the VM. A build error shows the error state with a link to the editor. Pieces without handlers play from the stored IR.
 
 ## Settings (`/settings`)
 - A searchable list grouped by category, with a toggle to an editable `settings.json` view. Both views edit the same object, validated on every change.

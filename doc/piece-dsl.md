@@ -1,14 +1,15 @@
 # Piece DSL
 
 ## Scope
-The TypeScript builder API that users write, its types, the expression language, the IR schema, validation, versioning, the sandbox, type checking and hot reload.
+The TypeScript language that users write: the builder API, programs, their types, the expression language, the IR schema, validation, versioning, the sandbox (the VM), type checking and hot reload.
 
 ## Model
-- A **script** is TypeScript written in the editor (`piece.ts`). It calls builder functions and returns nothing. Plain JavaScript is valid script source, since the type annotations are optional.
-- Running a script in the sandbox produces an **IR**: a JSON document that describes instruments, effects, modulation, bindings, reactions, the view and layers.
-- The IR is the only thing that is validated, stored, executed, tested and shared. No script code runs during playback, except the local-only `fn` escape hatch.
-- Mappings are **expressions**: chained builder calls that compile to JSON expression nodes.
-- Builders that accept a function call it once, at build time, with a typed **object proxy** whose properties build expression nodes (Typed objects). The function's result is data; no function appears in the IR.
+- A **script** is a TypeScript program written in the editor (`piece.ts`). Plain JavaScript is valid script source, since the type annotations are optional.
+- The script runs in the sandbox worker, which is the program's VM. Sky data is its input; instruments, effect parameters and layers are its output.
+- **Setup** is the script's top-level code. It runs when the piece is built and again at every Run. It opens the IO devices (instruments, effects, LFOs, layers, the view), declares bindings, and registers **handlers** (Program).
+- While the piece plays, the VM keeps the script's variables and calls its handlers on sky events, timers and freshness changes. Handlers read live values and send commands. The page checks every command at the IO boundary before the engine or renderer receives it (`bindings.md`, Program host).
+- Building produces an **IR**: a JSON document that describes instruments, effects, modulation, bindings, reactions, the view, layers and the registered handlers. The IR is what is validated, stored and diffed on hot reload. A piece without handlers plays from its IR alone; a piece with handlers needs its source and the VM.
+- **Bindings** are the declarative part of the language: expressions (chained builder calls that compile to JSON expression nodes) that the binding runtime evaluates without script code. Builders that accept a function call it once, at build time, with a typed **object proxy** whose properties build expression nodes (Typed objects).
 - Types guide authoring and appear as editor problems. The IR validator alone decides whether a piece runs.
 
 ## Example script
@@ -208,6 +209,87 @@ sky.group('ll2.upcoming').on('update')
 - The function runs once per build. It cannot read data values; reading `o.vRel` returns an expression, not a number.
 - A property not in the group's field list is a type error. At build time it produces the same node as `field(name)` and the `unknown_field` warning.
 
+## Program
+Handlers make a script a running program. Setup registers them; the VM calls them while the piece plays. Ordinary variables declared in setup keep their values between calls.
+
+```ts
+seed(7);
+const pad = additive({ volume: -12, attack: 1, release: 3 });
+const bell = fm({ ratio: 3.5, index: 4 });
+follow('swpc.kp');
+
+const triad = [0, 4, 7];
+let root = 48;
+let step = 0;
+
+on('jpl.scout', 'enter', () => {
+  root = 48 + choose([0, 3, 5, 7, 8]);
+  pad.stopAll();
+  triad.forEach((n, i) => pad.hold(`t${i}`, root + n, { velocity: 70 }));
+});
+
+every('1/8', () => {
+  const kp = Number(read.swpc('kp.kp') ?? 0);
+  bell.play(root + 24 + triad[step++ % 3], { durationMs: 200, velocity: 40 + kp * 8 });
+});
+```
+
+### Handlers
+Handlers are registered during setup only. Registering one inside a handler throws.
+
+| Call | Calls `fn` |
+|---|---|
+| `on(group, kind, fn)` | For each event of `kind` (`enter`, `update`, `exit` or `'*'`) in `group`, with `(o, e)` |
+| `every(interval, fn)` | Every `interval`, with `(t)`: milliseconds (10–3,600,000) or a sync name (`1/32`–`1/1`, with `d` or `t`) at the piece tempo. The first call is at the start of the program. |
+| `after(ms, fn)` | Once, `ms` (0–3,600,000) after the call. Valid in setup and in handlers. Returns a function that cancels the call. |
+| `onFreshness(source, fn)` | When the freshness of `source` (a registry id, a group key or `'*'`) changes, with `({ source, state })` |
+| `follow(...groups)` | Follows groups the script reads with `read.*` but names nowhere else |
+
+- `o` is a frozen plain record `{ id, group, ...fields }` with the object's current field values; a field the source does not report is `null`. `e` is `{ kind, traceId, initial, prev }`, where `prev` is the record before an `update` or `exit`, otherwise `null`.
+- At every start the VM calls each `on(group, 'enter' | '*')` handler once per object already in its group, with `e.initial` true, in id order. Trigger bindings skip these events; handlers receive them so a program can build its state from the current sky.
+- Handlers are synchronous. Commands sent after a handler returns, for example from a promise callback, throw `io_outside_handler`.
+
+### Output
+Output methods are valid inside handlers only. In setup they throw, and the build reports `io_outside_handler`.
+
+| Call | Effect |
+|---|---|
+| `inst.play(pitch, { velocity, pan, durationMs })` | One note. Defaults: velocity 100, pan 0, `durationMs` 250 (20–10,000). |
+| `inst.hold(key, pitch, { velocity, pan })` | Starts a sustained note named `key` (text, at most 64 characters). Holding a key that already sounds restarts it. |
+| `inst.glide(key, pitch, ms)` | Moves a held note to `pitch` over `ms` (default 150) |
+| `inst.stop(key)`, `inst.stopAll()` | Releases one held note, or all of the instrument's held notes |
+| `inst.<param>.set(value, { smoothMs })`, `slot.<param>.set(value, { smoothMs })` | Sets a numeric parameter's base value; `smoothMs` default 250. Values outside the range move to the nearest end. |
+| `slot.bypass.set(on)` | Bypasses an effect slot |
+| `layerHandle.set(props)` | Sets constant layer properties; `layer.*(...)` returns the handle |
+
+A `null` pitch plays nothing, as in expressions. Any other value of the wrong kind throws a `TypeError`. Commands take effect 100 ms after the handler's time, so timer handlers keep steady timing.
+
+### Input
+| Call | Returns |
+|---|---|
+| `read.swpc(path)` | Current SWPC value, or `null` |
+| `read.group(key)` | Current records of a group, in id order |
+| `read.object(id)` | One record, or `null` |
+| `read.freshness(source)` | `loading`, `fresh`, `stale` or `down` |
+| `time()` | Milliseconds since the program started; in a timer handler, the timer's scheduled time |
+
+`read.*` is valid inside handlers only. It reads groups the piece follows: the groups of its bindings, layers, `on` handlers, `sky.swpc` expressions and `follow` calls. Reading another group throws.
+
+### Determinism
+- `random()` returns a number in `[0, 1)`, `randInt(n)` an integer in `[0, n)`, and `choose(list)` one element. All three are seeded by `seed()`, so two runs with the same seed and the same events make the same choices. `Math.random` is the same generator.
+- `setTimeout`, `setInterval`, `queueMicrotask`, `Date` and `performance` are not available; use `after` and `time()`.
+- Program time is audio time. Replay speeds up sky events, not timers.
+
+### Errors and limits
+| Rule | Effect |
+|---|---|
+| A handler throws | That handler is disabled until the next Run. Problems shows `handler_error` with the line. |
+| One batch of handler calls runs longer than 250 ms | The VM is stopped, the program's notes are released, and Problems shows `handler_timeout`. The bindings keep playing. |
+| More than 64 handlers | Build error `limit_handlers` |
+| More than 256 pending `after` calls | The `after` call throws |
+| More than 256 commands in one batch | The rest are dropped and traced |
+| More than 200 note starts per second | The rest are dropped and traced |
+
 ## Types
 `src/dsl/builder.d.ts` declares the global builder API. Its types are generated from `PARAM_DEFS`, the effect registry, `src/visual/layer-defs.js` and `src/sky/groups.json` by `scripts/gen-builder-dts.mjs` (`src/dsl/gen-dts.js`), which also writes `src/dsl/builder-dts.js` (the same text as a module) and `src/dsl/ts-lib-files.js` (the ES2022 library declarations) for the type-check worker. Generation depends only on the tables, so it is deterministic; `--check` fails when a generated file is out of date.
 
@@ -370,7 +452,8 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 - Instrument `params` hold only the options the script sets: numbers, choice option names (`"sawtooth"`) and arrays (`harmonics`). Effect slot `params` hold numbers only, and a choice is its option index (`filter({ mode: 'highpass' })` stores `"mode": 1`), matching `FxSlotSpec` (`audio/effects.md`).
 - Layers: `{ id, type, group, select, props }`; `group` and `select` are `null` for `field` and `aurora`. `props` holds every property of the layer type, with defaults filled in. A shader layer is `{ id, type: "shader", group: null, select: null, glsl, props }`; its `props` are the shader's uniforms plus the declared shader properties.
 - `view` defaults to `{ "projection": "orbital", "background": "#000000" }`.
-- `groups` lists every group referenced by a binding, expression or layer, including `swpc.*` groups referenced by `sky.swpc`. On save, the page replaces the project's `project_subscriptions` rows with these values.
+- `groups` lists every group referenced by a binding, expression, layer or program handler, including `swpc.*` groups referenced by `sky.swpc` and groups named by `follow`. On save, the page replaces the project's `project_subscriptions` rows with these values.
+- `program` is present only when the script registers handlers or calls `follow`: `{ "handlers": [...], "follow": [group, ...] }`. Each handler is `{ "id": "h<n>", "kind": "on", "group", "event" }`, `{ "id", "kind": "every", "intervalMs" }` or `{ "id", "kind": "every", "sync" }`, `{ "id", "kind": "after", "ms" }` (registered in setup) or `{ "id", "kind": "freshness", "source" }`. The functions stay in the VM; the IR records what was registered, so hot reload can diff it and the page knows the piece needs the VM.
 
 ### Schema file
 `src/dsl/ir.schema.json` is a JSON Schema (draft 2020-12) for the document. Validation runs the schema check, then the semantic checks below.
@@ -388,6 +471,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 | Groups | Every group key exists in the source registry, copied to `src/sky/groups.json` at build time. |
 | Orbits | `orbit` and `sky.orbit` reference `celestrak.*` groups or objects; `quantity` is a listed quantity; `timeScale` 1–1000; at most 64 distinct (object, quantity, timeScale) orbit sources per piece. |
 | Expressions | Depth at most 32. Every `op` is known with the right argument count. `audio.*` ops appear only in layer props. |
+| Program | At most 64 handlers. `kind` is `on`, `every`, `after` or `freshness`. `event` is `enter`, `update`, `exit` or `*`. `intervalMs` 10–3,600,000; `sync` is a sync name; `ms` 0–3,600,000. Groups exist. |
 | Size | Serialized IR at most 256 KB. Script source at most 200,000 characters (`limit_source`). |
 | References | Every instrument, slot and LFO id a binding, route, reaction or expression names exists. `groups` lists exactly the referenced groups. |
 | Ranges | Every constant lies in its range: `tempo`, LFO `phase` and `smooth`, `depth`, `maxPerSecond`, `durationMs`, `timeScale`, constant pitch, velocity and pan, `detuneCents` −100–100, `desaturate` 0–1, parameter values. The builder clamps constants, so only a hand-made IR fails these. |
@@ -413,7 +497,10 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 | `orbit_no_elements` | error | `orbit` or `sky.orbit` on a group or object without orbital elements |
 | `orbit_quantity` | error | Unknown orbit quantity |
 | `orbit_no_object` | error | `orbit(...)` where no current object exists; use `sky.orbit(...)` |
-| `limit_<item>` | error | A count limit in the table above is exceeded; `<item>` is `instruments`, `bindings`, `voices`, `slots`, `reverbs`, `lfos`, `retrigger_lfos`, `routes`, `routes_per_target`, `layers`, `orbit_sources`, `source` |
+| `io_outside_handler` | error | Setup calls an output method or `read.*`; these work only inside handlers |
+| `handler_error` | error | A handler threw while the piece played; the handler is disabled until the next Run |
+| `handler_timeout` | error | One batch of handler calls ran longer than 250 ms; the program stopped |
+| `limit_<item>` | error | A count limit in the table above is exceeded; `<item>` is `instruments`, `bindings`, `voices`, `slots`, `reverbs`, `lfos`, `retrigger_lfos`, `routes`, `routes_per_target`, `layers`, `orbit_sources`, `handlers`, `source` |
 | `ir_too_large` | error | Serialized IR above 256 KB |
 | `ir_version_unsupported` | error | `irVersion` above the current version |
 | `local_only` | warning | The piece uses `fn` or `layer.shader` |
@@ -425,7 +512,7 @@ The internal codes arise only from a hand-made or corrupted IR; the builder neve
 
 `src/dsl/problem-codes.js` is the single list of codes. The guide's troubleshooting page (`content/learn/troubleshooting.md`) documents every user-facing code; a test checks that both lists match.
 
-A problem is `{ "severity": "error" | "warning", "code": string, "path": string, "line": number | null, "message": string }`. `path` is a JSON Pointer into the IR. The builder records the script line of each builder call against the pointer of the entry it creates (`/instruments/0`, `/bindings/3`, `/instruments/0/fx` for the `.fx()` call, `/instruments/0/fx/1/params` for the slot's constructor); a problem takes the line of the longest recorded pointer that prefixes its path. Any error blocks Run and Save; warnings do not.
+A problem is `{ "severity": "error" | "warning", "code": string, "path": string, "line": number | null, "message": string }`. `path` is a JSON Pointer into the IR. The builder records the script line of each builder call against the pointer of the entry it creates (`/instruments/0`, `/bindings/3`, `/instruments/0/fx` for the `.fx()` call, `/instruments/0/fx/1/params` for the slot's constructor); a problem takes the line of the longest recorded pointer that prefixes its path. Any error blocks Run and Save; warnings do not. `handler_error` and `handler_timeout` arise during playback; they appear in Problems and in the trace, and block nothing.
 
 `unknown_field` checks a field name against the group's field list in `groups.json`; when the page passes the last snapshot of the group, a field present in any of its objects is also known.
 
@@ -443,9 +530,25 @@ A problem is `{ "severity": "error" | "warning", "code": string, "path": string,
 - Before evaluating the script, the worker also deletes `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `importScripts` and `indexedDB` from its global scope.
 - The worker posts `{ ready: true }` once it has loaded. The page waits for it before posting a build (up to 15 s; past that it reports `runtime_error` "The script sandbox did not start"), so the 1500 ms limit measures only the script's run, never the download and start of the worker.
 - The page calls `worker.terminate()` if no response arrives within 1500 ms of posting the build and reports problem `timeout`.
-- The script receives only the builder API. It cannot reach the page, the audio context, the database or the DOM.
-- Loading another user's piece runs only its IR. Its source runs only if opened in the editor and run.
+- The script receives only the builder API. It cannot reach the page, the audio context, the database or the DOM. `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask`, `Date` and `performance` are shadowed, and `Math` is a copy whose `random` is the seeded generator (Program, Determinism).
+- Programs run only for their author: projects are owner-only (`database.md`), and a piece with handlers plays only from its source in the author's own session.
 - In local-only mode the page posts `{ fn: { id, source, arg } }` for each `fn` evaluation and receives `{ fn: { id, value } }` or `{ fn: { id, error } }` (`createSandbox().evalFn`). Values other than finite numbers, text and booleans become `null`.
+
+### VM
+The worker keeps the source and handlers of its last build without errors. Builds and program messages share one queue in `createSandbox`, so a timeout measures only the message being processed.
+
+| Page → worker | Worker → page |
+|---|---|
+| `{ program: { id, op: 'start', groups, objects, freshness } }` | `{ program: { id, commands, errors, dropped } }` |
+| `{ program: { id, op: 'batch', now, events, freshness } }` | `{ program: { id, commands, errors, dropped } }` |
+| `{ program: { id, op: 'stop' } }` | `{ program: { id, commands: [], errors: [], dropped: 0 } }` |
+
+- `start` runs the kept source again, so setup starts from fresh variables, then calls the initial `enter` handlers (Program, Handlers). `groups` are the IR's groups; `objects` are their current objects as `{ id, group, fields }`; `freshness` is the current state of every source as `{ source, state }`.
+- `batch` advances the program clock to `now` (ms since start). The VM first runs due timers in time order, each at its scheduled time. A timer more than 1000 ms late fires once and skips the missed calls. It then applies `events` (`{ kind, obj, prev, traceId, initial }`) to its copy of the followed groups and calls the matching `on` handlers, then `freshness` changes (`{ source, state }`) and the matching `onFreshness` handlers.
+- A command is `{ op, at, trace, src, ...args }`. `op` is `play`, `hold`, `glide`, `stop`, `stopAll`, `set` or `layer`; `at` is the handler's program time, `trace` the event's trace id (`null` for timers), `src` the handler id. At most 256 per batch; `dropped` counts the rest.
+- An error is `{ handler, line, message }`. The VM disables that handler. An error from `setup` or `vm` (the kept build failed, or the worker holds no running program) means the program is gone; the page reports it once and stops the program.
+- The page waits up to 250 ms for each `program` reply. Past that it terminates the worker and reports `handler_timeout` (`bindings.md`, Program host). The next build starts a new worker.
+- A build that times out also terminates the worker, which stops a running program.
 
 ## Hot reload
 On save in the editor:
@@ -456,7 +559,8 @@ On save in the editor:
 5. Modulation: call `setLfos` and `setMods` when either list changed. Unchanged LFOs keep their phase.
 6. Bindings: unbind and rebind each changed or removed binding. Unchanged bindings keep their sounding voices.
 7. Layers: rebuild changed layers. Unchanged layers keep their GPU buffers and trails.
-8. Emit a `RELOAD` trace record listing changed ids.
+8. Program: when the IR has handlers, stop the running program, release its notes and start it again from setup with the new source. The program's variables start over.
+9. Emit a `RELOAD` trace record listing changed ids.
 
 ## Type checking
 - A type-check worker (`src/dsl/typecheck-worker.ts`) runs the TypeScript compiler over `piece.ts` with `@typescript/vfs`. The page loads it the first time the editor opens. `/listen`, `/try` run mode and `/projects/[id]/run` never load it.

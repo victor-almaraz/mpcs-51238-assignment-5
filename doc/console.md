@@ -46,7 +46,7 @@ createTraceBus({ capacity, now });   // separate bus with the same methods; test
 | `t` | ISO 8601 UTC timestamp |
 | `traceId` | Shared by all records caused by one change |
 | `stage` | `SOURCE`, `CHANGE`, `REALTIME`, `BIND`, `AUDIO`, `VISUAL`, `RELOAD`, `SAFETY` |
-| `component` | Emitter, for example `sky`, `bind.b1`, `layer.l0`, `flash-guard` |
+| `component` | Emitter, for example `sky`, `bind.b1`, `program`, `layer.l0`, `flash-guard` |
 | `event` | Stage-specific name, for example `enter`, `dropped`, `setParam`, `fallback` |
 | `level` | `info`, `warn`, `error` |
 | `data` | Stage-specific payload |

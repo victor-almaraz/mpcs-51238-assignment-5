@@ -21,10 +21,12 @@ export type SessionState = {
   replay: { speed: number; from: number; to: number; ended: boolean } | null;
   notices: { id: number; kind: string; live: 'polite' | 'assertive'; message: string }[];
   error: string | null; followed: string[]; playingIr: any; visualsAvailable: boolean | null;
+  runtimeProblems: Problem[];
 };
 
 const INITIAL: SessionState = {
   ready: false, audio: 'stopped', mode: 'live', replay: null, notices: [], error: null, followed: [], playingIr: null, visualsAvailable: null,
+  runtimeProblems: [],
 };
 const noSub = () => () => {};
 const initial = () => INITIAL;

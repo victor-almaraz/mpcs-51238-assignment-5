@@ -113,14 +113,48 @@ interface SetParam {
   /** Sets the parameter's base value from an expression. */
   follow(value: Num<GlobalCtx>, opts?: FollowOptions): void;
 }
+/** A numeric parameter. */
+interface NumParam extends SetParam {
+  /** Program output, inside handlers only: sets the base value. */
+  set(value: number, opts?: { /** Default 250. */ smoothMs?: number }): void;
+}
 /** A modulatable parameter. */
-interface ModParam extends SetParam {
+interface ModParam extends NumParam {
   /** Adds a modulation route from an LFO or a −1..1 expression. */
   mod(source: Lfo | NumExpr<GlobalCtx>, opts: ModOptions): void;
 }
 interface BypassParam {
   /** Bypasses the effect while value is true. */
   follow(value: Cond<GlobalCtx>): void;
+  /** Program output, inside handlers only. */
+  set(on: boolean): void;
+}
+interface PlayOptions {
+  /** 1–127. Default 100. */
+  velocity?: number;
+  /** −1 to 1. Default 0. */
+  pan?: number;
+  /** 20–10000 ms. Default 250. */
+  durationMs?: number;
+}
+interface HoldOptions {
+  /** 1–127. Default 100. */
+  velocity?: number;
+  /** −1 to 1. Default 0. */
+  pan?: number;
+}
+/** Program output of an instrument, inside handlers only (doc/piece-dsl.md, Program). */
+interface Playable {
+  /** Plays one note. A null pitch plays nothing. */
+  play(pitch: number | null, opts?: PlayOptions): void;
+  /** Starts a sustained note named key; holding a sounding key restarts it. */
+  hold(key: string, pitch: number | null, opts?: HoldOptions): void;
+  /** Moves a held note to pitch over ms (default 150). */
+  glide(key: string, pitch: number | null, ms?: number): void;
+  /** Releases one held note. */
+  stop(key: string): void;
+  /** Releases every held note of this instrument. */
+  stopAll(): void;
 }
 
 interface OrbitOptions {
@@ -162,7 +196,7 @@ function optionType(type, p, name) {
 }
 
 /** @param {ParamSpec} p */
-const handleType = (p) => (p.kind === 'array' ? null : p.kind === 'number' && p.modulatable ? 'ModParam' : 'SetParam');
+const handleType = (p) => (p.kind === 'array' ? null : p.kind === 'number' ? (p.modulatable ? 'ModParam' : 'NumParam') : 'SetParam');
 
 /**
  * @param {Defs} defs
@@ -285,7 +319,7 @@ interface Sky {
       L.push(`  ${key(name)}?: ${optionType(type, p, name)};`);
     }
     L.push('}');
-    L.push(`interface ${P}Handle {`);
+    L.push(`interface ${P}Handle extends Playable {`);
     L.push(`  readonly __instrument: ${q(type)};`);
     L.push('  /** Sets the insert chain, in order; calling it again replaces the chain. */');
     L.push('  fx(...slots: Effect[]): void;');
@@ -384,14 +418,26 @@ interface ReactionActions {
       L.push(`  ${key(name)}?: ${t};`);
     }
     L.push('}');
+    L.push(`/** Constant values of a ${type} layer, for set() in handlers. */`);
+    L.push(`interface ${pascal(type)}LayerValues {`);
+    for (const name of spec.order) {
+      const p = spec.props[name];
+      const t = p.type === 'number' ? 'number' : p.type === 'color' ? 'Hex' : p.type === 'enum' ? union(p.options ?? []) : 'string';
+      L.push(`  ${key(name)}?: ${t};`);
+    }
+    L.push('}');
+    L.push(`interface ${pascal(type)}Layer {`);
+    L.push('  /** Program output, inside handlers only: sets constant property values. */');
+    L.push(`  set(props: ${pascal(type)}LayerValues): void;`);
+    L.push('}');
   }
   L.push('interface Layers {');
   for (const type of layerTypes) {
     const P = `${pascal(type)}LayerProps`;
     if (defs.layers[type].group) {
-      L.push(`  ${key(type)}<G extends GroupKey>(group: Group<G>, props: ${P}<LayerCtx> | ((o: ObjectProxy<G>) => ${P}<LayerCtx>)): void;`);
+      L.push(`  ${key(type)}<G extends GroupKey>(group: Group<G>, props: ${P}<LayerCtx> | ((o: ObjectProxy<G>) => ${P}<LayerCtx>)): ${pascal(type)}Layer;`);
     } else {
-      L.push(`  ${key(type)}(props: ${P}<ScreenCtx>): void;`);
+      L.push(`  ${key(type)}(props: ${P}<ScreenCtx>): ${pascal(type)}Layer;`);
     }
   }
   L.push('  /** A fragment-shader layer. The piece becomes local-only. */');
@@ -440,6 +486,43 @@ declare const master: {
   /** Sets the master chain, in order. */
   fx(...slots: Effect[]): void;
 };
+/** A sky object as a program sees it: its id, its group and its current field values. */
+type SkyRecord<G extends GroupKey> = { readonly id: ObjectId<G>; readonly group: G } & { readonly [K in FieldName<G>]: Fields<G>[K] | null };
+interface SkyChange<G extends GroupKey> {
+  readonly kind: 'enter' | 'update' | 'exit';
+  readonly traceId: string | null;
+  /** True for objects already in the group when the program starts. */
+  readonly initial: boolean;
+  /** The record before an update or exit, otherwise null. */
+  readonly prev: SkyRecord<G> | null;
+}
+type FreshState = 'loading' | 'fresh' | 'stale' | 'down';
+/** Live reads, inside handlers only. */
+interface Read {
+  swpc(path: SwpcPath): number | null;
+  group<G extends GroupKey>(key: G): readonly SkyRecord<G>[];
+  object<G extends GroupKey>(id: ObjectId<G>): SkyRecord<G> | null;
+  freshness(source: SourceId | GroupKey): FreshState;
+}
+/** Calls fn for each event of kind in group while the piece plays. Setup only. */
+declare function on<G extends GroupKey>(group: G, kind: EventKind | '*', fn: (o: SkyRecord<G>, e: SkyChange<G>) => void): void;
+/** Calls fn every interval: 10–3600000 ms, or a sync value at the piece tempo. Setup only. */
+declare function every(interval: number | SyncName, fn: (t: number) => void): void;
+/** Calls fn once, ms (0–3600000) from now. Returns a function that cancels the call. */
+declare function after(ms: number, fn: (t: number) => void): () => void;
+/** Calls fn when the freshness of source changes. Setup only. */
+declare function onFreshness(source: SourceId | GroupKey | '*', fn: (f: { readonly source: string; readonly state: FreshState }) => void): void;
+/** Follows groups that the script reads with read.* but names nowhere else. Setup only. */
+declare function follow(...groups: GroupKey[]): void;
+declare const read: Read;
+/** Milliseconds since the program started. */
+declare function time(): number;
+/** A number in [0, 1), seeded by seed(). */
+declare function random(): number;
+/** An integer in [0, n), seeded by seed(). */
+declare function randInt(n: number): number;
+/** One element of list, seeded by seed(). */
+declare function choose<T>(list: readonly T[]): T;
 declare const sky: Sky;
 declare const view: View;
 declare const layer: Layers;

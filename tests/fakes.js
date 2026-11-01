@@ -389,6 +389,9 @@ export function createFakeSky() {
     freshness(source) {
       return fresh.get(source) ?? { source, state: 'loading', lastRun: null, lastSuccess: null };
     },
+    sources() {
+      return [...fresh.values()].sort((a, b) => (a.source < b.source ? -1 : a.source > b.source ? 1 : 0));
+    },
     async follow(gs) { sky.followed = [...gs]; },
     listenerCount: (type) => handlers.get(type)?.size ?? 0,
 

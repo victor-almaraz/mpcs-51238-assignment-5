@@ -8,11 +8,11 @@ order: 0
 Sphärenmusik plays music and images from live space data: satellites in orbit, the solar wind, asteroids passing Earth and rocket launches. A **piece** decides how that data sounds and looks. You write a piece as a short TypeScript **script** in the editor.
 
 ## How a piece works
-1. The script runs once when you press Run or save. It describes instruments, effects, the data each one follows, and what the screen shows.
-2. Sphärenmusik turns that description into a running piece.
-3. While the piece runs, every change in the followed data plays notes, moves parameters and redraws the picture. The script itself does not run again until the next save.
+1. When you press Run or save, the script's top-level code runs. It creates instruments and effects, names the data each one follows, and sets up what the screen shows.
+2. While the piece plays, every change in the followed data plays notes, moves parameters and redraws the picture.
+3. A script can also register **handlers**: functions that run on each change and on timers, remember what happened, and decide what to play next ([Programs](programs)).
 
-Because the script only describes the piece, it contains no loops over time, no timers and no network calls. It names data, chooses instruments and maps one onto the other.
+The script runs in a sandbox. It reaches sound, pictures and data only through the functions in this guide, and it makes no network calls.
 
 ## Pages
 | Page | Content |
@@ -21,6 +21,7 @@ Because the script only describes the piece, it contains no loops over time, no 
 | [Sky data](sky-data) | The data groups, their fields, and how often they change |
 | [Expressions](expressions) | Turning data values into pitches, levels and colours |
 | [Sound](sound) | Instruments, sustained voices, triggered notes and following parameters |
+| [Programs](programs) | Handlers, timers and state: pieces that remember and decide |
 | [Effects and modulation](effects-and-modulation) | Effect chains, LFOs, and data that moves parameters |
 | [Visuals](visuals) | The view, layers and audio-reactive images |
 | [Live data states](live-data-states) | Stale and down sources, replay and test events |

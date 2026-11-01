@@ -29,10 +29,30 @@
     },
     "layers": { "type": "array", "items": { "$ref": "#/$defs/layer" } },
     "groups": { "type": "array", "items": { "type": "string" } },
-    "localOnly": { "type": "boolean" }
+    "localOnly": { "type": "boolean" },
+    "program": {
+      "type": "object", "additionalProperties": false, "required": ["handlers", "follow"],
+      "properties": {
+        "handlers": { "type": "array", "items": { "$ref": "#/$defs/handler" } },
+        "follow": { "type": "array", "items": { "type": "string" } }
+      }
+    }
   },
   "$defs": {
     "id": { "type": "string", "pattern": "^[a-z]+[0-9]+$" },
+    "handler": {
+      "type": "object", "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "type": "string" },
+        "group": { "type": "string" },
+        "event": { "type": "string" },
+        "intervalMs": { "type": "number" },
+        "sync": { "type": "string" },
+        "ms": { "type": "number" },
+        "source": { "type": "string" }
+      }
+    },
     "expr": {
       "type": "object", "additionalProperties": false, "required": ["op", "args"],
       "properties": {

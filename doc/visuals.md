@@ -23,6 +23,8 @@ Draw the IR's layers each frame from sky data and audio signals, within the visu
 | `audio.spectrum(inst, bands)` | Array of `bands` (4–32) band levels, 0–1 |
 | `audio.voice(inst).env()` | Envelope value of the voice bound to the current object, 0–1 |
 
+Every layer constructor except `layer.shader` returns a layer handle. Inside a program's handlers, `handle.set(props)` sets constant property values (`piece-dsl.md`, Program). The session pushes them with the sky-driven values through `setLayerValues`; a pushed value overrides the layer's constant, and the flash guard holds colours and opacities as it does for expression-driven ones.
+
 `audio.voice(inst).env()` is computed from the voice's envelope model (`envValueAt` in the engine) and needs no analyser. `audio.level` and `audio.spectrum` read an `AnalyserNode` tapped on the instrument output.
 
 ## Object positions

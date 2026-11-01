@@ -3,6 +3,7 @@
 // tests), so this module never imports src/audio/ itself.
 
 import { createBindingRuntime } from '../bind/runtime.js';
+import { createProgramHost } from '../bind/program.js';
 import { buildModConfig } from '../bind/mod-config.js';
 import { canonicalJson } from '../bind/canonical.js';
 import { createTracer } from '../bind/tracer.js';
@@ -47,6 +48,9 @@ export const NOTICES = Object.freeze({
  * @property {(ownerId: string, ir: any) => string} [ownerLabel]  name of an instrument in notices
  * @property {any} [orbit]  @property {any} [audio]  @property {any} [local]
  * @property {any} [fxParamDef]  @property {any} [groupSource]
+ * @property {{ program(msg: any): Promise<any> } | null} [vm]  the sandbox VM that runs a piece's handlers
+ * @property {(p: { code: string, line: number | null, message: string }) => void} [onProgramProblem]
+ * @property {() => void} [onLayerValues]  a program set layer values
  */
 
 /**
@@ -83,6 +87,7 @@ export function createAudioHost(options) {
   let lastState = null;
   /** @type {any} */ let ir = null;
   /** @type {ReturnType<typeof createBindingRuntime> | null} */ let runtime = null;
+  /** @type {ReturnType<typeof createProgramHost> | null} */ let program = null;
   let reactions = { detuneCents: 0, muted: [], desaturate: 0 };
   /** Faulted slot ids; each is reported once and un-bypassed on the next reload or Run. */
   const faulted = new Set();
@@ -235,8 +240,33 @@ export function createAudioHost(options) {
   }
 
   function stopBindings() {
+    stopProgram();
     if (runtime) runtime.stop();
     runtime = null;
+  }
+
+  function stopProgram() {
+    if (program) program.stop();
+    program = null;
+  }
+
+  /** Starts the piece's program when it registers handlers (doc/bindings.md, Program host). */
+  function startProgram(pieceIr) {
+    if (!options.vm || !(pieceIr.program?.handlers?.length) || !engine) return;
+    program = createProgramHost({
+      ir: pieceIr, vm: options.vm, engine, sky, trace,
+      clock: {
+        now, wallNow,
+        audioTime: () => ctx.currentTime,
+        setInterval: (fn, ms) => timers.setInterval(fn, ms),
+        clearInterval: (id) => timers.clearInterval(id),
+      },
+      onProblem: options.onProgramProblem,
+      onLayerValues: options.onLayerValues,
+    });
+    program.start().catch((err) => {
+      emit('BIND', 'program', 'error', { message: err instanceof Error ? err.message : String(err) }, { level: 'error' });
+    });
   }
 
   const host = {
@@ -282,6 +312,7 @@ export function createAudioHost(options) {
       clearFaults(ir);
       runtime = makeRuntime(ir);
       runtime.start();
+      startProgram(ir);
       emit('RELOAD', 'audio-host', 'run', { instruments: ir.instruments.map((i) => i.id), bindings: (ir.bindings ?? []).map((b) => b.id) });
     },
 
@@ -329,9 +360,14 @@ export function createAudioHost(options) {
       }
       clearFaults(next);
 
-      // Bindings, then layers (the renderer rebuilds them).
+      // Bindings, then layers (the renderer rebuilds them), then the program, which restarts from setup.
       changed.push(...runtime.reload(next).bindings);
       changed.push(...changedIds(prev.layers ?? [], next.layers ?? []));
+      if (program || next.program?.handlers?.length) {
+        stopProgram();
+        startProgram(next);
+        changed.push('program');
+      }
       const unique = [...new Set(changed)];
       emit('RELOAD', 'audio-host', 'reload', { changed: unique });
       return { changed: unique };
@@ -378,6 +414,7 @@ export function createAudioHost(options) {
     orbitTick() { if (runtime) runtime.orbitTick(); },
 
     get runtime() { return runtime; },
+    get program() { return program; },
     get engine() { return engine; },
     get ctx() { return ctx; },
     get ir() { return ir; },

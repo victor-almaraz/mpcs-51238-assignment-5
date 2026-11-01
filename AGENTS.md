@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project description
-Sphärenmusik (ASCII form `sphaerenmusik`) is a generative audio-visual web piece driven by live space data. A worker on Railway harvests orbital, space-weather, near-Earth-object and launch data into Supabase. A Next.js page receives changes through Supabase Realtime. Users write TypeScript piece scripts in a browser editor. A script is a builder: it runs once in a sandbox and returns a JSON intermediate representation (IR). A runtime interprets the IR, binding sky data to audio instruments and visual layers. A console shows the raw events that drive the output.
+Sphärenmusik (ASCII form `sphaerenmusik`) is a generative audio-visual web piece driven by live space data. A worker on Railway harvests orbital, space-weather, near-Earth-object and launch data into Supabase. A Next.js page receives changes through Supabase Realtime. Users write TypeScript piece scripts in a browser editor. A script is a program that runs in a sandbox worker, its VM: setup opens instruments and layers and returns a JSON intermediate representation (IR), and handlers keep running on sky events and timers, holding state and sending commands. A runtime interprets the IR's bindings and checks every program command, binding sky data to audio instruments and visual layers. A console shows the raw events that drive the output.
 
 The project is MPCS 51238 *Design, Build, Ship*, Assignment 5 *Live Data System*, due Tuesday 2026-11-03 at 17:30 America/Chicago.
 
