@@ -405,6 +405,7 @@ function lineOf(stack, base) {
 // `createRunner`: `start`, `batch` and `stop` return the commands the handlers sent.
 
 var _randjs = require('../expr/rand.js');
+var _depsjs = require('../expr/deps.js');
 var _limitsjs = require('./limits.js');
 
 /** An error with a problem code; run-script.js reports `code` instead of `runtime_error`. */
@@ -440,6 +441,8 @@ var _limitsjs = require('./limits.js');
 
 /** @param {WireObject} o @returns {SkyRecord} */
 const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group });
+/** Orders objects by id. @param {{ id: string }} a @param {{ id: string }} b */
+const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /**
  * Milliseconds of a sync name (`1/8`, `1/4d`, `1/8t`) at `bpm`.
@@ -501,21 +504,20 @@ const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group })
     /** @param {unknown} path */
     swpc(path) {
       inHandler('read.swpc()');
-      if (typeof path !== 'string' || !/^[a-z]+\.[A-Za-z]+$/.test(path)) throw new TypeError("read.swpc(): path must be text such as 'kp.kp'");
-      const [g, f] = path.split('.');
-      const group = `swpc.${g}`;
+      const sp = _depsjs.parseSwpcPath.call(void 0, path);
+      if (!sp) throw new TypeError("read.swpc(): path must be text such as 'kp.kp'");
+      const { group, field } = sp;
       followed(group, `read.swpc('${path}')`);
       const objs = io.byGroup.get(group);
-      const first = objs ? [...objs.values()].sort((a, b) => (a.id < b.id ? -1 : 1))[0] : undefined;
-      const v = first ? first[f] : undefined;
-      return v === undefined ? null : v;
+      const first = objs ? [...objs.values()].sort(byId)[0] : undefined;
+      return first && Object.hasOwn(first, field) ? _nullishCoalesce(first[field], () => ( null)) : null;
     },
     /** @param {unknown} key */
     group(key) {
       inHandler('read.group()');
       if (typeof key !== 'string') throw new TypeError('read.group(): key must be text');
       followed(key, `read.group('${key}')`);
-      return Object.freeze([...(_nullishCoalesce(_optionalChain([io, 'access', _ => _.byGroup, 'access', _2 => _2.get, 'call', _3 => _3(key), 'optionalAccess', _4 => _4.values, 'call', _5 => _5()]), () => ( [])))].sort((a, b) => (a.id < b.id ? -1 : 1)));
+      return Object.freeze([...(_nullishCoalesce(_optionalChain([io, 'access', _ => _.byGroup, 'access', _2 => _2.get, 'call', _3 => _3(key), 'optionalAccess', _4 => _4.values, 'call', _5 => _5()]), () => ( [])))].sort(byId));
     },
     /** @param {unknown} id */
     object(id) {
@@ -696,7 +698,7 @@ const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group })
       }
       const initial = (Array.isArray(objects) ? objects : [])
         .filter((o) => o && io.groups.has(o.group))
-        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        .sort(byId);
       for (const o of initial) {
         /** @type {WireEvent} */
         const ev = { kind: 'enter', obj: o, initial: true, traceId: null };
@@ -743,7 +745,7 @@ const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group })
   };
 } exports.createRunner = createRunner;
 
-}, {"../expr/rand.js":19,"./limits.js":17}],
+}, {"../expr/rand.js":19,"../expr/deps.js":20,"./limits.js":17}],
 /* src/dsl/problem-codes.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Single list of problem codes (doc/piece-dsl.md, Problem codes).
 // content/learn/troubleshooting.md documents every code with `userFacing: true`;
@@ -1283,7 +1285,7 @@ var _getNonTypeIdentifiers = require('./util/getNonTypeIdentifiers');
   }
 } exports.default = CJSImportProcessor;
 
-}, {"./parser/tokenizer":20,"./parser/tokenizer/keywords":21,"./parser/tokenizer/types":22,"./util/getImportExportSpecifierInfo":23,"./util/getNonTypeIdentifiers":24,"${path}":null}],
+}, {"./parser/tokenizer":21,"./parser/tokenizer/keywords":22,"./parser/tokenizer/types":23,"./util/getImportExportSpecifierInfo":24,"./util/getNonTypeIdentifiers":25,"${path}":null}],
 /* node_modules/sucrase/dist/computeSourceMap.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _genmapping = require('@jridgewell/gen-mapping');
 
@@ -1375,7 +1377,7 @@ function computeSourceColumns(code, tokens) {
   return sourceColumns;
 }
 
-}, {"@jridgewell/gen-mapping":-1,"./parser/util/charcodes":25}],
+}, {"@jridgewell/gen-mapping":-1,"./parser/util/charcodes":26}],
 /* node_modules/sucrase/dist/HelperManager.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -1655,7 +1657,7 @@ function markShadowedForScope(scope, tokens, name) {
   }
 }
 
-}, {"./parser/tokenizer":20,"./parser/tokenizer/types":22}],
+}, {"./parser/tokenizer":21,"./parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/NameManager.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _getIdentifierNames = require('./util/getIdentifierNames'); var _getIdentifierNames2 = _interopRequireDefault(_getIdentifierNames);
@@ -1685,7 +1687,7 @@ var _getIdentifierNames = require('./util/getIdentifierNames'); var _getIdentifi
   }
 } exports.default = NameManager;
 
-}, {"./util/getIdentifierNames":26}],
+}, {"./util/getIdentifierNames":27}],
 /* node_modules/sucrase/dist/Options.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _tsinterfacechecker = require('ts-interface-checker');
 
@@ -1789,7 +1791,7 @@ const {Options: OptionsChecker} = _tsinterfacechecker.createCheckers.call(void 0
   OptionsChecker.strictCheck(options);
 } exports.validateOptions = validateOptions;
 
-}, {"ts-interface-checker":27,"./Options-gen-types":28}],
+}, {"ts-interface-checker":28,"./Options-gen-types":29}],
 /* node_modules/sucrase/dist/parser/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -1823,7 +1825,7 @@ var _index = require('./traverser/index');
   return result;
 } exports.parse = parse;
 
-}, {"./traverser/base":29,"./traverser/index":30}],
+}, {"./traverser/base":30,"./traverser/index":31}],
 /* node_modules/sucrase/dist/TokenProcessor.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -2183,7 +2185,7 @@ var _isAsyncOperation = require('./util/isAsyncOperation'); var _isAsyncOperatio
   }
 } exports.default = TokenProcessor;
 
-}, {"./parser/tokenizer/types":22,"./util/isAsyncOperation":31}],
+}, {"./parser/tokenizer/types":23,"./util/isAsyncOperation":32}],
 /* node_modules/sucrase/dist/transformers/RootTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -2648,7 +2650,7 @@ var _TypeScriptTransformer = require('./TypeScriptTransformer'); var _TypeScript
   }
 } exports.default = RootTransformer;
 
-}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"../util/getClassInfo":32,"./CJSImportTransformer":33,"./ESMImportTransformer":34,"./FlowTransformer":35,"./JestHoistTransformer":36,"./JSXTransformer":37,"./NumericSeparatorTransformer":38,"./OptionalCatchBindingTransformer":39,"./OptionalChainingNullishTransformer":40,"./ReactDisplayNameTransformer":41,"./ReactHotLoaderTransformer":42,"./TypeScriptTransformer":43}],
+}, {"../parser/tokenizer/keywords":22,"../parser/tokenizer/types":23,"../util/getClassInfo":33,"./CJSImportTransformer":34,"./ESMImportTransformer":35,"./FlowTransformer":36,"./JestHoistTransformer":37,"./JSXTransformer":38,"./NumericSeparatorTransformer":39,"./OptionalCatchBindingTransformer":40,"./OptionalChainingNullishTransformer":41,"./ReactDisplayNameTransformer":42,"./ReactHotLoaderTransformer":43,"./TypeScriptTransformer":44}],
 /* node_modules/sucrase/dist/util/formatTokens.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _linesandcolumns = require('lines-and-columns'); var _linesandcolumns2 = _interopRequireDefault(_linesandcolumns);
 
@@ -2725,7 +2727,7 @@ function truncate(s, length) {
   }
 }
 
-}, {"lines-and-columns":-1,"../parser/tokenizer/types":22}],
+}, {"lines-and-columns":-1,"../parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/util/getTSImportedNames.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _types = require('../parser/tokenizer/types');
 
@@ -2812,7 +2814,7 @@ function collectNamesForNamedImport(
   }
 }
 
-}, {"../parser/tokenizer/types":22,"./getImportExportSpecifierInfo":23}],
+}, {"../parser/tokenizer/types":23,"./getImportExportSpecifierInfo":24}],
 /* src/dsl/builder.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// The global builder API (doc/piece-dsl.md, Builder API; doc/visuals.md, Builder API).
 // `createBuilder(defs)` returns the API object a script sees and a `finish()` that returns the IR.
@@ -3236,7 +3238,7 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
           pitch: constRange(o.pitch, _limitsjs.RANGES.pitch, `${where} pitch`),
           velocity: o.velocity === undefined ? _limitsjs.DEFAULTS.velocity : constRange(o.velocity, _limitsjs.RANGES.velocity, `${where} velocity`),
           pan: o.pan === undefined ? _limitsjs.DEFAULTS.pan : constRange(o.pan, _limitsjs.RANGES.pan, `${where} pan`),
-          voiceMods: Object.fromEntries(Object.entries(mods).map(([k, v]) => [k, _exprjs.toValue.call(void 0, v, `${where} voiceMods.${k}`)])),
+          voiceMods: Object.fromEntries(Object.entries(mods).map(([k, v]) => [k, constRange(v, _limitsjs.RANGES.voiceMod, `${where} voiceMods.${k}`)])),
         });
       },
       /** @param {unknown} kind */
@@ -3640,7 +3642,7 @@ function structuredCloneJson(v) {
 }
 
 
-}, {"./expr.js":44,"./ir-walk.js":45,"./defs.js":46,"./program.js":3,"./limits.js":17}],
+}, {"./expr.js":45,"./ir-walk.js":46,"./defs.js":47,"./program.js":3,"./limits.js":17}],
 /* src/dsl/limits.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Validator constants, ranges, defaults and vocabularies of the piece DSL (doc/piece-dsl.md).
 // content/learn/reference.md restates the limits; the guide tests compare them with these values.
@@ -3687,6 +3689,8 @@ function structuredCloneJson(v) {
   /** Period of the page's batch loop, ms. */
   batchMs: 25,
   noteStartsPerSecond: 200,
+  /** Most sky events the page queues between two batches; older ones are dropped. */
+  queuedEvents: 4096,
 }); exports.PROGRAM = PROGRAM;
 
 /** Event kinds of `on(group, kind, fn)`. */
@@ -3708,6 +3712,7 @@ function structuredCloneJson(v) {
   velocity: [1, 127],
   pitch: [0, 127],
   pan: [-1, 1],
+  voiceMod: [-1, 1],
   detuneCents: [-100, 100],
   desaturate: [0, 1],
   spectrumBands: [4, 32],
@@ -3739,7 +3744,19 @@ function structuredCloneJson(v) {
   selectOrder: 'desc',
 }); exports.DEFAULTS = DEFAULTS;
 
- const SCALE_MODES = Object.freeze(['major', 'minor', 'dorian', 'phrygian', 'lydian', 'mixolydian', 'locrian', 'pentatonic', 'chromatic']); exports.SCALE_MODES = SCALE_MODES;
+/** Semitone offsets from the root of each scale mode, for `.quantize()` (src/expr/scales.js). */
+ const SCALE_STEPS = Object.freeze({
+  major:      Object.freeze([0, 2, 4, 5, 7, 9, 11]),
+  minor:      Object.freeze([0, 2, 3, 5, 7, 8, 10]),
+  dorian:     Object.freeze([0, 2, 3, 5, 7, 9, 10]),
+  phrygian:   Object.freeze([0, 1, 3, 5, 7, 8, 10]),
+  lydian:     Object.freeze([0, 2, 4, 6, 7, 9, 11]),
+  mixolydian: Object.freeze([0, 2, 4, 5, 7, 9, 10]),
+  locrian:    Object.freeze([0, 1, 3, 5, 6, 8, 10]),
+  pentatonic: Object.freeze([0, 2, 4, 7, 9]),
+  chromatic:  Object.freeze([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
+}); exports.SCALE_STEPS = SCALE_STEPS;
+ const SCALE_MODES = Object.freeze(Object.keys(exports.SCALE_STEPS)); exports.SCALE_MODES = SCALE_MODES;
  const NOTE_ROOT = /^[A-G](#|b)?$/; exports.NOTE_ROOT = NOTE_ROOT;
  const ORBIT_QUANTITIES = Object.freeze(['latitude', 'phaseSin', 'phaseCos', 'altitude', 'longitude', 'sunlit', 'elevation']); exports.ORBIT_QUANTITIES = ORBIT_QUANTITIES;
  const LFO_SHAPES = Object.freeze(['sine', 'triangle', 'square', 'saw', 'random', 'smooth']); exports.LFO_SHAPES = LFO_SHAPES;
@@ -3761,6 +3778,7 @@ var _irschemajson = require('./ir.schema.json'); var _irschemajson2 = _interopRe
 var _schemacheckjs = require('./schema-check.js');
 var _defsjs = require('./defs.js');
 var _problemcodesjs = require('./problem-codes.js');
+var _depsjs = require('../expr/deps.js');
 var _irwalkjs = require('./ir-walk.js');
 
 
@@ -4055,7 +4073,10 @@ class Checker {
         }
         this.constRange(b.pitch, _limitsjs.RANGES.pitch, `${p}/pitch`, 'pitch');
         this.constRange(b.velocity, _limitsjs.RANGES.velocity, `${p}/velocity`, 'velocity');
-        if (b.kind === 'voices') this.constRange(b.pan, _limitsjs.RANGES.pan, `${p}/pan`, 'pan');
+        if (b.kind === 'voices') {
+          this.constRange(b.pan, _limitsjs.RANGES.pan, `${p}/pan`, 'pan');
+          this.voiceMods(b, inst, p);
+        }
       } else if (b.kind === 'param' || b.kind === 'fxParam') {
         const owner = b.kind === 'param' ? b.inst : b.slot;
         if (b.kind === 'param' && !this.insts.has(owner)) this.add('ir_reference', `${p}/inst`, `No instrument ${owner}`);
@@ -4068,6 +4089,21 @@ class Checker {
         this.add('slot_unplaced', `${p}/slot`, `Effect ${b.slot} is in no chain; pass it to inst.fx(...) or master.fx(...)`);
       }
     });
+  }
+
+  /**
+   * `voiceMods` names are modulatable parameters of the instrument; constant values lie in −1 to 1.
+   * @param {any} b @param {any} inst @param {string} p
+   */
+  voiceMods(b, inst, p) {
+    const spec = inst ? _defsjs.own.call(void 0, this.defs.instruments, inst.type) : undefined;
+    for (const [name, v] of Object.entries(b.voiceMods)) {
+      const pp = `${p}/voiceMods/${_irwalkjs.escapePointer.call(void 0, name)}`;
+      if (spec && !_optionalChain([_defsjs.own.call(void 0, spec.params, name), 'optionalAccess', _4 => _4.modulatable])) {
+        this.add('unknown_option', pp, `voiceMods: ${name} is not a modulatable parameter of ${inst.type}`);
+      }
+      this.constRange(v, _limitsjs.RANGES.voiceMod, pp, `voiceMods.${name}`);
+    }
   }
 
   /** @param {unknown} v @param {readonly number[]} range @param {string} path @param {string} name */
@@ -4133,7 +4169,7 @@ class Checker {
           else this.range(v, [/** @type {number} */ (def.min), /** @type {number} */ (def.max)], pp, name);
         } else if (def.type === 'color') this.colorConst(v, pp);
         else if (def.type === 'enum') {
-          if (!_optionalChain([def, 'access', _4 => _4.options, 'optionalAccess', _5 => _5.includes, 'call', _6 => _6(/** @type {string} */ (v))])) this.add('ir_schema', pp, `${name} must be one of ${_optionalChain([def, 'access', _7 => _7.options, 'optionalAccess', _8 => _8.join, 'call', _9 => _9(', ')])}`);
+          if (!_optionalChain([def, 'access', _5 => _5.options, 'optionalAccess', _6 => _6.includes, 'call', _7 => _7(/** @type {string} */ (v))])) this.add('ir_schema', pp, `${name} must be one of ${_optionalChain([def, 'access', _8 => _8.options, 'optionalAccess', _9 => _9.join, 'call', _10 => _10(', ')])}`);
         } else if (typeof v !== 'string' || (def.maxLength !== null && [...v].length > def.maxLength)) {
           this.add('ir_schema', pp, `${name} must be text${def.maxLength !== null ? ` of at most ${def.maxLength} characters` : ''}`);
         }
@@ -4185,7 +4221,7 @@ class Checker {
     if (!g) return;
     if (_defsjs.own.call(void 0, g.fields, name)) return;
     const objs = _nullishCoalesce(_defsjs.own.call(void 0, this.snapshot, group), () => ( []));
-    if (objs.some((o) => _optionalChain([o, 'optionalAccess', _10 => _10.fields]) && Object.prototype.hasOwnProperty.call(o.fields, name))) return;
+    if (objs.some((o) => _optionalChain([o, 'optionalAccess', _11 => _11.fields]) && Object.prototype.hasOwnProperty.call(o.fields, name))) return;
     this.add('unknown_field', path, `No object of ${group} has the field ${name}`);
   }
 
@@ -4232,9 +4268,9 @@ class Checker {
         if (ctx.object !== null) this.fieldName(ctx.object, a[0], `${p}/args/0`);
         break;
       case 'swpc': {
-        const m = /^([A-Za-z0-9-]+)\.([A-Za-z0-9_]+)$/.exec(a[0]);
-        if (!m) { this.add('unknown_group', `${p}/args/0`, `sky.swpc path ${a[0]} must look like 'kp.kp'`); break; }
-        if (this.group(`swpc.${m[1]}`, `${p}/args/0`)) this.fieldName(`swpc.${m[1]}`, m[2], `${p}/args/0`);
+        const sp = _depsjs.parseSwpcPath.call(void 0, a[0]);
+        if (!sp) { this.add('unknown_group', `${p}/args/0`, `sky.swpc path ${a[0]} must look like 'kp.kp'`); break; }
+        if (this.group(sp.group, `${p}/args/0`)) this.fieldName(sp.group, sp.field, `${p}/args/0`);
         break;
       }
       case 'value': {
@@ -4332,7 +4368,7 @@ function byteLength(s) {
   return new TextEncoder().encode(s).length;
 }
 
-}, {"./ir.schema.json":47,"./schema-check.js":48,"./defs.js":46,"./problem-codes.js":4,"./ir-walk.js":45,"./limits.js":17}],
+}, {"./ir.schema.json":48,"./schema-check.js":49,"./defs.js":47,"./problem-codes.js":4,"../expr/deps.js":20,"./ir-walk.js":46,"./limits.js":17}],
 /* src/expr/rand.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Deterministic `rand(lo, hi)` (doc/piece-dsl.md, Expressions): seeded by the piece seed,
 // the binding id and the object id. No Math.random().
@@ -4375,6 +4411,100 @@ function byteLength(s) {
 } exports.rand01 = rand01;
 
 }, {}],
+/* src/expr/deps.js */ [function (module, exports, require) {
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});// Static dependencies of an expression: which sky events and posts can change its value.
+
+var _evaluatejs = require('./evaluate.js');
+
+/**
+ * Group of an object id `<group>:<key>`, such as `celestrak.stations:25544` → `celestrak.stations`.
+ * Group keys contain no `:`.
+ * @param {string} objectId
+ * @returns {string}
+ */
+ function objectGroup(objectId) {
+  const i = objectId.indexOf(':');
+  return i < 0 ? objectId : objectId.slice(0, i);
+} exports.objectGroup = objectGroup;
+
+/** An SWPC path `<product>.<field>`: `kp.kp`, `wind.speed`, `mag.bz`. */
+const SWPC_PATH = /^([A-Za-z0-9-]+)\.([A-Za-z0-9_]+)$/;
+
+/**
+ * Group and field of an SWPC path, or null when `path` is not one.
+ * @param {unknown} path
+ * @returns {{ group: string, field: string } | null}
+ */
+ function parseSwpcPath(path) {
+  const m = typeof path === 'string' ? SWPC_PATH.exec(path) : null;
+  return m ? { group: `swpc.${m[1]}`, field: m[2] } : null;
+} exports.parseSwpcPath = parseSwpcPath;
+
+/**
+ * Group and field of an SWPC path; throws when `path` is not one.
+ * @param {string} path
+ * @returns {{ group: string, field: string }}
+ */
+ function swpcPath(path) {
+  const r = parseSwpcPath(path);
+  if (!r) throw new Error(`Invalid SWPC path "${path}"; expected <product>.<field>`);
+  return r;
+} exports.swpcPath = swpcPath;
+
+/**
+ * @typedef {object} ExprDeps
+ * @property {Set<string>} groups     groups whose events can change the value
+ * @property {Set<string>} fields     fields of the current object read by `field`
+ * @property {boolean} current        reads the current object (`field`, `rand`, `orbit` without id)
+ * @property {boolean} orbit          contains an `orbit` node
+ * @property {number} timeScale       largest orbit `timeScale` (1 without orbit nodes)
+ * @property {boolean} swpc           contains an `swpc` node
+ * @property {boolean} audio          contains an `audio.*` node
+ * @property {boolean} local          contains a `local` (fn) node
+ */
+
+/**
+ * @param {unknown} node expression node or literal
+ * @param {ExprDeps} [deps] accumulator
+ * @returns {ExprDeps}
+ */
+ function collectDeps(node, deps = {
+  groups: new Set(), fields: new Set(), current: false, orbit: false, timeScale: 1,
+  swpc: false, audio: false, local: false,
+}) {
+  if (!_evaluatejs.isNode.call(void 0, node)) return deps;
+  const a = node.args;
+  switch (node.op) {
+    case 'field': deps.current = true; deps.fields.add(String(a[0])); break;
+    case 'rand': deps.current = true; break;
+    case 'swpc': deps.swpc = true; deps.groups.add(swpcPath(String(a[0])).group); break;
+    case 'value': deps.groups.add(objectGroup(String(a[0]))); break;
+    case 'count': case 'mean': case 'spread': deps.groups.add(String(a[0])); break;
+    case 'orbit':
+      deps.orbit = true;
+      if (a[1] == null) deps.current = true;
+      if (typeof a[2] === 'number' && a[2] > deps.timeScale) deps.timeScale = a[2];
+      break;
+    case 'level': case 'spectrum': case 'env': deps.audio = true; break;
+    case 'local': deps.local = true; deps.current = true; break;
+    default: break;
+  }
+  for (const x of a) collectDeps(x, deps);
+  return deps;
+} exports.collectDeps = collectDeps;
+
+/**
+ * Data class of an expression used as a modulation source (doc/audio/modulation.md, Source classes).
+ * @param {ExprDeps} deps
+ * @returns {'vlfo' | 'random-walk' | 'step'}
+ */
+ function sourceClass(deps) {
+  if (deps.orbit) return 'vlfo';
+  if (deps.swpc) return 'random-walk';
+  return 'step';
+} exports.sourceClass = sourceClass;
+
+}, {"./evaluate.js":50}],
 /* node_modules/sucrase/dist/parser/tokenizer/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }/* eslint max-len: 0 */
 
@@ -5381,7 +5511,7 @@ function readTmplToken() {
   }
 } exports.skipWord = skipWord;
 
-}, {"../traverser/base":29,"../traverser/util":49,"../util/charcodes":25,"../util/identifier":50,"../util/whitespace":51,"./keywords":21,"./readWord":52,"./types":22}],
+}, {"../traverser/base":30,"../traverser/util":51,"../util/charcodes":26,"../util/identifier":52,"../util/whitespace":53,"./keywords":22,"./readWord":54,"./types":23}],
 /* node_modules/sucrase/dist/parser/tokenizer/keywords.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var ContextualKeyword; (function (ContextualKeyword) {
   const NONE = 0; ContextualKeyword[ContextualKeyword["NONE"] = NONE] = "NONE";
@@ -5886,7 +6016,7 @@ function isSpecifierEnd(tokens, index) {
   return token.type === _types.TokenType.braceR || token.type === _types.TokenType.comma;
 }
 
-}, {"../parser/tokenizer/types":22}],
+}, {"../parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/util/getNonTypeIdentifiers.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _tokenizer = require('../parser/tokenizer');
@@ -5932,7 +6062,7 @@ var _getJSXPragmaInfo = require('./getJSXPragmaInfo'); var _getJSXPragmaInfo2 = 
   return nonTypeIdentifiers;
 } exports.getNonTypeIdentifiers = getNonTypeIdentifiers;
 
-}, {"../parser/tokenizer":20,"../parser/tokenizer/types":22,"../transformers/JSXTransformer":37,"./getJSXPragmaInfo":53}],
+}, {"../parser/tokenizer":21,"../parser/tokenizer/types":23,"../transformers/JSXTransformer":38,"./getJSXPragmaInfo":55}],
 /* node_modules/sucrase/dist/parser/util/charcodes.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var charCodes; (function (charCodes) {
   const backSpace = 8; charCodes[charCodes["backSpace"] = backSpace] = "backSpace";
@@ -6068,7 +6198,7 @@ var _types = require('../parser/tokenizer/types');
   return names;
 } exports.default = getIdentifierNames;
 
-}, {"../parser/tokenizer/types":22}],
+}, {"../parser/tokenizer/types":23}],
 /* node_modules/ts-interface-checker/dist/index.js */ [function (module, exports, require) {
 "use strict";
 var __spreadArrays = (this && this.__spreadArrays) || function () {
@@ -6295,7 +6425,7 @@ var Checker = /** @class */ (function () {
 }());
 exports.Checker = Checker;
 
-}, {"./types":54,"./util":55}],
+}, {"./types":56,"./util":57}],
 /* node_modules/sucrase/dist/Options-gen-types.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { newObj[key] = obj[key]; } } } newObj.default = obj; return newObj; } }/**
  * This module was automatically generated by `ts-interface-builder`
@@ -6340,7 +6470,7 @@ const exportedTypeSuite = {
 };
 exports. default = exportedTypeSuite;
 
-}, {"ts-interface-checker":27}],
+}, {"ts-interface-checker":28}],
 /* node_modules/sucrase/dist/parser/traverser/base.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _state = require('../tokenizer/state'); var _state2 = _interopRequireDefault(_state);
 var _charcodes = require('../util/charcodes');
@@ -6403,7 +6533,7 @@ var _charcodes = require('../util/charcodes');
   exports.isFlowEnabled = isFlowEnabledArg;
 } exports.initParser = initParser;
 
-}, {"../tokenizer/state":56,"../util/charcodes":25}],
+}, {"../tokenizer/state":58,"../util/charcodes":26}],
 /* node_modules/sucrase/dist/parser/traverser/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 var _index = require('../tokenizer/index');
@@ -6424,7 +6554,7 @@ var _statement = require('./statement');
   return _statement.parseTopLevel.call(void 0, );
 } exports.parseFile = parseFile;
 
-}, {"../tokenizer/index":20,"../util/charcodes":25,"./base":29,"./statement":57}],
+}, {"../tokenizer/index":21,"../util/charcodes":26,"./base":30,"./statement":59}],
 /* node_modules/sucrase/dist/util/isAsyncOperation.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _keywords = require('../parser/tokenizer/keywords');
 
@@ -6465,7 +6595,7 @@ var _statement = require('./statement');
   return false;
 } exports.default = isAsyncOperation;
 
-}, {"../parser/tokenizer/keywords":21}],
+}, {"../parser/tokenizer/keywords":22}],
 /* node_modules/sucrase/dist/util/getClassInfo.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -6820,7 +6950,7 @@ function skipFieldName(tokens) {
   }
 }
 
-}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22}],
+}, {"../parser/tokenizer/keywords":22,"../parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/transformers/CJSImportTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -7739,7 +7869,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = CJSImportTransformer;
 
-}, {"../parser/tokenizer":20,"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"../util/elideImportEquals":58,"../util/getDeclarationInfo":59,"../util/getImportExportSpecifierInfo":23,"../util/isExportFrom":60,"../util/removeMaybeImportAttributes":61,"../util/shouldElideDefaultExport":62,"./Transformer":63,"foo":null,"baz":null}],
+}, {"../parser/tokenizer":21,"../parser/tokenizer/keywords":22,"../parser/tokenizer/types":23,"../util/elideImportEquals":60,"../util/getDeclarationInfo":61,"../util/getImportExportSpecifierInfo":24,"../util/isExportFrom":62,"../util/removeMaybeImportAttributes":63,"../util/shouldElideDefaultExport":64,"./Transformer":65,"foo":null,"baz":null}],
 /* node_modules/sucrase/dist/transformers/ESMImportTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -8157,7 +8287,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = ESMImportTransformer;
 
-}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"../util/elideImportEquals":58,"../util/getDeclarationInfo":59,"../util/getImportExportSpecifierInfo":23,"../util/getNonTypeIdentifiers":24,"../util/isExportFrom":60,"../util/removeMaybeImportAttributes":61,"../util/shouldElideDefaultExport":62,"./Transformer":63,"foo":null,"T":null}],
+}, {"../parser/tokenizer/keywords":22,"../parser/tokenizer/types":23,"../util/elideImportEquals":60,"../util/getDeclarationInfo":61,"../util/getImportExportSpecifierInfo":24,"../util/getNonTypeIdentifiers":25,"../util/isExportFrom":62,"../util/removeMaybeImportAttributes":63,"../util/shouldElideDefaultExport":64,"./Transformer":65,"foo":null,"T":null}],
 /* node_modules/sucrase/dist/transformers/FlowTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _keywords = require('../parser/tokenizer/keywords');
 var _types = require('../parser/tokenizer/types');
@@ -8342,7 +8472,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = FlowTransformer;
 
-}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"./Transformer":63,"flow-enums-runtime":null}],
+}, {"../parser/tokenizer/keywords":22,"../parser/tokenizer/types":23,"./Transformer":65,"flow-enums-runtime":null}],
 /* node_modules/sucrase/dist/transformers/JestHoistTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }
 
@@ -8456,7 +8586,7 @@ const HOISTED_METHODS = ["mock", "unmock", "enableAutomock", "disableAutomock"];
   }
 } exports.default = JestHoistTransformer;
 
-}, {"../parser/tokenizer/types":22,"./Transformer":63}],
+}, {"../parser/tokenizer/types":23,"./Transformer":65}],
 /* node_modules/sucrase/dist/transformers/JSXTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -9192,7 +9322,7 @@ function isHexDigit(code) {
   );
 }
 
-}, {"../parser/plugins/jsx/xhtml":64,"../parser/tokenizer":20,"../parser/tokenizer/types":22,"../parser/util/charcodes":25,"../util/getJSXPragmaInfo":53,"./Transformer":63,"${path}":null}],
+}, {"../parser/plugins/jsx/xhtml":66,"../parser/tokenizer":21,"../parser/tokenizer/types":23,"../parser/util/charcodes":26,"../util/getJSXPragmaInfo":55,"./Transformer":65,"${path}":null}],
 /* node_modules/sucrase/dist/transformers/NumericSeparatorTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _types = require('../parser/tokenizer/types');
 
@@ -9215,7 +9345,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = NumericSeparatorTransformer;
 
-}, {"../parser/tokenizer/types":22,"./Transformer":63}],
+}, {"../parser/tokenizer/types":23,"./Transformer":65}],
 /* node_modules/sucrase/dist/transformers/OptionalCatchBindingTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _types = require('../parser/tokenizer/types');
@@ -9237,7 +9367,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = OptionalCatchBindingTransformer;
 
-}, {"../parser/tokenizer/types":22,"./Transformer":63}],
+}, {"../parser/tokenizer/types":23,"./Transformer":65}],
 /* node_modules/sucrase/dist/transformers/OptionalChainingNullishTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _types = require('../parser/tokenizer/types');
@@ -9395,7 +9525,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = OptionalChainingNullishTransformer;
 
-}, {"../parser/tokenizer/types":22,"./Transformer":63}],
+}, {"../parser/tokenizer/types":23,"./Transformer":65}],
 /* node_modules/sucrase/dist/transformers/ReactDisplayNameTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -9558,7 +9688,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = ReactDisplayNameTransformer;
 
-}, {"../parser/tokenizer":20,"../parser/tokenizer/types":22,"./Transformer":63}],
+}, {"../parser/tokenizer":21,"../parser/tokenizer/types":23,"./Transformer":65}],
 /* node_modules/sucrase/dist/transformers/ReactHotLoaderTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _tokenizer = require('../parser/tokenizer');
 
@@ -9630,7 +9760,7 @@ ${namesToRegister
   }
 } exports.default = ReactHotLoaderTransformer;
 
-}, {"../parser/tokenizer":20,"./Transformer":63,"react-hot-loader":null}],
+}, {"../parser/tokenizer":21,"./Transformer":65,"react-hot-loader":null}],
 /* node_modules/sucrase/dist/transformers/TypeScriptTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _types = require('../parser/tokenizer/types');
@@ -9912,7 +10042,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = TypeScriptTransformer;
 
-}, {"../parser/tokenizer/types":22,"../util/isIdentifier":65,"./Transformer":63}],
+}, {"../parser/tokenizer/types":23,"../util/isIdentifier":67,"./Transformer":65}],
 /* src/dsl/expr.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Expression builders (doc/piece-dsl.md, Expressions). An expression is an immutable wrapper
 // around one IR node `{ op, args }`; each step returns a new expression. The expression
@@ -10036,6 +10166,11 @@ function step(op, self, rest) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// Enumerates the expression positions of an IR document with their JSON Pointers and evaluation
 // contexts, and collects the groups a document references. Shared by the builder and the validator.
 
+var _evaluatejs = require('../expr/evaluate.js');
+var _depsjs = require('../expr/deps.js');
+
+exports.isNode = _evaluatejs.isNode; exports.objectGroup = _depsjs.objectGroup;
+
 /**
  * @typedef {{ object: string | null, layer: boolean }} ExprContext
  * `object` is the group of the current object, or null where no current object exists.
@@ -10093,18 +10228,12 @@ function step(op, self, rest) {
   const stack = [[value, path, 1]];
   while (stack.length) {
     const [v, p, d] = /** @type {[any, string, number]} */ (stack.pop());
-    if (!isNode(v)) continue;
+    if (!_evaluatejs.isNode.call(void 0, v)) continue;
     visit(v, p, d);
     if (d >= maxDepth) continue;
     for (let i = v.args.length - 1; i >= 0; i--) stack.push([v.args[i], `${p}/args/${i}`, d + 1]);
   }
 } exports.forEachNode = forEachNode;
-
-/** @param {unknown} v @returns {v is { op: string, args: unknown[] }} */
- function isNode(v) {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-    && typeof (/** @type {any} */ (v).op) === 'string' && Array.isArray(/** @type {any} */ (v).args);
-} exports.isNode = isNode;
 
 /**
  * The group an expression node refers to by name, or null.
@@ -10114,19 +10243,13 @@ function step(op, self, rest) {
  function nodeGroup(node) {
   const a = node.args;
   switch (node.op) {
-    case 'swpc': return typeof a[0] === 'string' ? `swpc.${a[0].split('.')[0]}` : null;
-    case 'value': return typeof a[0] === 'string' ? objectGroup(a[0]) : null;
+    case 'swpc': return _nullishCoalesce(_optionalChain([_depsjs.parseSwpcPath.call(void 0, a[0]), 'optionalAccess', _ => _.group]), () => ( null));
+    case 'value': return typeof a[0] === 'string' ? _depsjs.objectGroup.call(void 0, a[0]) : null;
     case 'count': case 'mean': case 'spread': return typeof a[0] === 'string' ? a[0] : null;
-    case 'orbit': return typeof a[1] === 'string' ? objectGroup(a[1]) : null;
+    case 'orbit': return typeof a[1] === 'string' ? _depsjs.objectGroup.call(void 0, a[1]) : null;
     default: return null;
   }
 } exports.nodeGroup = nodeGroup;
-
-/** `celestrak.stations:25544` → `celestrak.stations`. @param {string} objectId */
- function objectGroup(objectId) {
-  const i = objectId.indexOf(':');
-  return i < 0 ? objectId : objectId.slice(0, i);
-} exports.objectGroup = objectGroup;
 
 /**
  * Every group referenced by a binding, expression or layer, sorted.
@@ -10137,8 +10260,8 @@ function step(op, self, rest) {
   const out = new Set();
   for (const b of ir.bindings) if (typeof b.group === 'string') out.add(b.group);
   for (const l of ir.layers) if (typeof l.group === 'string') out.add(l.group);
-  for (const h of _nullishCoalesce(_optionalChain([ir, 'access', _ => _.program, 'optionalAccess', _2 => _2.handlers]), () => ( []))) if (h.kind === 'on' && typeof h.group === 'string') out.add(h.group);
-  for (const g of _nullishCoalesce(_optionalChain([ir, 'access', _3 => _3.program, 'optionalAccess', _4 => _4.follow]), () => ( []))) if (typeof g === 'string') out.add(g);
+  for (const h of _nullishCoalesce(_optionalChain([ir, 'access', _2 => _2.program, 'optionalAccess', _3 => _3.handlers]), () => ( []))) if (h.kind === 'on' && typeof h.group === 'string') out.add(h.group);
+  for (const g of _nullishCoalesce(_optionalChain([ir, 'access', _4 => _4.program, 'optionalAccess', _5 => _5.follow]), () => ( []))) if (typeof g === 'string') out.add(g);
   forEachExprPosition(ir, (value, path) => forEachNode(value, path, (node) => {
     const g = nodeGroup(node);
     if (g) out.add(g);
@@ -10151,7 +10274,7 @@ function step(op, self, rest) {
   return token.replaceAll('~', '~0').replaceAll('/', '~1');
 } exports.escapePointer = escapePointer;
 
-}, {}],
+}, {"../expr/evaluate.js":50,"../expr/deps.js":20}],
 /* src/dsl/defs.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// Normalizes the definition tables the DSL reads (PARAM_DEFS, TUNING_DEFS, the effect registry,
 // LAYER_DEFS and groups.json) into one plain, structured-cloneable object. The builder, the
@@ -10486,7 +10609,262 @@ function fail(out, path, message) {
   return false;
 }
 
-}, {"./ir-walk.js":45}],
+}, {"./ir-walk.js":46}],
+/* src/expr/evaluate.js */ [function (module, exports, require) {
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } }// Expression interpreter for IR expression nodes (doc/piece-dsl.md, Expressions and IR).
+//
+// Rules:
+// - `null` propagates: any step with a `null` input returns `null`.
+// - A non-finite number becomes `null`.
+// - A value of the wrong type for a step (a string into `add`, a number into `and`) is `null`.
+// - An unknown op throws; the validator rejects it, so reaching one is a defect. The binding
+//   runtime catches the error and disables the binding.
+//
+// `.map` curves:
+// - `lin`: linear.
+// - `log`: logarithmic output scale, `outMin · (outMax / outMin)^t`, the `log` scale of
+//   `PARAM_DEFS`; needs `outMin` and `outMax` of one sign, otherwise `null`.
+// - `exp`: exponential input scale, `t = ln(x / inMin) / ln(inMax / inMin)`, then linear
+//   output; needs `inMin` and `inMax` of one sign, otherwise `null`.
+// The input is clamped to the input range first, so the output stays in the output range.
+
+var _scalesjs = require('./scales.js');
+var _randjs = require('./rand.js');
+
+/**
+ * @typedef {null | number | string | boolean | ExprNode} ExprArg
+ * @typedef {{ op: string, args: ExprArg[] }} ExprNode
+ * @typedef {null | number | string | boolean | number[]} ExprValue
+ * @typedef {{ id: string, source?: string, group: string, fields: Record<string, unknown> }} SkyObject
+ *
+ * @typedef {object} EvalContext
+ * @property {number} [seed]                       piece seed, for `rand`
+ * @property {{ root: string, mode: string }} [scale] piece scale, for `quantize`
+ * @property {string} [bindingId]                  binding or layer id, for `rand`
+ * @property {(path: string) => unknown} [swpc]
+ * @property {(objectId: string, field: string) => unknown} [value]
+ * @property {(group: string) => unknown} [count]
+ * @property {(group: string, field: string) => unknown} [mean]
+ * @property {(group: string, field: string) => unknown} [spread]
+ * @property {(objectId: string, quantity: string, timeScale: number) => unknown} [orbit]
+ * @property {(inst: string) => unknown} [level]
+ * @property {(inst: string, bands: number) => unknown} [spectrum]
+ * @property {(inst: string, objectId: string | null) => unknown} [env]
+ * @property {(args: ExprArg[], obj: SkyObject | null) => unknown} [local]
+ */
+
+/**
+ * @param {unknown} x
+ * @returns {x is ExprNode}
+ */
+ function isNode(x) {
+  return x !== null && typeof x === 'object' && !Array.isArray(x)
+    && typeof /** @type {any} */ (x).op === 'string' && Array.isArray(/** @type {any} */ (x).args);
+} exports.isNode = isNode;
+
+/** @param {unknown} x @returns {number | null} */
+function num(x) {
+  return typeof x === 'number' && Number.isFinite(x) ? x : null;
+}
+
+/** @param {unknown} x @returns {ExprValue} */
+function scalar(x) {
+  if (typeof x === 'number') return Number.isFinite(x) ? x : null;
+  if (typeof x === 'string' || typeof x === 'boolean') return x;
+  return null;
+}
+
+/** @param {unknown} x @returns {ExprValue} */
+function external(x) {
+  if (Array.isArray(x)) return x.every((v) => typeof v === 'number' && Number.isFinite(v)) ? x : null;
+  return scalar(x);
+}
+
+/**
+ * Evaluates an expression node, or a literal, against the current object and context.
+ * @param {ExprArg} node
+ * @param {SkyObject | null} obj  the current object; `null` where none exists
+ * @param {EvalContext} [ctx]
+ * @returns {ExprValue}
+ */
+ function evaluate(node, obj, ctx = {}) {
+  if (!isNode(node)) return scalar(node);
+  const a = node.args;
+  /** @param {number} i */
+  const arg = (i) => evaluate(a[i], obj, ctx);
+  /** @param {number} i */
+  const n = (i) => num(arg(i));
+
+  switch (node.op) {
+    // Sources
+    case 'field': {
+      const v = obj && obj.fields ? obj.fields[String(a[0])] : undefined;
+      return scalar(v);
+    }
+    case 'num': return n(0);
+    case 'rand': {
+      const lo = n(0), hi = n(1);
+      if (lo === null || hi === null) return null;
+      const u = _randjs.rand01.call(void 0, _nullishCoalesce(ctx.seed, () => ( 1)), _nullishCoalesce(ctx.bindingId, () => ( '')), obj ? obj.id : '');
+      return num(lo + u * (hi - lo));
+    }
+    case 'swpc': return ctx.swpc ? external(ctx.swpc(String(a[0]))) : null;
+    case 'value': return ctx.value ? external(ctx.value(String(a[0]), String(a[1]))) : null;
+    case 'count': return ctx.count ? num(ctx.count(String(a[0]))) : null;
+    case 'mean': return ctx.mean ? num(ctx.mean(String(a[0]), String(a[1]))) : null;
+    case 'spread': return ctx.spread ? num(ctx.spread(String(a[0]), String(a[1]))) : null;
+    case 'orbit': {
+      const objectId = a[1] == null ? (obj ? obj.id : null) : String(a[1]);
+      if (objectId === null || !ctx.orbit) return null;
+      const ts = _nullishCoalesce(num(a[2]), () => ( 1));
+      return num(ctx.orbit(objectId, String(a[0]), ts));
+    }
+    case 'level': return ctx.level ? num(ctx.level(String(a[0]))) : null;
+    case 'spectrum': return ctx.spectrum ? external(ctx.spectrum(String(a[0]), Number(a[1]))) : null;
+    case 'env': return ctx.env ? num(ctx.env(String(a[0]), obj ? obj.id : null)) : null;
+    case 'local': return ctx.local ? external(ctx.local(a, obj)) : null;
+
+    // Colours (layer properties, doc/visuals.md): `#rrggbb` strings.
+    case 'color': return hexColor(a[0]);
+    case 'mix': {
+      const x = hexColor(arg(0)), y = hexColor(arg(1)), t = n(2);
+      if (x === null || y === null || t === null) return null;
+      return mixColor(x, y, Math.min(Math.max(t, 0), 1));
+    }
+
+    // Numeric steps
+    case 'map': return map(n(0), n(1), n(2), n(3), n(4), a[5] == null ? 'lin' : String(a[5]));
+    case 'clamp': {
+      const x = n(0), lo = n(1), hi = n(2);
+      if (x === null || lo === null || hi === null) return null;
+      return Math.min(Math.max(x, Math.min(lo, hi)), Math.max(lo, hi));
+    }
+    case 'octaveInto': return octaveInto(n(0), n(1), n(2));
+    case 'quantize': {
+      const x = n(0);
+      return x === null ? null : _scalesjs.quantize.call(void 0, x, ctx.scale);
+    }
+    case 'add': return binary(n(0), n(1), (x, y) => x + y);
+    case 'sub': return binary(n(0), n(1), (x, y) => x - y);
+    case 'mul': return binary(n(0), n(1), (x, y) => x * y);
+    case 'div': return binary(n(0), n(1), (x, y) => x / y);
+    case 'abs': { const x = n(0); return x === null ? null : Math.abs(x); }
+    case 'neg': { const x = n(0); return x === null ? null : -x; }
+    case 'round': { const x = n(0); return x === null ? null : Math.round(x); }
+
+    // Comparison and logic
+    case 'eq': {
+      const x = arg(0), y = arg(1);
+      if (x === null || y === null || Array.isArray(x) || Array.isArray(y)) return null;
+      return x === y;
+    }
+    case 'gt': { const x = n(0), y = n(1); return x === null || y === null ? null : x > y; }
+    case 'lt': { const x = n(0), y = n(1); return x === null || y === null ? null : x < y; }
+    case 'and': {
+      const x = arg(0), y = arg(1);
+      return typeof x === 'boolean' && typeof y === 'boolean' ? x && y : null;
+    }
+    case 'or': {
+      const x = arg(0), y = arg(1);
+      return typeof x === 'boolean' && typeof y === 'boolean' ? x || y : null;
+    }
+    case 'not': { const x = arg(0); return typeof x === 'boolean' ? !x : null; }
+
+    default:
+      throw new Error(`Unknown expression op "${node.op}"`);
+  }
+} exports.evaluate = evaluate;
+
+/**
+ * @param {number | null} x @param {number | null} y
+ * @param {(x: number, y: number) => number} f
+ * @returns {number | null}
+ */
+function binary(x, y, f) {
+  return x === null || y === null ? null : num(f(x, y));
+}
+
+/**
+ * `.map(inMin, inMax, outMin, outMax, curve)`, clamped to the output range.
+ * @returns {number | null}
+ */
+ function map(x, inMin, inMax, outMin, outMax, curve = 'lin') {
+  if (x === null || inMin === null || inMax === null || outMin === null || outMax === null) return null;
+  if (inMin === inMax) return null;
+  const xc = Math.min(Math.max(x, Math.min(inMin, inMax)), Math.max(inMin, inMax));
+  let t;
+  if (curve === 'exp') {
+    if (!(inMin * inMax > 0)) return null;
+    t = Math.log(xc / inMin) / Math.log(inMax / inMin);
+  } else {
+    t = (xc - inMin) / (inMax - inMin);
+  }
+  t = Math.min(Math.max(t, 0), 1);
+  let out;
+  if (curve === 'log') {
+    if (!(outMin * outMax > 0)) return null;
+    out = outMin * Math.pow(outMax / outMin, t);
+  } else if (curve === 'lin' || curve === 'exp') {
+    out = outMin + t * (outMax - outMin);
+  } else {
+    throw new Error(`Unknown map curve "${curve}"`);
+  }
+  const lo = Math.min(outMin, outMax), hi = Math.max(outMin, outMax);
+  return num(Math.min(Math.max(out, lo), hi));
+} exports.map = map;
+
+/**
+ * `.octaveInto(loHz, hiHz)`: moves frequency `x` by octaves into [loHz, hiHz) and returns its
+ * MIDI pitch (fractional). `null` for a non-positive frequency or a range no octave fits.
+ * @returns {number | null}
+ */
+ function octaveInto(x, loHz, hiHz) {
+  if (x === null || loHz === null || hiHz === null) return null;
+  if (!(x > 0) || !(loHz > 0) || !(hiHz > loHz)) return null;
+  // Fewest octave moves: divide a value above the range until it is below hiHz, multiply a
+  // value below the range until it reaches loHz. The loops correct floating-point error.
+  let f = x;
+  if (f >= hiHz) {
+    f = x * Math.pow(2, -Math.floor(Math.log2(x / hiHz)) - 1);
+    while (f >= hiHz) f /= 2;
+    while (f * 2 < hiHz) f *= 2;
+  } else if (f < loHz) {
+    f = x * Math.pow(2, Math.ceil(Math.log2(loHz / x)));
+    while (f < loHz) f *= 2;
+    while (f / 2 >= loHz) f /= 2;
+  }
+  if (!(f >= loHz && f < hiHz)) return null;
+  return num(69 + 12 * Math.log2(f / 440));
+} exports.octaveInto = octaveInto;
+
+/**
+ * Normalizes `#rgb` or `#rrggbb` to lowercase `#rrggbb`; anything else is null.
+ * @param {unknown} x
+ * @returns {string | null}
+ */
+ function hexColor(x) {
+  if (typeof x !== 'string') return null;
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x);
+  if (!m) return null;
+  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
+  return `#${h.toLowerCase()}`;
+} exports.hexColor = hexColor;
+
+/**
+ * Per-channel linear blend of two `#rrggbb` colours in sRGB values, `t` in 0–1.
+ * @param {string} a @param {string} b @param {number} t
+ * @returns {string}
+ */
+ function mixColor(a, b, t) {
+  let out = '#';
+  for (let i = 1; i < 7; i += 2) {
+    const x = parseInt(a.slice(i, i + 2), 16), y = parseInt(b.slice(i, i + 2), 16);
+    out += Math.round(x + (y - x) * t).toString(16).padStart(2, '0');
+  }
+  return out;
+} exports.mixColor = mixColor;
+
+}, {"./scales.js":68,"./rand.js":19}],
 /* node_modules/sucrase/dist/parser/traverser/util.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _index = require('../tokenizer/index');
 
@@ -10593,7 +10971,7 @@ var _base = require('./base');
   _index.finishToken.call(void 0, _types.TokenType.eof);
 } exports.unexpected = unexpected;
 
-}, {"../tokenizer/index":20,"../tokenizer/types":22,"../util/charcodes":25,"./base":29}],
+}, {"../tokenizer/index":21,"../tokenizer/types":23,"../util/charcodes":26,"./base":30}],
 /* node_modules/sucrase/dist/parser/util/identifier.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _charcodes = require('./charcodes');
 var _whitespace = require('./whitespace');
@@ -10630,7 +11008,7 @@ for (let numChar = _charcodes.charCodes.digit0; numChar <= _charcodes.charCodes.
   exports.IS_IDENTIFIER_START[numChar] = 0;
 }
 
-}, {"./charcodes":25,"./whitespace":51}],
+}, {"./charcodes":26,"./whitespace":53}],
 /* node_modules/sucrase/dist/parser/util/whitespace.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _charcodes = require('./charcodes');
 
@@ -10666,7 +11044,7 @@ for (const char of exports.WHITESPACE_CHARS) {
   exports.IS_WHITESPACE[char] = 1;
 }
 
-}, {"./charcodes":25}],
+}, {"./charcodes":26}],
 /* node_modules/sucrase/dist/parser/tokenizer/readWord.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _base = require('../traverser/base');
 var _charcodes = require('../util/charcodes');
@@ -10733,7 +11111,7 @@ var _types = require('./types');
   _index.finishToken.call(void 0, _types.TokenType.name);
 } exports.default = readWord;
 
-}, {"../traverser/base":29,"../util/charcodes":25,"../util/identifier":50,"./index":20,"./readWordTree":66,"./types":22}],
+}, {"../traverser/base":30,"../util/charcodes":26,"../util/identifier":52,"./index":21,"./readWordTree":69,"./types":23}],
 /* node_modules/sucrase/dist/util/getJSXPragmaInfo.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -11327,7 +11705,7 @@ for (var _i = 0, _a = [Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uin
     _loop_1(array_1);
 }
 
-}, {"./util":55}],
+}, {"./util":57}],
 /* node_modules/ts-interface-checker/dist/util.js */ [function (module, exports, require) {
 "use strict";
 var __extends = (this && this.__extends) || (function () {
@@ -11569,7 +11947,7 @@ var _types = require('./types');
   }
 } exports.default = State;
 
-}, {"./keywords":21,"./types":22}],
+}, {"./keywords":22,"./types":23}],
 /* node_modules/sucrase/dist/parser/traverser/statement.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});/* eslint max-len: 0 */
 
@@ -12904,7 +13282,7 @@ function maybeParseImportAttributes() {
   }
 }
 
-}, {"../index":11,"../plugins/flow":67,"../plugins/typescript":68,"../tokenizer":20,"../tokenizer/keywords":21,"../tokenizer/state":56,"../tokenizer/types":22,"../util/charcodes":25,"./base":29,"./expression":69,"./lval":70,"./util":49,"T":null}],
+}, {"../index":11,"../plugins/flow":70,"../plugins/typescript":71,"../tokenizer":21,"../tokenizer/keywords":22,"../tokenizer/state":58,"../tokenizer/types":23,"../util/charcodes":26,"./base":30,"./expression":72,"./lval":73,"./util":51,"T":null}],
 /* node_modules/sucrase/dist/util/elideImportEquals.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _types = require('../parser/tokenizer/types');
 
@@ -12936,7 +13314,7 @@ function maybeParseImportAttributes() {
   }
 } exports.default = elideImportEquals;
 
-}, {"../parser/tokenizer/types":22,"A":null}],
+}, {"../parser/tokenizer/types":23,"A":null}],
 /* node_modules/sucrase/dist/util/getDeclarationInfo.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _tokenizer = require('../parser/tokenizer');
 var _types = require('../parser/tokenizer/types');
@@ -12979,7 +13357,7 @@ var _types = require('../parser/tokenizer/types');
   return {typeDeclarations, valueDeclarations};
 } exports.default = getDeclarationInfo;
 
-}, {"../parser/tokenizer":20,"../parser/tokenizer/types":22}],
+}, {"../parser/tokenizer":21,"../parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/util/isExportFrom.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _keywords = require('../parser/tokenizer/keywords');
 var _types = require('../parser/tokenizer/types');
@@ -13000,7 +13378,7 @@ var _types = require('../parser/tokenizer/types');
   );
 } exports.default = isExportFrom;
 
-}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22}],
+}, {"../parser/tokenizer/keywords":22,"../parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/util/removeMaybeImportAttributes.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _keywords = require('../parser/tokenizer/keywords');
 var _types = require('../parser/tokenizer/types');
@@ -13025,7 +13403,7 @@ var _types = require('../parser/tokenizer/types');
   }
 } exports.removeMaybeImportAttributes = removeMaybeImportAttributes;
 
-}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22}],
+}, {"../parser/tokenizer/keywords":22,"../parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/util/shouldElideDefaultExport.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _types = require('../parser/tokenizer/types');
 
@@ -13066,7 +13444,7 @@ var _types = require('../parser/tokenizer/types');
   );
 } exports.default = shouldElideDefaultExport;
 
-}, {"../parser/tokenizer/types":22}],
+}, {"../parser/tokenizer/types":23}],
 /* node_modules/sucrase/dist/transformers/Transformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); class Transformer {
   // Return true if anything was processed, false otherwise.
@@ -13428,7 +13806,51 @@ const RESERVED_WORDS = new Set([
   return !RESERVED_WORDS.has(name);
 } exports.default = isIdentifier;
 
-}, {"../parser/util/identifier":50}],
+}, {"../parser/util/identifier":52}],
+/* src/expr/scales.js */ [function (module, exports, require) {
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});// Scales for `.quantize()` (doc/piece-dsl.md, Piece: scale(root, mode)).
+
+var _limitsjs = require('../dsl/limits.js');
+
+const NATURAL = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+/**
+ * Pitch class (0–11) of a root note name such as `C`, `F#` or `Bb`.
+ * @param {string} root
+ * @returns {number}
+ */
+ function rootPitchClass(root) {
+  const m = /^([A-G])([#b]?)$/.exec(String(root));
+  if (!m) throw new Error(`Unknown scale root "${root}"; expected C–B with optional # or b`);
+  const pc = NATURAL[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+  return (pc + 12) % 12;
+} exports.rootPitchClass = rootPitchClass;
+
+/**
+ * Nearest pitch of the scale to `pitch` (MIDI, fractional). A tie goes to the higher pitch,
+ * so the chromatic scale matches `Math.round`.
+ * @param {number} pitch
+ * @param {{ root: string, mode: string }} [scale] default C chromatic
+ * @returns {number}
+ */
+ function quantize(pitch, scale = { root: 'C', mode: 'chromatic' }) {
+  const steps = Object.hasOwn(_limitsjs.SCALE_STEPS, scale.mode) ? _limitsjs.SCALE_STEPS[/** @type {keyof typeof SCALE_STEPS} */ (scale.mode)] : null;
+  if (!steps) throw new Error(`Unknown scale mode "${scale.mode}"`);
+  const root = rootPitchClass(scale.root);
+  const octave = Math.floor((pitch - root) / 12);
+  let best = NaN;
+  let bestDist = Infinity;
+  for (let k = octave - 1; k <= octave + 1; k++) {
+    for (const s of steps) {
+      const c = root + 12 * k + s;
+      const d = Math.abs(c - pitch);
+      if (d < bestDist || (d === bestDist && c > best)) { best = c; bestDist = d; }
+    }
+  }
+  return best;
+} exports.quantize = quantize;
+
+}, {"../dsl/limits.js":17}],
 /* node_modules/sucrase/dist/parser/tokenizer/readWordTree.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Generated file, do not edit! Run "yarn generate" to re-generate this file.
 var _keywords = require('./keywords');
@@ -14102,7 +14524,7 @@ var _types = require('./types');
   (_types.TokenType._yield << 1) + 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 ]); exports.READ_WORD_TREE = READ_WORD_TREE;
 
-}, {"./keywords":21,"./types":22}],
+}, {"./keywords":22,"./types":23}],
 /* node_modules/sucrase/dist/parser/plugins/flow.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});/* eslint max-len: 0 */
 
@@ -15210,7 +15632,7 @@ function flowParseEnumMember() {
   }
 }
 
-}, {"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/types":22,"../traverser/base":29,"../traverser/expression":69,"../traverser/statement":57,"../traverser/util":49}],
+}, {"../tokenizer/index":21,"../tokenizer/keywords":22,"../tokenizer/types":23,"../traverser/base":30,"../traverser/expression":72,"../traverser/statement":59,"../traverser/util":51}],
 /* node_modules/sucrase/dist/parser/plugins/typescript.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -16845,7 +17267,7 @@ function tsParseTypeArguments() {
   _statement.baseParseMaybeDecoratorArguments.call(void 0, );
 } exports.tsParseMaybeDecoratorArguments = tsParseMaybeDecoratorArguments;
 
-}, {"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/types":22,"../traverser/base":29,"../traverser/expression":69,"../traverser/lval":70,"../traverser/statement":57,"../traverser/util":49,"./jsx":71,"A":null}],
+}, {"../tokenizer/index":21,"../tokenizer/keywords":22,"../tokenizer/types":23,"../traverser/base":30,"../traverser/expression":72,"../traverser/lval":73,"../traverser/statement":59,"../traverser/util":51,"./jsx":74,"A":null}],
 /* node_modules/sucrase/dist/parser/traverser/expression.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});/* eslint max-len: 0 */
 
@@ -17870,7 +18292,7 @@ function parseModuleExpression() {
   _statement.parseBlockBody.call(void 0, _types3.TokenType.braceR);
 }
 
-}, {"../plugins/flow":67,"../plugins/jsx/index":71,"../plugins/types":72,"../plugins/typescript":68,"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/state":56,"../tokenizer/types":22,"../util/charcodes":25,"../util/identifier":50,"./base":29,"./lval":70,"./statement":57,"./util":49}],
+}, {"../plugins/flow":70,"../plugins/jsx/index":74,"../plugins/types":75,"../plugins/typescript":71,"../tokenizer/index":21,"../tokenizer/keywords":22,"../tokenizer/state":58,"../tokenizer/types":23,"../util/charcodes":26,"../util/identifier":52,"./base":30,"./lval":73,"./statement":59,"./util":51}],
 /* node_modules/sucrase/dist/parser/traverser/lval.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _flow = require('../plugins/flow');
 var _typescript = require('../plugins/typescript');
@@ -18032,7 +18454,7 @@ function parseAssignableListItemTypes() {
   _base.state.tokens[eqIndex].rhsEndIndex = _base.state.tokens.length;
 } exports.parseMaybeDefault = parseMaybeDefault;
 
-}, {"../plugins/flow":67,"../plugins/typescript":68,"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/types":22,"./base":29,"./expression":69,"./util":49}],
+}, {"../plugins/flow":70,"../plugins/typescript":71,"../tokenizer/index":21,"../tokenizer/keywords":22,"../tokenizer/types":23,"./base":30,"./expression":72,"./util":51}],
 /* node_modules/sucrase/dist/parser/plugins/jsx/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -18402,7 +18824,7 @@ function nextJSXExprToken() {
   jsxReadToken();
 }
 
-}, {"../../tokenizer/index":20,"../../tokenizer/types":22,"../../traverser/base":29,"../../traverser/expression":69,"../../traverser/util":49,"../../util/charcodes":25,"../../util/identifier":50,"../typescript":68}],
+}, {"../../tokenizer/index":21,"../../tokenizer/types":23,"../../traverser/base":30,"../../traverser/expression":72,"../../traverser/util":51,"../../util/charcodes":26,"../../util/identifier":52,"../typescript":71}],
 /* node_modules/sucrase/dist/parser/plugins/types.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _index = require('../tokenizer/index');
 var _types = require('../tokenizer/types');
@@ -18442,7 +18864,7 @@ var _typescript = require('./typescript');
   }
 } exports.typedParseParenItem = typedParseParenItem;
 
-}, {"../tokenizer/index":20,"../tokenizer/types":22,"../traverser/base":29,"../traverser/expression":69,"./flow":67,"./typescript":68}]
+}, {"../tokenizer/index":21,"../tokenizer/types":23,"../traverser/base":30,"../traverser/expression":72,"./flow":70,"./typescript":71}]
   ];
   var cache = [];
   function load(id) {

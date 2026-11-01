@@ -1,8 +1,11 @@
-// Runtime limits from doc/bindings.md and doc/audio/audio-engine-core.md.
+// Runtime limits from doc/bindings.md and doc/audio/audio-engine-core.md. Caps, defaults and
+// ranges the validator also enforces come from src/dsl/limits.js.
+
+import { DEFAULTS, LIMITS as DSL_LIMITS, RANGES } from '../dsl/limits.js';
 
 export const LIMITS = Object.freeze({
-  voicesPerInstrument: 16,
-  voicesPerGranular: 4,
+  voicesPerInstrument: DSL_LIMITS.voicesPerBinding,
+  voicesPerGranular: DSL_LIMITS.voicesPerBindingGranular,
   voicesTotal: 64,
   /** Minimum interval between posts of one parameter or data source (30 Hz). */
   postIntervalMs: 1000 / 30,
@@ -17,12 +20,9 @@ export const LIMITS = Object.freeze({
   minNoteSeconds: 0.005,
   /** Orbit-driven voice options are evaluated for at most this many objects per binding. */
   orbitObjectsPerBinding: 16,
-  defaultVelocity: 100,
-  defaultDurationMs: 250,
-  defaultMaxPerSecond: 2,
-  defaultSmoothMs: 250,
-  defaultOrbitSmoothMs: 500,
-  maxCents: 100,
+  defaultSmoothMs: DEFAULTS.smoothMs,
+  defaultOrbitSmoothMs: DEFAULTS.orbitSmoothMs,
+  maxCents: RANGES.cents[1],
 });
 
 /**

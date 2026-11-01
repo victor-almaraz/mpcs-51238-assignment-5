@@ -26,7 +26,7 @@ Most groups change every few minutes to hours ([Sky data](sky-data)). Use **Repl
 | `type_error` (warning) | The type checker found a mismatch, such as a misspelled option or field, or a text value where a number belongs | Read the message on the underlined code; the piece still runs |
 | `runtime_error` | The script threw an error while running | Read the message; often a misspelled function name |
 | `timeout` | The script ran longer than 1.5 s | Remove loops that do not end |
-| `unknown_option` | An instrument, effect or layer option does not exist | Check the parameter names in the [Reference](reference) |
+| `unknown_option` | An instrument, effect or layer option does not exist, or a `voiceMods` name is not a parameter `.mod()` accepts on that instrument | Check the parameter names in the [Reference](reference) |
 | `not_numeric` | `follow` on a parameter that takes a list, such as `harmonics` | Set `harmonics` in the constructor |
 | `not_modulatable` | `mod` on a choice parameter or `harmonics` | Use `follow` |
 | `unknown_group` | The group name does not exist | Check [Sky data](sky-data) |

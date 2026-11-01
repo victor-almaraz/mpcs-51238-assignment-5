@@ -1,8 +1,8 @@
 // `trigger` bindings (doc/bindings.md, Triggers).
 
 import { evaluate } from '../expr/evaluate.js';
-import { LIMITS, voiceCap } from './limits.js';
-import { pitchOf, velocityOf, numberOr } from './values.js';
+import { voiceCap } from './limits.js';
+import { pitchOf, velocityOf } from './values.js';
 
 /**
  * Token bucket: capacity `ceil(rate)`, starts full, refills `rate` tokens per second.
@@ -38,8 +38,9 @@ export function createTriggerBinding(b, env) {
   const ctx = env.ctxFor(b.id);
   const component = `bind.${b.id}`;
   const tag = `trig:${b.id}`;
-  const rate = numberOr(b.maxPerSecond, LIMITS.defaultMaxPerSecond);
-  const durationMs = numberOr(b.durationMs, LIMITS.defaultDurationMs);
+  // Validated IR: maxPerSecond 0.1–20 and durationMs 20–10,000 are always present.
+  const rate = b.maxPerSecond;
+  const durationMs = b.durationMs;
   const bucket = createTokenBucket(rate, env.now);
 
   return {

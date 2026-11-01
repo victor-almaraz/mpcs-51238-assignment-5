@@ -3,6 +3,7 @@
 // `createRunner`: `start`, `batch` and `stop` return the commands the handlers sent.
 
 import { hash32, mulberry32Once } from '../expr/rand.js';
+import { parseSwpcPath } from '../expr/deps.js';
 import { PROGRAM } from './limits.js';
 
 /** An error with a problem code; run-script.js reports `code` instead of `runtime_error`. */
@@ -38,6 +39,8 @@ export function createRng(seed) {
 
 /** @param {WireObject} o @returns {SkyRecord} */
 const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group });
+/** Orders objects by id. @param {{ id: string }} a @param {{ id: string }} b */
+const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /**
  * Milliseconds of a sync name (`1/8`, `1/4d`, `1/8t`) at `bpm`.
@@ -99,21 +102,20 @@ export function createIo({ groupSource, seed }) {
     /** @param {unknown} path */
     swpc(path) {
       inHandler('read.swpc()');
-      if (typeof path !== 'string' || !/^[a-z]+\.[A-Za-z]+$/.test(path)) throw new TypeError("read.swpc(): path must be text such as 'kp.kp'");
-      const [g, f] = path.split('.');
-      const group = `swpc.${g}`;
+      const sp = parseSwpcPath(path);
+      if (!sp) throw new TypeError("read.swpc(): path must be text such as 'kp.kp'");
+      const { group, field } = sp;
       followed(group, `read.swpc('${path}')`);
       const objs = io.byGroup.get(group);
-      const first = objs ? [...objs.values()].sort((a, b) => (a.id < b.id ? -1 : 1))[0] : undefined;
-      const v = first ? first[f] : undefined;
-      return v === undefined ? null : v;
+      const first = objs ? [...objs.values()].sort(byId)[0] : undefined;
+      return first && Object.hasOwn(first, field) ? first[field] ?? null : null;
     },
     /** @param {unknown} key */
     group(key) {
       inHandler('read.group()');
       if (typeof key !== 'string') throw new TypeError('read.group(): key must be text');
       followed(key, `read.group('${key}')`);
-      return Object.freeze([...(io.byGroup.get(key)?.values() ?? [])].sort((a, b) => (a.id < b.id ? -1 : 1)));
+      return Object.freeze([...(io.byGroup.get(key)?.values() ?? [])].sort(byId));
     },
     /** @param {unknown} id */
     object(id) {
@@ -294,7 +296,7 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
       }
       const initial = (Array.isArray(objects) ? objects : [])
         .filter((o) => o && io.groups.has(o.group))
-        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        .sort(byId);
       for (const o of initial) {
         /** @type {WireEvent} */
         const ev = { kind: 'enter', obj: o, initial: true, traceId: null };

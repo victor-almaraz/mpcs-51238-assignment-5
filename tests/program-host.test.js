@@ -264,3 +264,23 @@ test('the audio host starts the program on run, restarts it on reload and stops 
   assert.equal(host.program, null);
   assert.deepEqual(vm.msgs.map((m) => m.op), ['start', 'stop', 'start', 'stop', 'start', 'stop']);
 });
+
+test('a command time past the batch is pulled back to at most the latency ahead', async () => {
+  const s = setup(scriptedVm([{ commands: [cmd({ op: 'play', inst: 'i0', pitch: 60, at: 1e9 })], errors: [], dropped: 0 }]), null, { ir: IR });
+  await s.host.start();
+  const [, , , t] = s.inst().callsOf('noteOn')[0];
+  assert.ok(Math.abs(t - (s.clock.audioTime() + 0.1)) < 1e-9, String(t));
+});
+
+test('set accepts only numeric parameters of the instrument or slot type', async () => {
+  const s = setup(scriptedVm([{ commands: [
+    cmd({ op: 'set', target: 'f0.sync', value: 2 }),
+    cmd({ op: 'set', target: 'i0.nope', value: 1, smoothMs: 0 }),
+    cmd({ op: 'set', target: 'i0.index', value: 3, smoothMs: 0 }),
+    cmd({ op: 'set', target: 'f0.mix', value: 50, smoothMs: 0 }),
+  ], errors: [], dropped: 0 }]), null, { ir: IR });
+  await s.host.start();
+  assert.deepEqual(s.trace.of({ stage: 'BIND', event: 'invalid' }).map((r) => r.data.reason), ['not a numeric parameter', 'not a numeric parameter']);
+  assert.deepEqual(s.engine.calls.filter((c) => c[0] === 'setFxParam'), [['setFxParam', 'f0', 'mix', 1]], 'clamped to the range');
+  assert.deepEqual(s.inst().callsOf('setParam'), [['setParam', 'index', 3]]);
+});

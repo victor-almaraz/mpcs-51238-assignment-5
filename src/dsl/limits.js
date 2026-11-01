@@ -43,6 +43,8 @@ export const PROGRAM = Object.freeze({
   /** Period of the page's batch loop, ms. */
   batchMs: 25,
   noteStartsPerSecond: 200,
+  /** Most sky events the page queues between two batches; older ones are dropped. */
+  queuedEvents: 4096,
 });
 
 /** Event kinds of `on(group, kind, fn)`. */
@@ -64,6 +66,7 @@ export const RANGES = Object.freeze({
   velocity: [1, 127],
   pitch: [0, 127],
   pan: [-1, 1],
+  voiceMod: [-1, 1],
   detuneCents: [-100, 100],
   desaturate: [0, 1],
   spectrumBands: [4, 32],
@@ -95,7 +98,19 @@ export const DEFAULTS = Object.freeze({
   selectOrder: 'desc',
 });
 
-export const SCALE_MODES = Object.freeze(['major', 'minor', 'dorian', 'phrygian', 'lydian', 'mixolydian', 'locrian', 'pentatonic', 'chromatic']);
+/** Semitone offsets from the root of each scale mode, for `.quantize()` (src/expr/scales.js). */
+export const SCALE_STEPS = Object.freeze({
+  major:      Object.freeze([0, 2, 4, 5, 7, 9, 11]),
+  minor:      Object.freeze([0, 2, 3, 5, 7, 8, 10]),
+  dorian:     Object.freeze([0, 2, 3, 5, 7, 9, 10]),
+  phrygian:   Object.freeze([0, 1, 3, 5, 7, 8, 10]),
+  lydian:     Object.freeze([0, 2, 4, 6, 7, 9, 11]),
+  mixolydian: Object.freeze([0, 2, 4, 5, 7, 9, 10]),
+  locrian:    Object.freeze([0, 1, 3, 5, 6, 8, 10]),
+  pentatonic: Object.freeze([0, 2, 4, 7, 9]),
+  chromatic:  Object.freeze([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
+});
+export const SCALE_MODES = Object.freeze(Object.keys(SCALE_STEPS));
 export const NOTE_ROOT = /^[A-G](#|b)?$/;
 export const ORBIT_QUANTITIES = Object.freeze(['latitude', 'phaseSin', 'phaseCos', 'altitude', 'longitude', 'sunlit', 'elevation']);
 export const LFO_SHAPES = Object.freeze(['sine', 'triangle', 'square', 'saw', 'random', 'smooth']);

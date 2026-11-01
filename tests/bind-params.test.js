@@ -6,7 +6,7 @@ import { FakeEngine, FakeInstrument, createFakeClock, createFakeSky, createTrace
 const kp = { op: 'swpc', args: ['kp.kp'] };
 const kpMap = { op: 'map', args: [kp, 0, 9, 2, 40, 'lin'] };
 
-function setup({ bindings, fx = [], instParams = { vibratoDepth: 6 }, ranges = {}, fxParamDef } = {}) {
+function setup({ bindings, fx = [], instParams = { vibratoDepth: 6 }, ranges = {} } = {}) {
   const ir = {
     seed: 1, scale: { root: 'C', mode: 'chromatic' },
     instruments: [{ id: 'i0', type: 'additive', volumeDb: -12, octave: 0, cents: 0, params: instParams, fx }],
@@ -20,8 +20,8 @@ function setup({ bindings, fx = [], instParams = { vibratoDepth: 6 }, ranges = {
   sky.put(skyObj('swpc.kp', 'planetary', { kp: 0 }));
   const clock = createFakeClock();
   const trace = createTraceSink();
-  const rt = createBindingRuntime({ ir, engine, sky, clock, trace, fxParamDef });
-  return { engine, inst: engine.get('i0'), sky, clock, trace, rt };
+  const rt = createBindingRuntime({ ir, engine, sky, clock, trace });
+  return { ir, engine, inst: engine.get('i0'), sky, clock, trace, rt };
 }
 
 test('one-pole smoother settles within about smoothMs', () => {
@@ -123,16 +123,13 @@ test('param is re-evaluated only on events in groups the expression references',
   assert.equal(inst.callsOf('setParam').length, 0);
 });
 
-test('effect follow calls setFxParam; enum results round to an option index; bypass follows a boolean', () => {
+test('effect follow calls setFxParam; enum results (by the definition tables) round to an option index; bypass follows a boolean', () => {
   const fx = [
     { id: 'f0', type: 'delay', params: { time: 375, feedback: 0.35 }, bypass: false },
     { id: 'f1', type: 'filter', params: { cutoff: 2000 }, bypass: false },
   ];
-  const fxParamDef = (type, name) => (type === 'filter' && name === 'mode'
-    ? { id: 'mode', scale: 'enum', options: ['lowpass', 'highpass', 'bandpass'] } : { id: name, scale: 'lin' });
   const { engine, sky, clock, trace, rt } = setup({
     fx,
-    fxParamDef,
     bindings: [
       { id: 'b0', kind: 'fxParam', slot: 'f0', param: 'feedback', expr: { op: 'map', args: [kp, 0, 9, 0, 0.9, 'lin'] }, smoothMs: 100 },
       { id: 'b1', kind: 'fxParam', slot: 'f1', param: 'mode', expr: { op: 'map', args: [kp, 0, 9, 0, 2, 'lin'] }, smoothMs: 100 },
@@ -156,19 +153,31 @@ test('effect follow calls setFxParam; enum results round to an option index; byp
   assert.ok(trace.of({ event: 'setFxBypass' }).length >= 2);
 });
 
-test('a param binding whose inst is a slot id is an effect follow', () => {
-  const fx = [{ id: 'f0', type: 'reverb', params: { mix: 0.25 }, bypass: false }];
-  const { engine, sky, clock, rt } = setup({
+test('enum follow: an index outside the options is clamped and sent once per change', () => {
+  const fx = [{ id: 'f1', type: 'filter', params: { cutoff: 2000 }, bypass: false }];
+  const { engine, sky, rt } = setup({
     fx,
-    bindings: [
-      { id: 'b0', kind: 'param', inst: 'f0', param: 'mix', expr: { op: 'map', args: [kp, 0, 9, 0, 1, 'lin'] }, smoothMs: 0 },
-      { id: 'b1', kind: 'param', inst: 'f0', param: 'bypass', expr: { op: 'gt', args: [kp, 5] } },
-    ],
+    bindings: [{ id: 'b0', kind: 'fxParam', slot: 'f1', param: 'mode', expr: { op: 'mul', args: [kp, 1] }, smoothMs: 100 }],
   });
   rt.start();
+  sky.update('swpc.kp:planetary', { kp: 7 });
+  sky.update('swpc.kp:planetary', { kp: 8 });
+  assert.deepEqual(engine.callsOf('setFxParam').map((c) => c[3]), [0, 2]);
+});
+
+test('hot reload rebinds an effect follow whose chain changed, and keeps it when the chain is unchanged', () => {
+  const fx = [{ id: 'f0', type: 'delay', params: { time: 375, feedback: 0.35 }, bypass: false }];
+  const b0 = { id: 'b0', kind: 'fxBypass', slot: 'f0', expr: { op: 'gt', args: [kp, 5] } };
+  const { ir, engine, sky, rt } = setup({ fx, bindings: [b0] });
+  rt.start();
   sky.update('swpc.kp:planetary', { kp: 9 });
-  clock.advance(100);
-  assert.deepEqual(engine.callsOf('setFxParam').at(-1), ['setFxParam', 'f0', 'mix', 1]);
-  assert.deepEqual(engine.callsOf('setFxBypass'), [['setFxBypass', 'f0', true]]);
-  assert.deepEqual(rt.disabled(), []);
+  assert.equal(engine.callsOf('setFxBypass').length, 1);
+  const same = structuredClone(ir);
+  assert.deepEqual(rt.reload(same).bindings, []);
+  const changed = structuredClone(ir);
+  changed.instruments[0].fx[0].params.feedback = 0.5;
+  assert.deepEqual(rt.reload(changed).bindings, ['b0']);
+  // setFx reset the slot to its IR bypass (false); the rebound follow sends the current value again.
+  assert.deepEqual(engine.callsOf('setFxBypass').at(-1), ['setFxBypass', 'f0', true]);
+  assert.equal(engine.callsOf('setFxBypass').length, 2);
 });

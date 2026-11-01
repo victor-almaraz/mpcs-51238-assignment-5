@@ -463,7 +463,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 |---|---|
 | Instruments | At most 16. `type` is a `PARAM_DEFS` key. Every param name exists for the type. `granular.source` is not `sample`. |
 | Bindings | At most 64. `inst` exists. `param` is a numeric param of the instrument's type. |
-| Voices | `select.top` at most 16, or 4 for granular. Without `select`, a group larger than the cap uses the first objects by id. |
+| Voices | `select.top` at most 16, or 4 for granular. Without `select`, a group larger than the cap uses the first objects by id. Each `voiceMods` name is a modulatable parameter of the instrument's type (`unknown_option`); constant values lie in −1 to 1. |
 | Triggers | `maxPerSecond` 0.1–20. `durationMs` 20–10000. |
 | Effects | At most 8 slots per chain and 4 `reverb` slots per piece. `type` is an effect registry key. Every param exists for the type. Each slot id appears in one chain. |
 | Modulation | At most 16 LFOs, 2 `retrigger` LFOs per instrument, 32 routes, 4 routes per target. `depth` −1 to 1. Targets exist and are modulatable (not `enum`, array or `mod: null`). LFO `rate` 0.01–20 Hz. `tempo` 20–300. |
@@ -482,7 +482,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 | `syntax_error` | error | The script does not parse as TypeScript |
 | `runtime_error` | error | The script throws while running |
 | `timeout` | error | No result within 1500 ms |
-| `unknown_option` | error | An option name is not a parameter of the instrument or effect type, or a property of the layer type |
+| `unknown_option` | error | An option name is not a parameter of the instrument or effect type, or a property of the layer type; a `voiceMods` name is not a modulatable parameter of the instrument |
 | `not_numeric` | error | `follow` on an array parameter (additive `harmonics`); `follow` on a choice parameter is valid and sends the option index |
 | `not_modulatable` | error | `mod` on an enum, array or `mod: null` parameter |
 | `unknown_group` | error | A group key is not in `groups.json` |
@@ -532,7 +532,7 @@ A problem is `{ "severity": "error" | "warning", "code": string, "path": string,
 - The page calls `worker.terminate()` if no response arrives within 1500 ms of posting the build and reports problem `timeout`.
 - The script receives only the builder API. It cannot reach the page, the audio context, the database or the DOM. `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask`, `Date` and `performance` are shadowed, and `Math` is a copy whose `random` is the seeded generator (Program, Determinism).
 - Programs run only for their author: projects are owner-only (`database.md`), and a piece with handlers plays only from its source in the author's own session.
-- In local-only mode the page posts `{ fn: { id, source, arg } }` for each `fn` evaluation and receives `{ fn: { id, value } }` or `{ fn: { id, error } }` (`createSandbox().evalFn`). Values other than finite numbers, text and booleans become `null`.
+- In local-only mode the page posts `{ fn: { id, source, arg } }` for each `fn` evaluation and receives `{ fn: { id, value } }` or `{ fn: { id, error } }` (`createSandbox().evalFn`). Values other than finite numbers, text and booleans become `null`. A call without a reply within 1500 ms terminates the worker like a build timeout; that call and every other pending `fn` call resolve `null`, as they do when the worker fails (`onerror`) or is disposed.
 
 ### VM
 The worker keeps the source and handlers of its last build without errors. Builds and program messages share one queue in `createSandbox`, so a timeout measures only the message being processed.
@@ -548,7 +548,7 @@ The worker keeps the source and handlers of its last build without errors. Build
 - A command is `{ op, at, trace, src, ...args }`. `op` is `play`, `hold`, `glide`, `stop`, `stopAll`, `set` or `layer`; `at` is the handler's program time, `trace` the event's trace id (`null` for timers), `src` the handler id. At most 256 per batch; `dropped` counts the rest.
 - An error is `{ handler, line, message }`. The VM disables that handler. An error from `setup` or `vm` (the kept build failed, or the worker holds no running program) means the program is gone; the page reports it once and stops the program.
 - The page waits up to 250 ms for each `program` reply. Past that it terminates the worker and reports `handler_timeout` (`bindings.md`, Program host). The next build starts a new worker.
-- A build that times out also terminates the worker, which stops a running program.
+- A build or `fn` call that times out also terminates the worker, which stops a running program.
 
 ## Hot reload
 On save in the editor:

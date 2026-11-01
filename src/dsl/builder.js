@@ -420,7 +420,7 @@ export function createBuilder(defs, { line = () => null } = {}) {
           pitch: constRange(o.pitch, RANGES.pitch, `${where} pitch`),
           velocity: o.velocity === undefined ? DEFAULTS.velocity : constRange(o.velocity, RANGES.velocity, `${where} velocity`),
           pan: o.pan === undefined ? DEFAULTS.pan : constRange(o.pan, RANGES.pan, `${where} pan`),
-          voiceMods: Object.fromEntries(Object.entries(mods).map(([k, v]) => [k, toValue(v, `${where} voiceMods.${k}`)])),
+          voiceMods: Object.fromEntries(Object.entries(mods).map(([k, v]) => [k, constRange(v, RANGES.voiceMod, `${where} voiceMods.${k}`)])),
         });
       },
       /** @param {unknown} kind */

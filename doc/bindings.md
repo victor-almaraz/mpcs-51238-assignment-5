@@ -42,7 +42,7 @@ Every other module receives the engine, the sky store, the clock and the `trace(
 8. Freshness reactions `mute` and `only` set `muted` on widgets and call `engine.sync` again; the engine applies the gain change with smoothing.
 9. Every `engine.sync` passes the current value of each followed parameter in `params`, so a sync for a reaction or a hot reload does not reset a followed parameter to its IR value.
 
-On a hot reload the host passes the full widget list to `engine.sync`, calls `setTempo` when the tempo changed, `setFx` for each chain whose slot list changed (and `setFx(id, [])` for a removed instrument with a chain, before the sync), and `setLfos` and `setMods` when either list changed. It then rebinds changed bindings and emits one `RELOAD` record with the changed ids. Stop releases every binding and calls `engine.sync([])`. Panic (`src/audio-host/master.js`) calls `engine.panic(t)`, which releases every voice and resets every effect chain after the voice fade, then Stop, and ramps the master to 0 over 10 ms. A safety-stage `fault` stops the bindings; nothing restarts until the next Run.
+On a hot reload the host passes the full widget list to `engine.sync`, calls `setTempo` when the tempo changed, `setFx` for each chain whose slot list changed (and `setFx(id, [])` for a removed instrument with a chain, before the sync), and `setLfos` and `setMods` when either list changed. It then rebinds changed bindings and emits one `RELOAD` record with the changed ids. A binding is unchanged when its IR entry and its instrument's type are; for an effect follow (`fxParam`, `fxBypass`) the slot list of the owning chain must also be unchanged, because `setFx` on a changed chain resets its parameters and bypass to the IR values and a kept follow would not send again until its value changes. Stop releases every binding and calls `engine.sync([])`. Panic (`src/audio-host/master.js`) calls `engine.panic(t)`, which releases every voice and resets every effect chain after the voice fade, then Stop, and ramps the master to 0 over 10 ms. A safety-stage `fault` stops the bindings; nothing restarts until the next Run.
 
 The master level, master fade-in, safety limiter and duck are engine behavior. Effect chains sit before the safety stage, so the safety stage applies to effect output.
 
@@ -50,8 +50,8 @@ The master level, master fade-in, safety limiter and duck are engine behavior. E
 `src/bind/program.js` (`createProgramHost`) runs a piece's program (`piece-dsl.md`, Program) next to the binding runtime. The audio host creates it in `run` when the IR has `program.handlers` and a VM is attached, and creates it again on every reload of such a piece.
 
 1. **Start.** Records the audio time `t0`, sends `start` with the IR's groups, their current objects from `sky.get` and every source's freshness from `sky.sources`, and applies the reply.
-2. **Batches.** Subscribes to `enter`, `update`, `exit` and `freshness` events of the followed groups and queues them as plain objects. Every 25 ms, when no batch is outstanding, it sends one `batch` with `now = (audioTime − t0) × 1000` and the queued events, then applies the reply. Events that arrive while a batch is outstanding go into the next one.
-3. **Scheduling.** A command's audio time is `t0 + at / 1000 + 0.1`, or the current audio time when that has passed.
+2. **Batches.** Subscribes to `enter`, `update`, `exit` and `freshness` events of the followed groups and queues them as plain objects. Every 25 ms, when no batch is outstanding, it sends one `batch` with `now = (audioTime − t0) × 1000` and the queued events, then applies the reply. Events that arrive while a batch is outstanding go into the next one. At most 4096 events wait; past that the oldest is dropped and traced `BIND` / `dropped`.
+3. **Scheduling.** A command's audio time is `t0 + at / 1000 + 0.1`, or the current audio time when that has passed. It is at most 0.1 s after the current audio time: `at` never exceeds the batch's `now`, and a later `at` is pulled back.
 4. **Stop.** Unsubscribes, stops the batches, releases every held note at the current audio time and sends `stop`. Stop, Panic, a safety `fault`, a safety `error` and a hot reload stop the program host. So does a reply with an error from handler `setup` or `vm`, which means the VM no longer holds the program; the host reports it once as `handler_error`.
 
 Every command is checked again at this boundary, whatever the VM sent:
@@ -62,7 +62,7 @@ Every command is checked again at this boundary, whatever the VM sent:
 | `hold` `{ inst, key, pitch, velocity, pan }` | `noteOff` of a note held under `key`, then `noteOn` with tag `prog:<inst>:k:<key>` and `setVoicePan` | As `play`, and the same note-start budget |
 | `glide` `{ inst, key, pitch, ms }` | `setVoicePitch(tag, pitch, ms)`; without it, `noteOff` and `noteOn`, traced `fallback` | `ms` 0–10,000; ignored when `key` is not held |
 | `stop` `{ inst, key }`, `stopAll` `{ inst }` | `noteOff(pitch, max(t, start + 0.005), tag)` | Ignored when nothing is held |
-| `set` `{ target, value, smoothMs }` | `setParam` (instrument) or `setFxParam` (slot), through a one-pole smoother (`createSmoother`) on the 25 ms tick | `target` names a numeric parameter of an IR instrument or slot; `smoothMs` 0–60,000 |
+| `set` `{ target, value, smoothMs }` | `setParam` (instrument) or `setFxParam` (slot), through a one-pole smoother (`createSmoother`) on the 25 ms tick | `target` names a numeric parameter of an IR instrument or slot (`kind` `number` in the definition tables); `value` is clamped to its range; `smoothMs` 0–60,000 |
 | `set` `{ target: '<slot>.bypass', value }` | `setFxBypass(slot, on)` | `value` is a boolean |
 | `layer` `{ layer, props }` | Merged into the values the session pushes to the renderer | Properties exist for the layer type (`LAYER_DEFS`) and are coerced with `coerceProp`; others are dropped. The flash guard applies in the renderer |
 
@@ -85,7 +85,7 @@ For a `voices` binding:
 - A selected object whose `pitch` is `null` stays selected without sounding; an update with a non-null pitch starts it. A sounding voice whose pitch becomes `null` keeps its pitch.
 - Objects whose `select.by` value is not a finite number sort last. Ties sort by id.
 - Every `noteOff` for a sustained voice uses `max(ctx.currentTime, startTime + 0.005)`, because `noteOff` releases only voices that started before its time and `ctx.currentTime` does not advance within one task.
-- Velocity is rounded and clamped to 1–127 (default 100 when `null`), pitch to 0–127, pan to −1 to 1. `AUDIO` records carry the clamped value and the requested value (`pitchRequested`).
+- Velocity is rounded and clamped to 1–127 (default 100 when `null`), pitch to 0–127, pan and each `voiceMods` value to −1 to 1. `AUDIO` records carry the clamped value and the requested value (`pitchRequested`).
 - Voice options that reference other groups or `orbit` nodes are re-evaluated for every sounding voice on those events and on each orbit post.
 
 Caps: 16 voices per instrument, 4 for granular, 64 in total (`audio/audio-engine-core.md`). The validator enforces per-binding caps. When several bindings target one instrument, the engine's voice stealing applies and the trace records `stolen`.
@@ -111,7 +111,7 @@ The smoother starts from `getParams()[param]` (for an effect parameter, the slot
 ## Effect parameters
 - A `follow` on an effect parameter (`slot.<param>.follow`) behaves like a `param` binding and calls `engine.setFxParam(slotId, param, value)` at up to 30 Hz.
 - `slot.bypass.follow(expr)` calls `engine.setFxBypass(slotId, on)` when the boolean result changes.
-- Enum parameters receive option indices. A `follow` result is rounded to the nearest index.
+- Enum parameters receive option indices. A `follow` result is rounded to the nearest index and clamped to the options; the index is sent unsmoothed, once per change. The runtime reads which parameters are enums from the definition tables (`DEFS.effects[type].params[name].kind`, `src/dsl/load-defs.js`; the `defs` option replaces them in tests).
 
 ## Effects and modulation
 The runtime converts the IR's `lfos` and `mods` to the engine configuration (`audio/modulation.md`):
@@ -204,7 +204,7 @@ Binding tests use these fakes and never construct an `AudioContext`.
 A console export under `tests/fixtures/traces/<name>.jsonl` is paired with `<name>.ir.json`, the IR that was running. `tests/trace-replay.test.js` rebuilds objects from the `CHANGE` records (`data.diff.after`, with `initial` passed through), feeds them through the runtime with fakes, and compares the `AUDIO` records by `event` and `data`.
 
 ## Open items
-- `piece-dsl.md` does not list the effect-follow binding kinds. The runtime follows `src/dsl/ir.schema.json`: `fxParam { slot, param, expr, smoothMs }` and `fxBypass { slot, expr }`. A `param` binding whose `inst` is a slot id is treated the same way.
+- `piece-dsl.md` does not list the effect-follow binding kinds. The runtime follows `src/dsl/ir.schema.json`: `fxParam { slot, param, expr, smoothMs }` and `fxBypass { slot, expr }`. The `inst` of a `param` binding names an instrument (`piece-dsl.md`, Validation).
 - The `bus.setHandler` callback receives `{ type }` with `type` `'fault'`, `'duck'` or `'error'` (`src/audio/master-bus.js`).
 
 ## Sources

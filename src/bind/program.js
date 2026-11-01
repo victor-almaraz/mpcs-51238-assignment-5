@@ -6,7 +6,9 @@ import { createSmoother } from './param.js';
 import { createTokenBucket } from './trigger.js';
 import { LIMITS } from './limits.js';
 import { numberOr, panOf, pitchOf, velocityOf } from './values.js';
-import { PROGRAM } from '../dsl/limits.js';
+import { DEFAULTS, PROGRAM, RANGES } from '../dsl/limits.js';
+import { own } from '../dsl/defs.js';
+import { DEFS } from '../dsl/load-defs.js';
 import { LAYER_DEFS } from '../visual/layer-defs.js';
 import { coerceProp } from '../visual/layer-state.js';
 
@@ -18,8 +20,6 @@ import { coerceProp } from '../visual/layer-state.js';
 const OPS = new Set(['play', 'hold', 'glide', 'stop', 'stopAll', 'set', 'layer']);
 /** Error sources that mean the VM no longer holds the program. */
 const FATAL = new Set(['setup', 'vm']);
-/** Most events queued between two batches; older ones are dropped. */
-const MAX_QUEUED = 4096;
 
 /** @param {any} o */
 const wire = (o) => ({ id: o.id, group: o.group, fields: o.fields ?? {} });
@@ -34,9 +34,10 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
  *   onProblem?: (p: RuntimeProblem) => void,
  *   onLayerValues?: () => void,
  *   newTraceId?: () => string,
- * }} opts
+ *   defs?: import('../dsl/defs.js').Defs,
+ * }} opts  `defs`: normalized definition tables (default DEFS), for the parameters `set` accepts
  */
-export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock, onProblem = () => {}, onLayerValues = () => {}, newTraceId }) {
+export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock, onProblem = () => {}, onLayerValues = () => {}, newTraceId, defs = DEFS }) {
   const emit = createTracer(trace, clock.wallNow ?? Date.now);
   let traceSeq = 0;
   const nextTraceId = newTraceId ?? (() => `program-${(clock.wallNow ?? Date.now)()}-${++traceSeq}`);
@@ -74,7 +75,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
   /** @param {any} e */
   const onSky = (e) => {
     if (!running || !e?.obj || !groups.has(e.obj.group)) return;
-    if (queue.length >= MAX_QUEUED) { queue.shift(); bind('dropped', { reason: 'event queue full' }, e.traceId ?? null, 'warn'); }
+    if (queue.length >= PROGRAM.queuedEvents) { queue.shift(); bind('dropped', { reason: 'event queue full' }, e.traceId ?? null, 'warn'); }
     queue.push({ kind: e.type, obj: wire(e.obj), prev: e.prev ? wire(e.prev) : null, traceId: e.traceId ?? null, initial: e.initial === true });
   };
   /** @param {any} e */
@@ -153,7 +154,10 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
   /** Applies one command. @param {any} cmd @param {string | null} traceId */
   function apply(cmd, traceId) {
     if (!cmd || typeof cmd !== 'object' || !OPS.has(cmd.op)) { invalid(cmd, 'unknown op', traceId); return; }
-    const t = Math.max(clock.audioTime(), t0 + numberOr(cmd.at, 0) / 1000 + PROGRAM.latencyS);
+    // A command's program time is at most the batch's `now`, so its audio time is at most the
+    // latency ahead; a later `at` from a misbehaving VM is pulled back to that.
+    const nowS = clock.audioTime();
+    const t = clamp(t0 + numberOr(cmd.at, 0) / 1000 + PROGRAM.latencyS, nowS, nowS + PROGRAM.latencyS);
     switch (cmd.op) {
       case 'play': {
         const inst = instOf(cmd, traceId);
@@ -161,7 +165,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
         if (!inst) return;
         if (pitch === null) { invalid(cmd, 'pitch', traceId); return; }
         const tag = `prog:${cmd.inst}:n${++noteSeq}`;
-        const dur = clamp(numberOr(cmd.durationMs, LIMITS.defaultDurationMs), 20, 10_000);
+        const dur = clamp(numberOr(cmd.durationMs, DEFAULTS.durationMs), RANGES.durationMs[0], RANGES.durationMs[1]);
         if (start(inst, cmd, pitch, velocityOf(cmd.velocity), t, tag, traceId)) inst.noteOff(pitch, t + dur / 1000, tag);
         return;
       }
@@ -215,8 +219,11 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
           audio('setFxBypass', { slot: id, on: cmd.value }, traceId);
           return;
         }
+        const spec = insts.has(id) ? own(defs.instruments, insts.get(id).type) : own(defs.effects, slots.get(id).type);
+        const def = own(spec?.params, param);
+        if (def?.kind !== 'number') { invalid(cmd, 'not a numeric parameter', traceId); return; }
         if (typeof cmd.value !== 'number' || !Number.isFinite(cmd.value)) { invalid(cmd, 'value', traceId); return; }
-        if (!setParam(target, cmd.value, clamp(numberOr(cmd.smoothMs, LIMITS.defaultSmoothMs), 0, 60_000), traceId)) invalid(cmd, 'instrument not running', traceId);
+        if (!setParam(target, clamp(cmd.value, def.min, def.max), clamp(numberOr(cmd.smoothMs, DEFAULTS.smoothMs), RANGES.smoothMs[0], RANGES.smoothMs[1]), traceId)) invalid(cmd, 'instrument not running', traceId);
         return;
       }
       case 'layer': {

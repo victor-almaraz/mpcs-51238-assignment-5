@@ -127,7 +127,7 @@ Choice parameters (`waveform`, `source`) accept `follow` with an option index bu
 |---|---|
 | `sky.group(key)` | A group |
 | `.top(n, field, order)` | The first `n` objects by `field`; `order` `'desc'` or `'asc'` |
-| `.voices(inst, { pitch, velocity, pan })` | One held note per object |
+| `.voices(inst, { pitch, velocity, pan, voiceMods })` | One held note per object; `voiceMods` maps parameters that `.mod()` accepts to per-note offsets, −1–1 |
 | `.on(kind)` | Events: `'enter'`, `'update'`, `'exit'` |
 | `.when(expr)` | Events where `expr` is true |
 | `.trigger(inst, { pitch, velocity, durationMs, maxPerSecond })` | One note per event; defaults velocity 100, 250 ms, 2 per second |
@@ -224,7 +224,7 @@ Handlers are registered in the setup; commands and `read.*` work inside handlers
 ## Escape hatches
 | Call | Effect |
 |---|---|
-| `fn('o => ...')` | An expression computed by a JavaScript function, given as a string; the string is not type-checked |
+| `fn('o => ...')` | An expression computed by a JavaScript function, given as a string; the string is not type-checked. A call that throws or runs longer than 1.5 s gives `null` |
 | `layer.shader(glsl, props)` | A fragment-shader layer |
 
 A piece using either runs in your editor only and cannot be shared. `fn` is not allowed in layer properties.
