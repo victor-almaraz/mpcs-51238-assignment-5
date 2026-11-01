@@ -34,7 +34,7 @@ Most groups change every few minutes to hours ([Sky data](sky-data)). Use **Repl
 | `granular_sample` | Granular `source: 'sample'` | Pieces cannot load audio files; use `saw`, `noise` or `chord` |
 | `slot_reused` | One effect placed in two chains | Create a second effect |
 | `slot_unplaced` | `follow` or `mod` on an effect that is in no chain | Pass the effect to `inst.fx(...)` or `master.fx(...)` |
-| `lfo_rate_range` | An LFO `rate` expression does not end in `.map(...)` or `.clamp(...)` | End the expression with one of them |
+| `lfo_rate_range` | An LFO `rate` expression does not end in `.map(...)` or `.clamp(...)`, or its output range is empty within 0.01–20 Hz | End the expression with one of them, with a low end below the high end |
 | `audio_outside_layer` | `audio.*` used outside a layer property | Use audio signals in layers only |
 | `fn_in_layer` | `fn()` in a layer property | Use built-in expression steps |
 | `expr_too_deep` | An expression nests more than 32 levels | Simplify the expression |

@@ -112,3 +112,19 @@ export function backgroundValue(ir, layerProps) {
 export function blocking(problems) {
   return problems.some((p) => p.severity === 'error');
 }
+
+/**
+ * Accepts a sandbox build only if the page's own validation passes too (doc/piece-dsl.md,
+ * Sandbox): the worker validated in the script's realm, where built-ins may be patched.
+ * Returns the IR to load (or null) and the problems to show: the worker's, which carry script
+ * lines, unless only the page found errors.
+ * @param {{ ir: any, problems: any[] }} r sandbox result
+ * @param {(ir: any) => any[]} validate the page's validateIr, bound to defs and snapshot
+ * @returns {{ ir: any, problems: any[] }}
+ */
+export function acceptBuild(r, validate) {
+  if (!r.ir || blocking(r.problems)) return { ir: null, problems: r.problems };
+  const page = validate(r.ir);
+  if (blocking(page)) return { ir: null, problems: page };
+  return { ir: r.ir, problems: r.problems };
+}

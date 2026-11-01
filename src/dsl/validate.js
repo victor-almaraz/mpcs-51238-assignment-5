@@ -209,7 +209,8 @@ class Checker {
         }
         this.range(r.min, RANGES.lfoRate, `${p}/rate/min`, 'LFO rate');
         this.range(r.max, RANGES.lfoRate, `${p}/rate/max`, 'LFO rate');
-        if (r.min > r.max) this.add('ir_schema', `${p}/rate`, 'LFO rate min must not exceed max');
+        // The runtime needs a non-empty range (src/bind/mod-config.js); equal ends would divide by zero.
+        if (!(r.min < r.max)) this.add('lfo_rate_range', `${p}/rate`, `The LFO rate range ${r.min}–${r.max} Hz is empty; its low end must be below its high end`);
       }
     });
   }

@@ -11,7 +11,8 @@ import { DEFS } from '@/src/dsl/load-defs.js';
 import { loadIr } from '@/src/dsl/migrations.js';
 import { sourceOf } from '@/src/sky/groups.js';
 import { createAutosave } from '@/src/ui/autosave.js';
-import { blocking } from '@/src/ui/ir-helpers.js';
+import { validateIr } from '@/src/dsl/validate.js';
+import { acceptBuild, blocking } from '@/src/ui/ir-helpers.js';
 import { COMMANDS, availableCommands } from '@/src/ui/palette.js';
 import { BLANK_SOURCE, createLastRunStore, nameError, uniqueName } from '@/src/ui/projects.js';
 import { DEFAULT_LAYOUT, loadLayout, saveLayout } from '@/src/ui/layout.js';
@@ -115,9 +116,10 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
   /** Builds the current source; on success loads (and hot-reloads) the IR. */
   const build = useCallback(async (text: string) => {
     if (!session) return null;
-    const r = await session.sandbox.build(text, DEFS, { snapshot: snapshotOf(session.sky) });
+    const snapshot = snapshotOf(session.sky);
+    const r = acceptBuild(await session.sandbox.build(text, DEFS, { snapshot }), (built) => validateIr(built, DEFS, { snapshot }));
     setBuildProblems(r.problems);
-    if (r.ir && !blocking(r.problems)) {
+    if (r.ir) {
       setIr(r.ir);
       session.load(r.ir);
       return r.ir;
@@ -137,24 +139,31 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
     build(sourceRef.current);
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Autosave (project mode): source and IR 2 s after the last edit.
+  // Autosave (project mode): source and IR 2 s after the last edit. One per project: `build` and
+  // `client` change while the page loads, so they are read through refs, and a pending edit is
+  // never dropped with a replaced autosave.
+  const buildRef = useRef(build);
+  const clientRef = useRef(client);
+  useEffect(() => { buildRef.current = build; clientRef.current = client; }, [build, client]);
+  const projectId = project?.id ?? null;
   const autosave = useMemo(() => {
-    if (mode !== 'project' || !project) return null;
+    if (mode !== 'project' || !projectId) return null;
     return createAutosave<string>({
       isOnline: () => typeof navigator === 'undefined' || navigator.onLine,
       onChange: (s) => { setSave(s.state); setSaveError(s.error); },
       save: async (text) => {
+        const client = clientRef.current;
         if (!client) throw new Error('The database is unavailable');
-        const built = await build(text);
+        const built = await buildRef.current(text);
         const now = new Date().toISOString();
         const row: Record<string, unknown> = { source: text, updated_at: now };
         if (built) { row.ir = built; row.ir_version = built.irVersion ?? 1; row.local_only = !!built.localOnly; }
-        const { error } = await client.from('projects').update(row).eq('id', project.id);
+        const { error } = await client.from('projects').update(row).eq('id', projectId);
         if (error) throw new Error(error.message);
-        if (built) await syncSubscriptions(client, project.id, built.groups ?? []);
+        if (built) await syncSubscriptions(client, projectId, built.groups ?? []);
       },
     });
-  }, [mode, project, client, build]);
+  }, [mode, projectId]);
   useEffect(() => () => autosave?.dispose(), [autosave]);
   useEffect(() => {
     const on = () => autosave?.connectivity();
@@ -170,6 +179,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
 
   // Try mode rebuilds 2 s after the last edit without saving.
   const tryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (tryTimer.current) clearTimeout(tryTimer.current); }, []);
   const onChange = useCallback((text: string) => {
     sourceRef.current = text;
     setSource(text);

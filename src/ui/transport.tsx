@@ -4,7 +4,7 @@
 // Stop, Panic / Reset, master volume, meter with 1 s peak hold, Limit badge, the start notice and
 // the safety notices with their live regions.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { levelLabel } from '@/src/ui/status.js';
 import { PHOTOSENSITIVITY_WARNING, VOLUME_WARNING } from './safety-text';
 import type { PieceSession, SessionState } from './hooks';
@@ -18,15 +18,18 @@ let startNoticeDismissed = false;
 
 const btn = button('secondary', 'sm');
 
+/** `request` keeps one identity across renders, so callers can list it in memo dependencies. */
 export function useStartNotice(onStart: () => void) {
   const [open, setOpen] = useState(false);
-  const request = () => {
-    if (startNoticeDismissed) onStart();
+  const onStartRef = useRef(onStart);
+  useEffect(() => { onStartRef.current = onStart; }, [onStart]);
+  const request = useCallback(() => {
+    if (startNoticeDismissed) onStartRef.current();
     else setOpen(true);
-  };
+  }, []);
   const dialog = open ? (
     <StartNotice
-      onStart={() => { startNoticeDismissed = true; setOpen(false); onStart(); }}
+      onStart={() => { startNoticeDismissed = true; setOpen(false); onStartRef.current(); }}
       onCancel={() => setOpen(false)}
     />
   ) : null;

@@ -26,14 +26,21 @@ export function CommandPalette({ open, root, onClose, isMac }: { open: boolean; 
   const trap = useDialogFocus(box);
   const page = stack[stack.length - 1];
 
+  // Reset only when the palette opens. A new `root` while open (the caller re-rendered) replaces the
+  // bottom page and keeps the query, the open sub-page and the focus.
+  const rootRef = useRef(root);
+  useEffect(() => {
+    rootRef.current = root;
+    setStack((s) => (s[0] === root ? s : [root, ...s.slice(1)]));
+  }, [root]);
   useEffect(() => {
     if (!open) return;
-    setStack([root]);
+    setStack([rootRef.current]);
     setQuery('');
     setActive(0);
     const t = setTimeout(() => input.current?.focus(), 0);
     return () => clearTimeout(t);
-  }, [open, root]);
+  }, [open]);
 
   useEffect(() => {
     let stopped = false;
