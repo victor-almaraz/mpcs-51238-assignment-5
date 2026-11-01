@@ -70,6 +70,8 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
   /** @type {ReturnType<typeof createMasterControls> | null} */ let master = null;
   let valuesTimer = null;
   let disposed = false;
+  /** Advanced by Stop, Panic, Restart Audio and dispose; a Run whose token is stale is undone. */
+  let runToken = 0;
   let sandbox = null;
 
   const set = (/** @type {Partial<SessionState>} */ patch) => {
@@ -202,19 +204,24 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
     run() {
       if (!host || !ir) return Promise.reject(new Error(host ? 'No piece is loaded' : 'The audio engine is still loading'));
       const pieceIr = ir;
+      const token = ++runToken;
       const p = host.run(pieceIr);
       set({ audio: master?.muted ? 'muted' : 'starting' });
       return p.then(() => {
+        // Stop, Panic or Restart Audio came while starting (doc/ui.md, Editor): they win.
+        if (token !== runToken) { host?.stop(); return; }
         set({ audio: master?.muted ? 'muted' : 'playing', playingIr: pieceIr, notices: state.notices.filter((n) => n.kind !== 'fault' && n.kind !== 'engineFault') });
         if (valuesTimer === null) valuesTimer = setInterval(pushValues, LAYER_VALUES_MS);
         pushValues();
       }, (err) => {
+        if (token !== runToken) return;
         set({ audio: 'stopped', error: `Run failed: ${err instanceof Error ? err.message : String(err)}` });
         throw err;
       });
     },
 
     stop() {
+      runToken++;
       host?.stop();
       if (valuesTimer !== null) clearInterval(valuesTimer);
       valuesTimer = null;
@@ -224,6 +231,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
 
     /** Panic: releases every voice, stops and mutes the master (doc/audio/audio-safety.md). */
     panic() {
+      runToken++;
       if (!master) { host?.stop(); return; }
       master.panic();
       if (valuesTimer !== null) clearInterval(valuesTimer);
@@ -252,6 +260,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
     /** Restart Audio after a safety-stage error (doc/audio/audio-safety.md, Wiring). */
     restartAudio() {
       if (!host) return Promise.resolve();
+      runToken++;
       if (valuesTimer !== null) clearInterval(valuesTimer);
       valuesTimer = null;
       renderer?.setLayerValues({});
@@ -365,6 +374,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
 
     dispose() {
       disposed = true;
+      runToken++;
       if (valuesTimer !== null) clearInterval(valuesTimer);
       valuesTimer = null;
       try { host?.dispose(); } catch { /* engine already gone */ }

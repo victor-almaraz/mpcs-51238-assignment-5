@@ -11,7 +11,8 @@ const stationChord = () => JSON.parse(readFileSync(new URL('../content/starters/
 
 const fakeWorker = () => ({ postMessage() {}, terminate() {}, onmessage: null });
 
-function fakeEngineModule() {
+/** @param {{ gate?: Promise<void> }} [o] gate: ensureRunning resolves only after it */
+function fakeEngineModule({ gate } = {}) {
   const fades = [];
   let engine = null;
   const ctx = { currentTime: 0, state: 'running', addEventListener() {} };
@@ -22,7 +23,7 @@ function fakeEngineModule() {
   return {
     fades, master, engine: () => engine,
     module: {
-      ensureRunning: () => Promise.resolve(ctx),
+      ensureRunning: () => (gate ? gate.then(() => ctx) : Promise.resolve(ctx)),
       buildMasterBus: async () => ({ worklets: {}, setHandler() {}, fadeIn: (g) => fades.push(Math.round(g * 1000) / 1000), master, maxMaster: 1 }),
       Engine,
     },
@@ -62,6 +63,32 @@ test('load, Run, reload, Panic and Reset with a fake engine', async (t) => {
   assert.deepEqual(reload.map((r) => r.event), ['run', 'reload'], 'records without a cause get their own trace id');
   assert.ok(reload.every((r) => r.traceId.startsWith('reload-')));
 });
+
+for (const action of ['stop', 'panic']) {
+  test(`${action} while Run is starting holds: the piece does not start behind it`, async (t) => {
+    let release;
+    const fake = fakeEngineModule({ gate: new Promise((r) => { release = r; }) });
+    const s = createPieceSession({ client: null, engineModule: fake.module, createWorker: fakeWorker, trace: createTraceBus().trace });
+    t.after(() => s.dispose());
+    await s.ready;
+    s.load(stationChord());
+    const started = s.run();
+    assert.equal(s.getState().audio, 'starting');
+    s[action]();
+    release();
+    await started;
+    const want = action === 'stop' ? 'stopped' : 'muted';
+    assert.equal(s.getState().audio, want);
+    assert.equal(s.getState().playingIr, null);
+    if (action === 'panic') {
+      s.moveVolume(-20);
+      assert.equal(s.getState().audio, 'stopped', 'ending the mute does not bring the piece back');
+    }
+    const next = stationChord();
+    next.instruments[0].volumeDb = -18;
+    assert.deepEqual(s.load(next).changed, [], 'no running piece to hot-reload');
+  });
+}
 
 test('replay needs the database', async () => {
   const fake = fakeEngineModule();

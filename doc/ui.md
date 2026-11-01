@@ -174,6 +174,7 @@ Behavior:
 - Saving rebuilds the IR and hot-reloads the running piece (`piece-dsl.md`). A failed build focuses Problems and leaves the running piece unchanged.
 - Autosave writes `source` and `ir` to `projects` 2 s after the last edit. Save state: `Saved`, `Saving…`, `Unsaved changes`, `Offline`.
 - Hot reload never starts audio; only Run does.
+- Stop, Panic and Restart Audio win over a Run that is still starting: when the start completes after one of them, the piece is stopped at once and the audio state stays `stopped` or `muted`. A Reset after a Panic therefore never brings back a piece that was starting.
 - Layout: the side panel (Explorer, Search or Sky), the preview and the bottom panel can each be hidden, so the editor can take the window. Three toggle buttons on the right of the toolbar (Lucide `PanelLeft`, `PanelRight`, `PanelBottom`, `aria-pressed`, the shortcut in the tooltip) show and change their state; the shortcuts and the palette commands below do the same. The layout is kept in `localStorage` under `sphaerenmusik.layout` and restored on the next visit. All three are shown by default. A failed build shows the bottom panel on Problems.
 - Hiding the preview keeps the piece running and its picture state; only the pane is hidden.
 - The transport strip spans the top of the editor and preview, and no layout toggle hides it, so Panic is always visible (`audio/audio-safety.md`, Safety UI). It holds Run, Stop, Panic, the master volume and the level meter with its Limit badge. The master volume starts at `audio.masterDb` and cannot exceed `audio.maxMasterDb`. The transport never moves between places: remounting it would reset the slider's shown value while the engine kept its level.
@@ -192,8 +193,8 @@ Behavior:
 ## Running (`/projects/[id]/run`)
 - The preview fills the window. The cursor and the chrome (title, transport, links) start hidden and appear on pointer movement, a tap or a key press; they hide again after 3 s without any. They stay while the pointer is over the chrome, while focus is inside it (keyboard use, the start notice) and while the start notice is open. While hidden and stopped, the preview reads "Move the pointer or press a key to show the controls"; while shown and stopped, "Press Run to start sound".
 - Overlays toggle independently: console (`C`), sounding voices (`N`), status bar (`S`).
-- `Escape` returns to the editor, which stops the piece. Panic stays available as a button in the chrome.
-- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin Listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
+- `Escape` is Panic in every run view (`/listen`, `/projects/[id]/run`, kiosk included), as `audio/audio-safety.md` (Safety UI) requires; the chrome also keeps the Panic button. `E` returns to the editor, which stops the piece, as does the Editor link in the chrome. The chrome's key hint reads "Esc panic · C console · N voices · S status", plus "· E editor" where there is an editor.
+- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin Listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect. A Panic in kiosk mode holds until the page is reloaded: no Reset is reachable without the chrome.
 - Freshness is shown in the status bar and is also audible and visible through the project's reactions.
 
 ## Settings (`/settings`)
