@@ -11,7 +11,7 @@ Use bindings ([Sound](sound)) when each object maps straight onto a note or a pa
 
 ## A first handler
 ```ts piece
-const bell = fm({ volume: -9, ratio: 3.5, index: 5, indexDecay: 1.5 });
+const bell = fm({ volume: -6, ratio: 3.5, index: 5, indexDecay: 1.5 });
 let count = 0;
 
 on('jpl.scout', 'enter', (o) => {
@@ -25,10 +25,10 @@ on('jpl.scout', 'enter', (o) => {
 When the piece starts, every object already in the group arrives once as an `enter`, with `e.initial` set to `true`:
 
 ```ts piece
-const pad = additive({ volume: -12, attack: 2, release: 4 });
+const pad = additive({ volume: -6, attack: 2, release: 4 });
 
 on('celestrak.stations', 'enter', (o, e) => {
-  pad.hold(o.id, 48 + (Number(o.meanMotion) % 24), { velocity: e.initial ? 50 : 80 });
+  pad.hold(o.id, 48 + (Number(o.meanMotion) % 24), { velocity: e.initial ? 70 : 100 });
 });
 on('celestrak.stations', 'exit', (o) => pad.stop(o.id));
 ```
@@ -39,7 +39,7 @@ on('celestrak.stations', 'exit', (o) => pad.stop(o.id));
 ```ts piece
 tempo(96);
 scale('D', 'dorian');
-const pluckey = pluck({ volume: -9, decay: 3 });
+const pluckey = pluck({ volume: -6, decay: 3 });
 const chord = [0, 3, 7, 10];
 let root = 50;
 let step = 0;
@@ -75,10 +75,10 @@ Commands work only inside handlers. In the setup they stop the build with `io_ou
 `read.swpc(path)`, `read.group(key)`, `read.object(id)` and `read.freshness(source)` return the current sky inside a handler. A piece reads only groups it follows: groups named in `on`, bindings, layers and `sky.swpc`, plus any listed with `follow(...)`:
 
 ```ts piece
-const drone = subtractive({ volume: -12, attack: 2, release: 3, cutoff: 800 });
+const drone = subtractive({ volume: -6, attack: 2, release: 3, cutoff: 800 });
 follow('swpc.wind', 'swpc.kp');
 
-on('swpc.wind', 'update', () => {
+on('swpc.wind', '*', () => {
   const speed = Number(read.swpc('wind.speed') ?? 400);
   const kp = Number(read.swpc('kp.kp') ?? 0);
   drone.hold('drone', kp >= 5 ? 31 : 36);
