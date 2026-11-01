@@ -1,6 +1,6 @@
 ---
 title: Visuals
-order: 6
+order: 7
 ---
 
 # Visuals

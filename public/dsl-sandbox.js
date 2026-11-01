@@ -9,10 +9,14 @@
 // (doc/piece-dsl.md, Sandbox). Messages:
 //   page → worker  { source, defs? }               worker → page  { ir, problems }
 //   page → worker  { fn: { id, source, arg } }     worker → page  { fn: { id, value } | { id, error } }
+//   page → worker  { program: { id, op, ... } }    worker → page  { program: { id, commands, errors, dropped } }
 // `defs` is the normalized definition object (src/dsl/defs.js); the worker keeps the last one sent.
+// The worker keeps the source of its last build without errors and runs it as the program
+// (doc/piece-dsl.md, VM).
 
 var _sucrase = require('sucrase');
 var _runscriptjs = require('./run-script.js');
+var _programjs = require('./program.js');
 var _problemcodesjs = require('./problem-codes.js');
 
 /** Network and storage globals removed before any script runs. */
@@ -53,10 +57,42 @@ function evalFn(source, arg) {
   return typeof v === 'number' ? (Number.isFinite(v) ? v : null) : typeof v === 'string' || typeof v === 'boolean' ? v : null;
 }
 
+/** @param {unknown} id */
+const emptyRun = (id) => ({ id, commands: [], errors: [], dropped: 0 });
+
+/**
+ * Handles one program message (doc/piece-dsl.md, VM).
+ * @param {any} msg
+ * @param {{ kept: { source: string, defs: any } | null, runner: ReturnType<typeof createRunner> | null }} state
+ */
+ function handleProgram(msg, state) {
+  const id = _nullishCoalesce(_optionalChain([msg, 'optionalAccess', _ => _.id]), () => ( null));
+  if (_optionalChain([msg, 'optionalAccess', _2 => _2.op]) === 'start') {
+    _optionalChain([state, 'access', _3 => _3.runner, 'optionalAccess', _4 => _4.stop, 'call', _5 => _5()]);
+    state.runner = null;
+    if (!state.kept) return { ...emptyRun(id), errors: [{ handler: 'setup', line: null, message: 'The sandbox has no built piece to run' }] };
+    // Setup runs again so the program starts from fresh variables.
+    const built = _runscriptjs.buildPiece.call(void 0, state.kept.source, state.kept.defs, { transform: removeTypes });
+    if (!built.ir || !built.program) {
+      const p = built.problems[0];
+      return { ...emptyRun(id), errors: [{ handler: 'setup', line: _nullishCoalesce(_optionalChain([p, 'optionalAccess', _6 => _6.line]), () => ( null)), message: _nullishCoalesce(_optionalChain([p, 'optionalAccess', _7 => _7.message]), () => ( 'The piece did not build')) }] };
+    }
+    state.runner = _programjs.createRunner.call(void 0, built.program);
+    return { id, ...state.runner.start({ groups: msg.groups, objects: msg.objects }) };
+  }
+  if (_optionalChain([msg, 'optionalAccess', _8 => _8.op]) === 'batch') return state.runner ? { id, ...state.runner.batch(msg) } : emptyRun(id);
+  if (_optionalChain([msg, 'optionalAccess', _9 => _9.op]) === 'stop') {
+    _optionalChain([state, 'access', _10 => _10.runner, 'optionalAccess', _11 => _11.stop, 'call', _12 => _12()]);
+    state.runner = null;
+    return emptyRun(id);
+  }
+  return { ...emptyRun(id), errors: [{ handler: 'vm', line: null, message: `Unknown program message ${String(_optionalChain([msg, 'optionalAccess', _13 => _13.op]))}` }] };
+} exports.handleProgram = handleProgram;
+
 /**
  * Handles one message and returns the reply.
  * @param {any} data
- * @param {{ defs: any }} state
+ * @param {{ defs: any, kept?: { source: string, defs: any } | null, runner?: any }} state
  */
  function handleMessage(data, state) {
   if (data && typeof data === 'object' && data.fn) {
@@ -64,31 +100,39 @@ function evalFn(source, arg) {
     try {
       return { fn: { id, value: evalFn(String(source), arg) } };
     } catch (e) {
-      return { fn: { id, error: String(/** @type {any} */ _nullishCoalesce(_optionalChain([(e), 'optionalAccess', _ => _.message]), () => ( e))) } };
+      return { fn: { id, error: String(/** @type {any} */ _nullishCoalesce(_optionalChain([(e), 'optionalAccess', _14 => _14.message]), () => ( e))) } };
     }
   }
-  if (_optionalChain([data, 'optionalAccess', _2 => _2.defs])) state.defs = data.defs;
+  if (data && typeof data === 'object' && data.program) {
+    return { program: handleProgram(data.program, /** @type {any} */ (state)) };
+  }
+  if (_optionalChain([data, 'optionalAccess', _15 => _15.defs])) state.defs = data.defs;
   if (!state.defs) return { ir: null, problems: [_problemcodesjs.problem.call(void 0, 'runtime_error', '', 'The sandbox received no definition tables')] };
-  return _runscriptjs.buildPiece.call(void 0, _optionalChain([data, 'optionalAccess', _3 => _3.source]), state.defs, { transform: removeTypes, snapshot: _optionalChain([data, 'optionalAccess', _4 => _4.snapshot]) });
+  const { ir, problems } = _runscriptjs.buildPiece.call(void 0, _optionalChain([data, 'optionalAccess', _16 => _16.source]), state.defs, { transform: removeTypes, snapshot: _optionalChain([data, 'optionalAccess', _17 => _17.snapshot]) });
+  if (ir && !problems.some((p) => p.severity === 'error')) state.kept = { source: String(data.source), defs: state.defs };
+  return { ir, problems };
 } exports.handleMessage = handleMessage;
 
 const g = /** @type {any} */ (globalThis);
 lockGlobals(g);
-const state = { defs: null };
+const state = { defs: null, kept: null, runner: null };
 g.onmessage = (/** @type {MessageEvent} */ e) => {
   /** @type {any} */
   let reply;
   try {
     reply = handleMessage(e.data, state);
   } catch (err) {
-    reply = { ir: null, problems: [_problemcodesjs.problem.call(void 0, 'runtime_error', '', String(/** @type {any} */ _nullishCoalesce(_optionalChain([(err), 'optionalAccess', _5 => _5.message]), () => ( err))))] };
+    const message = String(/** @type {any} */ _nullishCoalesce(_optionalChain([(err), 'optionalAccess', _18 => _18.message]), () => ( err)));
+    reply = _optionalChain([e, 'access', _19 => _19.data, 'optionalAccess', _20 => _20.program])
+      ? { program: { ...emptyRun(_nullishCoalesce(e.data.program.id, () => ( null))), errors: [{ handler: 'vm', line: null, message }] } }
+      : { ir: null, problems: [_problemcodesjs.problem.call(void 0, 'runtime_error', '', message)] };
   }
   g.postMessage(reply);
 };
 // Loaded: the page starts its build timeout from here (doc/piece-dsl.md, Sandbox).
 g.postMessage({ ready: true });
 
-}, {"sucrase":1,"./run-script.js":2,"./problem-codes.js":3}],
+}, {"sucrase":1,"./run-script.js":2,"./program.js":3,"./problem-codes.js":4}],
 /* node_modules/sucrase/dist/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _CJSImportProcessor = require('./CJSImportProcessor'); var _CJSImportProcessor2 = _interopRequireDefault(_CJSImportProcessor);
 var _computeSourceMap = require('./computeSourceMap'); var _computeSourceMap2 = _interopRequireDefault(_computeSourceMap);
@@ -224,14 +268,16 @@ function getSucraseContext(code, options) {
   return {tokenProcessor, scopes, nameManager, importProcessor, helperManager};
 }
 
-}, {"./CJSImportProcessor":4,"./computeSourceMap":5,"./HelperManager":6,"./identifyShadowedGlobals":7,"./NameManager":8,"./Options":9,"./parser":10,"./TokenProcessor":11,"./transformers/RootTransformer":12,"./util/formatTokens":13,"./util/getTSImportedNames":14}],
+}, {"./CJSImportProcessor":5,"./computeSourceMap":6,"./HelperManager":7,"./identifyShadowedGlobals":8,"./NameManager":9,"./Options":10,"./parser":11,"./TokenProcessor":12,"./transformers/RootTransformer":13,"./util/formatTokens":14,"./util/getTSImportedNames":15}],
 /* src/dsl/run-script.js */ [function (module, exports, require) {
-"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// Builds a piece from script source: remove types, run the script once against the builder API,
-// validate the IR, and attach script lines to problems (doc/piece-dsl.md, Sandbox). The sandbox
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// Builds a piece from script source: remove types, run the script's setup against the builder API,
+// validate the IR, and attach script lines to problems (doc/piece-dsl.md, Sandbox). The result
+// also carries the program (handlers with their functions) for the VM (doc/piece-dsl.md, VM). The sandbox
 // worker, the starter build and the tests call `buildPiece`; the type-removal function is
 // injected so this module has no dependency on Sucrase's packaging.
 
 var _builderjs = require('./builder.js');
+var _programjs = require('./program.js');
 var _limitsjs = require('./limits.js');
 var _problemcodesjs = require('./problem-codes.js');
 var _validatejs = require('./validate.js');
@@ -244,7 +290,20 @@ var _validatejs = require('./validate.js');
 const SHADOWED = [
   'self', 'globalThis', 'postMessage', 'close', 'onmessage', 'addEventListener', 'removeEventListener',
   'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts', 'indexedDB', 'caches', 'Worker',
+  'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'queueMicrotask', 'requestAnimationFrame',
+  'Date', 'performance',
 ];
+/** Shadowed globals that explain themselves when a script uses them (doc/piece-dsl.md, Program, Determinism). */
+const REPLACED = /** @type {Record<string, string>} */ ({
+  setTimeout: 'after(ms, fn)', setInterval: 'every(interval, fn)', clearTimeout: 'the function after() returns',
+  clearInterval: 'the function after() returns', queueMicrotask: 'after(0, fn)', requestAnimationFrame: 'every(interval, fn)',
+  Date: 'time()', performance: 'time()',
+});
+/** @param {string} name */
+const unavailable = (name) => {
+  const fail = () => { throw new TypeError(`${name} is not available in piece scripts; use ${REPLACED[name]}`); };
+  return new Proxy(function () {}, { get: fail, apply: fail, construct: fail });
+};
 const MARK = '__sphaerenmusikLine0__';
 const FRAME = new RegExp(`${_limitsjs.SCRIPT_URL.replace('.', '\\.')}:(\\d+):\\d+`);
 
@@ -252,7 +311,7 @@ const FRAME = new RegExp(`${_limitsjs.SCRIPT_URL.replace('.', '\\.')}:(\\d+):\\d
  * @param {unknown} source script source
  * @param {Defs} defs normalized definition tables (defs.js)
  * @param {{ transform: Transform, snapshot?: Record<string, { fields: Record<string, unknown> }[]> }} opts
- * @returns {{ ir: any | null, problems: Problem[] }}
+ * @returns {{ ir: any | null, problems: Problem[], program?: any }}
  */
  function buildPiece(source, defs, { transform, snapshot }) {
   if (typeof source !== 'string') return { ir: null, problems: [_problemcodesjs.problem.call(void 0, 'runtime_error', '', 'The script source must be text')] };
@@ -270,12 +329,12 @@ const FRAME = new RegExp(`${_limitsjs.SCRIPT_URL.replace('.', '\\.')}:(\\d+):\\d
 
   let base = 0;
   const line = () => lineOf(new Error().stack, base);
-  const { api, finish } = _builderjs.createBuilder.call(void 0, defs, { line });
+  const { api, finish, seededMath } = _builderjs.createBuilder.call(void 0, defs, { line });
   const names = Object.keys(api);
   let run;
   try {
     // Line 1 of the body records its own stack line, so script line n is that line + n.
-    run = new Function(MARK, ...names, ...SHADOWED, `'use strict';${MARK}();\n${code}\n//# sourceURL=${_limitsjs.SCRIPT_URL}`);
+    run = new Function(MARK, ...names, 'Math', ...SHADOWED, `'use strict';${MARK}();\n${code}\n//# sourceURL=${_limitsjs.SCRIPT_URL}`);
   } catch (e) {
     return { ir: null, problems: [_problemcodesjs.problem.call(void 0, 'syntax_error', '', String(/** @type {any} */ _nullishCoalesce(_optionalChain([(e), 'optionalAccess', _4 => _4.message]), () => ( e))))] };
   }
@@ -283,11 +342,13 @@ const FRAME = new RegExp(`${_limitsjs.SCRIPT_URL.replace('.', '\\.')}:(\\d+):\\d
   const limit = Error.stackTraceLimit;
   Error.stackTraceLimit = 64;
   try {
-    run(() => { base = _nullishCoalesce(lineOf(new Error().stack, 0), () => ( 0)); }, ...names.map((n) => api[n]));
+    run(() => { base = _nullishCoalesce(lineOf(new Error().stack, 0), () => ( 0)); }, ...names.map((n) => api[n]), seededMath,
+      ...SHADOWED.map((n) => (n in REPLACED ? unavailable(n) : undefined)));
   } catch (e) {
     const err = /** @type {any} */ (e);
     const msg = err instanceof Error ? `${err.name === 'Error' ? '' : `${err.name}: `}${err.message}` : `Uncaught ${String(err)}`;
-    return { ir: null, problems: [_problemcodesjs.problem.call(void 0, 'runtime_error', '', msg, err instanceof Error ? lineOf(err.stack, base) : null)] };
+    const code = err instanceof _programjs.ProgramError ? err.code : 'runtime_error';
+    return { ir: null, problems: [_problemcodesjs.problem.call(void 0, code, '', msg, err instanceof Error ? lineOf(err.stack, base) : null)] };
   } finally {
     Error.stackTraceLimit = limit;
   }
@@ -299,7 +360,8 @@ const FRAME = new RegExp(`${_limitsjs.SCRIPT_URL.replace('.', '\\.')}:(\\d+):\\d
     return { ir: null, problems: [_problemcodesjs.problem.call(void 0, 'expr_too_deep', '', `The piece could not be serialized: ${/** @type {any} */ _nullishCoalesce(_optionalChain([(e), 'optionalAccess', _5 => _5.message]), () => ( e))}`)] };
   }
   const problems = _validatejs.validateIr.call(void 0, built.ir, defs, { snapshot }).map((p) => ({ ...p, line: lineFor(p.path, built.lines) }));
-  return { ir: built.ir, problems };
+  const program = { ...built.program, lineOf: (/** @type {string | undefined} */ stack) => lineOf(stack, base) };
+  return { ir: built.ir, problems, program };
 } exports.buildPiece = buildPiece;
 
 /**
@@ -333,7 +395,345 @@ function lineOf(stack, base) {
   }
 } exports.lineFor = lineFor;
 
-}, {"./builder.js":15,"./limits.js":16,"./problem-codes.js":3,"./validate.js":17}],
+}, {"./builder.js":16,"./program.js":3,"./limits.js":17,"./problem-codes.js":4,"./validate.js":18}],
+/* src/dsl/program.js */ [function (module, exports, require) {
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// The program side of the VM (doc/piece-dsl.md, Program and VM). The builder registers handlers
+// and output calls through `createIo`; the sandbox worker drives a built program with
+// `createRunner`: `start`, `batch` and `stop` return the commands the handlers sent.
+
+var _randjs = require('../expr/rand.js');
+var _limitsjs = require('./limits.js');
+
+/** An error with a problem code; run-script.js reports `code` instead of `runtime_error`. */
+ class ProgramError extends Error {
+  /** @param {string} code @param {string} message */
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+} exports.ProgramError = ProgramError;
+
+/**
+ * @typedef {{ id: string, group: string } & Record<string, unknown>} SkyRecord
+ * @typedef {{ id: string, group: string, fields: Record<string, unknown> }} WireObject
+ * @typedef {{ kind: 'enter' | 'update' | 'exit', obj: WireObject, prev?: WireObject | null, traceId?: string | null, initial?: boolean }} WireEvent
+ * @typedef {{ due: number, fn: Function, src: string, period: number | null, cancelled: boolean, handler: any }} Timer
+ * @typedef {{ handler: string, line: number | null, message: string }} HandlerError
+ * @typedef {{ commands: any[], errors: HandlerError[], dropped: number }} RunResult
+ */
+
+/**
+ * Sequential mulberry32 seeded from the piece seed.
+ * @param {number} seed
+ */
+ function createRng(seed) {
+  let s = _randjs.hash32.call(void 0, `seed:${seed}`);
+  return () => {
+    const v = _randjs.mulberry32Once.call(void 0, s);
+    s = (s + 0x6d2b79f5) | 0;
+    return v;
+  };
+} exports.createRng = createRng;
+
+/** @param {WireObject} o @returns {SkyRecord} */
+const recordOf = (o) => Object.freeze({ ...o.fields, id: o.id, group: o.group });
+
+/**
+ * Milliseconds of a sync name (`1/8`, `1/4d`, `1/8t`) at `bpm`.
+ * @param {string} name @param {number} bpm
+ */
+ function syncMs(name, bpm) {
+  const m = /^1\/(\d+)([dt]?)$/.exec(name);
+  if (!m) return null;
+  const whole = (4 * 60000) / bpm;
+  const mult = m[2] === 'd' ? 1.5 : m[2] === 't' ? 2 / 3 : 1;
+  return (whole / Number(m[1])) * mult;
+} exports.syncMs = syncMs;
+
+/**
+ * IO state shared by the builder's program calls and the runner.
+ * @param {{ groupSource: (key: string) => string | null, seed: () => number }} opts
+ */
+ function createIo({ groupSource, seed }) {
+  /** @type {(() => number) | null} */
+  let rng = null;
+  const io = {
+    /** @type {'setup' | 'handler' | 'idle'} */ phase: 'setup',
+    /** @type {any[] | null} */ out: null,
+    dropped: 0,
+    /** @type {string | null} */ trace: null,
+    /** @type {string | null} */ src: null,
+    now: 0,
+    /** @type {Set<string>} */ groups: new Set(),
+    /** @type {Map<string, Map<string, SkyRecord>>} */ byGroup: new Map(),
+    /** @type {Map<string, SkyRecord>} */ objects: new Map(),
+    /** @type {Map<string, string>} */ fresh: new Map(),
+    /** @type {Timer[]} */ timers: [],
+    groupSource,
+    random: () => (rng ??= createRng(seed()))(),
+  };
+
+  /** @param {string} name */
+  const inHandler = (name) => {
+    if (io.phase !== 'handler') throw new ProgramError('io_outside_handler', `${name} works only inside a handler such as on(...) or every(...)`);
+  };
+
+  /**
+   * Queues one command of the current handler.
+   * @param {string} name @param {Record<string, unknown>} cmd
+   */
+  const emit = (name, cmd) => {
+    inHandler(name);
+    if (!io.out) return;
+    if (io.out.length >= _limitsjs.PROGRAM.commandsPerBatch) { io.dropped++; return; }
+    io.out.push({ ...cmd, at: io.now, trace: io.trace, src: io.src });
+  };
+
+  /** @param {string} group @param {string} where */
+  const followed = (group, where) => {
+    if (!io.groups.has(group)) throw new TypeError(`${where}: the piece does not follow ${group}; add follow('${group}') to the setup code`);
+  };
+
+  const read = Object.freeze({
+    /** @param {unknown} path */
+    swpc(path) {
+      inHandler('read.swpc()');
+      if (typeof path !== 'string' || !/^[a-z]+\.[A-Za-z]+$/.test(path)) throw new TypeError("read.swpc(): path must be text such as 'kp.kp'");
+      const [g, f] = path.split('.');
+      const group = `swpc.${g}`;
+      followed(group, `read.swpc('${path}')`);
+      const objs = io.byGroup.get(group);
+      const first = objs ? [...objs.values()].sort((a, b) => (a.id < b.id ? -1 : 1))[0] : undefined;
+      const v = first ? first[f] : undefined;
+      return v === undefined ? null : v;
+    },
+    /** @param {unknown} key */
+    group(key) {
+      inHandler('read.group()');
+      if (typeof key !== 'string') throw new TypeError('read.group(): key must be text');
+      followed(key, `read.group('${key}')`);
+      return Object.freeze([...(_nullishCoalesce(_optionalChain([io, 'access', _ => _.byGroup, 'access', _2 => _2.get, 'call', _3 => _3(key), 'optionalAccess', _4 => _4.values, 'call', _5 => _5()]), () => ( [])))].sort((a, b) => (a.id < b.id ? -1 : 1)));
+    },
+    /** @param {unknown} id */
+    object(id) {
+      inHandler('read.object()');
+      if (typeof id !== 'string') throw new TypeError('read.object(): id must be text');
+      return _nullishCoalesce(io.objects.get(id), () => ( null));
+    },
+    /** @param {unknown} source */
+    freshness(source) {
+      inHandler('read.freshness()');
+      if (typeof source !== 'string') throw new TypeError('read.freshness(): source must be text');
+      const s = _nullishCoalesce(io.groupSource(source), () => ( source));
+      return _nullishCoalesce(io.fresh.get(s), () => ( 'loading'));
+    },
+  });
+
+  /**
+   * Schedules a one-shot call from a handler. The builder registers an `after` made in setup as
+   * a handler instead (kind `after`).
+   * @param {unknown} ms @param {unknown} fn
+   */
+  const after = (ms, fn) => {
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) throw new TypeError('after(): ms must be a number');
+    if (typeof fn !== 'function') throw new TypeError('after(): the second argument must be a function');
+    const pending = io.timers.filter((t) => !t.cancelled && t.period === null).length;
+    if (pending >= _limitsjs.PROGRAM.pendingTimers) throw new TypeError(`after(): at most ${_limitsjs.PROGRAM.pendingTimers} calls can wait at once`);
+    const delay = Math.min(Math.max(ms, _limitsjs.PROGRAM.afterMs[0]), _limitsjs.PROGRAM.afterMs[1]);
+    /** @type {Timer} */
+    const t = { due: io.now + delay, fn, src: _nullishCoalesce(io.src, () => ( 'after')), period: null, cancelled: false, handler: null };
+    io.timers.push(t);
+    return () => { t.cancelled = true; };
+  };
+
+  const random = Object.freeze({
+    random: () => io.random(),
+    /** @param {unknown} n */
+    randInt: (n) => {
+      if (typeof n !== 'number' || !Number.isFinite(n) || n < 1) throw new TypeError('randInt(): n must be a number of at least 1');
+      return Math.floor(io.random() * Math.floor(n));
+    },
+    /** @param {unknown} list */
+    choose: (list) => {
+      if (!Array.isArray(list) || list.length === 0) throw new TypeError('choose(): list must be a non-empty array');
+      return list[Math.floor(io.random() * list.length)];
+    },
+  });
+
+  /** A copy of Math whose `random` is the seeded generator. */
+  const seededMath = Object.freeze(Object.fromEntries([
+    ...Object.getOwnPropertyNames(Math).map((k) => [k, /** @type {any} */ (Math)[k]]),
+    ['random', () => io.random()],
+  ]));
+
+  return { io, emit, read, after, random, seededMath, inHandler };
+} exports.createIo = createIo;
+
+/**
+ * Drives a built program. `handlers` carry their functions; `lineOf` maps a stack to a script line.
+ * @param {{ handlers: any[], io: ReturnType<typeof createIo>['io'], tempo: number, lineOf: (stack: string | undefined) => number | null }} program
+ */
+ function createRunner({ handlers, io, tempo, lineOf }) {
+  /** @type {HandlerError[]} */
+  let errors = [];
+
+  /**
+   * Calls one handler function inside a handler context.
+   * @param {any} h handler record, or null for a dynamic `after`
+   * @param {Function} fn @param {unknown[]} args
+   * @param {{ trace: string | null, src: string }} ctx
+   */
+  const call = (h, fn, args, ctx) => {
+    if (_optionalChain([h, 'optionalAccess', _6 => _6.disabled])) return;
+    io.phase = 'handler';
+    io.trace = ctx.trace;
+    io.src = ctx.src;
+    try {
+      fn(...args);
+    } catch (e) {
+      const err = /** @type {any} */ (e);
+      const message = err instanceof Error ? `${err.name === 'Error' ? '' : `${err.name}: `}${err.message}` : `Uncaught ${String(err)}`;
+      errors.push({ handler: ctx.src, line: err instanceof Error ? lineOf(err.stack) : null, message });
+      if (h) h.disabled = true;
+    } finally {
+      io.phase = 'idle';
+      io.trace = null;
+      io.src = null;
+    }
+  };
+
+  const begin = () => {
+    errors = [];
+    io.out = [];
+    io.dropped = 0;
+  };
+
+  /** @returns {RunResult} */
+  const end = () => {
+    const r = { commands: _nullishCoalesce(io.out, () => ( [])), errors, dropped: io.dropped };
+    io.out = null;
+    return r;
+  };
+
+  /** Runs every timer due at or before `now`, in time order. @param {number} now */
+  const runTimers = (now) => {
+    for (let fired = 0; fired < _limitsjs.PROGRAM.timerCallsPerBatch; fired++) {
+      io.timers = io.timers.filter((t) => !t.cancelled && !_optionalChain([t, 'access', _7 => _7.handler, 'optionalAccess', _8 => _8.disabled]));
+      let next = null;
+      for (const t of io.timers) if (t.due <= now && (next === null || t.due < next.due)) next = t;
+      if (!next) return;
+      const late = now - next.due > _limitsjs.PROGRAM.lateMs;
+      io.now = late ? now : next.due;
+      if (next.period === null) next.cancelled = true;
+      else {
+        next.due += next.period;
+        // A late timer skips its missed calls: the next one is the first after `now`.
+        if (late && next.due <= now) next.due += Math.ceil((now - next.due) / next.period + 1e-9) * next.period;
+      }
+      call(next.handler, next.fn, [io.now], { trace: null, src: next.src });
+    }
+  };
+
+  /** @param {WireEvent} ev */
+  const apply = (ev) => {
+    const o = ev.obj;
+    if (!o || typeof o.id !== 'string' || typeof o.group !== 'string') return null;
+    const before = _nullishCoalesce(io.objects.get(o.id), () => ( (ev.prev ? recordOf(ev.prev) : null)));
+    let map = io.byGroup.get(o.group);
+    if (!map) { map = new Map(); io.byGroup.set(o.group, map); }
+    if (ev.kind === 'exit') {
+      map.delete(o.id);
+      io.objects.delete(o.id);
+      return { rec: _nullishCoalesce(before, () => ( recordOf(o))), prev: before };
+    }
+    const rec = recordOf(o);
+    map.set(o.id, rec);
+    io.objects.set(o.id, rec);
+    return { rec, prev: ev.kind === 'update' ? before : null };
+  };
+
+  /** @param {WireEvent} ev @param {SkyRecord} rec @param {SkyRecord | null} prev */
+  const dispatch = (ev, rec, prev) => {
+    const e = Object.freeze({ kind: ev.kind, traceId: _nullishCoalesce(ev.traceId, () => ( null)), initial: ev.initial === true, prev });
+    for (const h of handlers) {
+      if (h.kind !== 'on' || h.group !== rec.group) continue;
+      if (h.event !== '*' && h.event !== ev.kind) continue;
+      call(h, h.fn, [rec, e], { trace: _nullishCoalesce(ev.traceId, () => ( null)), src: h.id });
+    }
+  };
+
+  return {
+    /**
+     * Starts the program: fills the sky copy, schedules timers and calls the initial enters.
+     * @param {{ groups: string[], objects: WireObject[] }} msg
+     * @returns {RunResult}
+     */
+    start({ groups, objects }) {
+      begin();
+      io.phase = 'idle';
+      io.now = 0;
+      io.groups = new Set(Array.isArray(groups) ? groups : []);
+      io.byGroup.clear();
+      io.objects.clear();
+      io.timers = [];
+      for (const h of handlers) {
+        if (h.kind === 'every') {
+          const period = h.sync ? syncMs(h.sync, tempo) : h.intervalMs;
+          if (period) io.timers.push({ due: 0, fn: h.fn, src: h.id, period, cancelled: false, handler: h });
+        } else if (h.kind === 'after') {
+          io.timers.push({ due: h.ms, fn: h.fn, src: h.id, period: null, cancelled: false, handler: h });
+        }
+      }
+      const initial = (Array.isArray(objects) ? objects : [])
+        .filter((o) => o && io.groups.has(o.group))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      for (const o of initial) {
+        /** @type {WireEvent} */
+        const ev = { kind: 'enter', obj: o, initial: true, traceId: null };
+        const r = apply(ev);
+        if (r) dispatch(ev, r.rec, null);
+      }
+      runTimers(0);
+      return end();
+    },
+
+    /**
+     * @param {{ now: number, events?: WireEvent[], freshness?: { source: string, state: string }[] }} msg
+     * @returns {RunResult}
+     */
+    batch({ now, events = [], freshness = [] }) {
+      begin();
+      const t = typeof now === 'number' && Number.isFinite(now) ? Math.max(now, io.now) : io.now;
+      runTimers(t);
+      io.now = t;
+      for (const ev of Array.isArray(events) ? events : []) {
+        if (!ev || !['enter', 'update', 'exit'].includes(ev.kind)) continue;
+        const r = apply(ev);
+        if (r) dispatch(ev, r.rec, r.prev);
+      }
+      for (const f of Array.isArray(freshness) ? freshness : []) {
+        if (!f || typeof f.source !== 'string' || typeof f.state !== 'string') continue;
+        io.fresh.set(f.source, f.state);
+        for (const h of handlers) {
+          if (h.kind !== 'freshness') continue;
+          if (h.source !== '*' && h.source !== f.source && io.groupSource(h.source) !== f.source) continue;
+          call(h, h.fn, [Object.freeze({ source: f.source, state: f.state })], { trace: null, src: h.id });
+        }
+      }
+      return end();
+    },
+
+    /** @returns {RunResult} */
+    stop() {
+      io.timers = [];
+      io.byGroup.clear();
+      io.objects.clear();
+      return { commands: [], errors: [], dropped: 0 };
+    },
+  };
+} exports.createRunner = createRunner;
+
+}, {"../expr/rand.js":19,"./limits.js":17}],
 /* src/dsl/problem-codes.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Single list of problem codes (doc/piece-dsl.md, Problem codes).
 // content/learn/troubleshooting.md documents every code with `userFacing: true`;
@@ -345,7 +745,7 @@ function lineOf(stack, base) {
 /** Items of the `limit_<item>` family. */
  const LIMIT_ITEMS = Object.freeze([
   'instruments', 'bindings', 'voices', 'slots', 'reverbs', 'lfos', 'retrigger_lfos',
-  'routes', 'routes_per_target', 'layers', 'orbit_sources', 'source',
+  'routes', 'routes_per_target', 'layers', 'orbit_sources', 'handlers', 'source',
 ]); exports.LIMIT_ITEMS = LIMIT_ITEMS;
 
 /** @type {Readonly<Record<string, CodeDef>>} */
@@ -368,6 +768,9 @@ function lineOf(stack, base) {
   orbit_no_elements: { severity: 'error', userFacing: true, condition: '`orbit` or `sky.orbit` on a group or object without orbital elements' },
   orbit_quantity: { severity: 'error', userFacing: true, condition: 'Unknown orbit quantity' },
   orbit_no_object: { severity: 'error', userFacing: true, condition: '`orbit(...)` where no current object exists' },
+  io_outside_handler: { severity: 'error', userFacing: true, condition: 'Setup calls an output method or `read.*`, which work only inside handlers' },
+  handler_error: { severity: 'error', userFacing: true, condition: 'A handler threw while the piece played' },
+  handler_timeout: { severity: 'error', userFacing: true, condition: 'One batch of handler calls ran longer than 250 ms' },
   ...Object.fromEntries(exports.LIMIT_ITEMS.map((item) => [
     `limit_${item}`,
     { severity: 'error', userFacing: true, condition: `The ${item.replaceAll('_', ' ')} limit is exceeded` },
@@ -870,7 +1273,7 @@ var _getNonTypeIdentifiers = require('./util/getNonTypeIdentifiers');
   }
 } exports.default = CJSImportProcessor;
 
-}, {"./parser/tokenizer":18,"./parser/tokenizer/keywords":19,"./parser/tokenizer/types":20,"./util/getImportExportSpecifierInfo":21,"./util/getNonTypeIdentifiers":22,"${path}":null}],
+}, {"./parser/tokenizer":20,"./parser/tokenizer/keywords":21,"./parser/tokenizer/types":22,"./util/getImportExportSpecifierInfo":23,"./util/getNonTypeIdentifiers":24,"${path}":null}],
 /* node_modules/sucrase/dist/computeSourceMap.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _genmapping = require('@jridgewell/gen-mapping');
 
@@ -962,7 +1365,7 @@ function computeSourceColumns(code, tokens) {
   return sourceColumns;
 }
 
-}, {"@jridgewell/gen-mapping":-1,"./parser/util/charcodes":23}],
+}, {"@jridgewell/gen-mapping":-1,"./parser/util/charcodes":25}],
 /* node_modules/sucrase/dist/HelperManager.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -1242,7 +1645,7 @@ function markShadowedForScope(scope, tokens, name) {
   }
 }
 
-}, {"./parser/tokenizer":18,"./parser/tokenizer/types":20}],
+}, {"./parser/tokenizer":20,"./parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/NameManager.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _getIdentifierNames = require('./util/getIdentifierNames'); var _getIdentifierNames2 = _interopRequireDefault(_getIdentifierNames);
@@ -1272,7 +1675,7 @@ var _getIdentifierNames = require('./util/getIdentifierNames'); var _getIdentifi
   }
 } exports.default = NameManager;
 
-}, {"./util/getIdentifierNames":24}],
+}, {"./util/getIdentifierNames":26}],
 /* node_modules/sucrase/dist/Options.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _tsinterfacechecker = require('ts-interface-checker');
 
@@ -1376,7 +1779,7 @@ const {Options: OptionsChecker} = _tsinterfacechecker.createCheckers.call(void 0
   OptionsChecker.strictCheck(options);
 } exports.validateOptions = validateOptions;
 
-}, {"ts-interface-checker":25,"./Options-gen-types":26}],
+}, {"ts-interface-checker":27,"./Options-gen-types":28}],
 /* node_modules/sucrase/dist/parser/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -1410,7 +1813,7 @@ var _index = require('./traverser/index');
   return result;
 } exports.parse = parse;
 
-}, {"./traverser/base":27,"./traverser/index":28}],
+}, {"./traverser/base":29,"./traverser/index":30}],
 /* node_modules/sucrase/dist/TokenProcessor.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -1770,7 +2173,7 @@ var _isAsyncOperation = require('./util/isAsyncOperation'); var _isAsyncOperatio
   }
 } exports.default = TokenProcessor;
 
-}, {"./parser/tokenizer/types":20,"./util/isAsyncOperation":29}],
+}, {"./parser/tokenizer/types":22,"./util/isAsyncOperation":31}],
 /* node_modules/sucrase/dist/transformers/RootTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -2235,7 +2638,7 @@ var _TypeScriptTransformer = require('./TypeScriptTransformer'); var _TypeScript
   }
 } exports.default = RootTransformer;
 
-}, {"../parser/tokenizer/keywords":19,"../parser/tokenizer/types":20,"../util/getClassInfo":30,"./CJSImportTransformer":31,"./ESMImportTransformer":32,"./FlowTransformer":33,"./JestHoistTransformer":34,"./JSXTransformer":35,"./NumericSeparatorTransformer":36,"./OptionalCatchBindingTransformer":37,"./OptionalChainingNullishTransformer":38,"./ReactDisplayNameTransformer":39,"./ReactHotLoaderTransformer":40,"./TypeScriptTransformer":41}],
+}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"../util/getClassInfo":32,"./CJSImportTransformer":33,"./ESMImportTransformer":34,"./FlowTransformer":35,"./JestHoistTransformer":36,"./JSXTransformer":37,"./NumericSeparatorTransformer":38,"./OptionalCatchBindingTransformer":39,"./OptionalChainingNullishTransformer":40,"./ReactDisplayNameTransformer":41,"./ReactHotLoaderTransformer":42,"./TypeScriptTransformer":43}],
 /* node_modules/sucrase/dist/util/formatTokens.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _linesandcolumns = require('lines-and-columns'); var _linesandcolumns2 = _interopRequireDefault(_linesandcolumns);
 
@@ -2312,7 +2715,7 @@ function truncate(s, length) {
   }
 }
 
-}, {"lines-and-columns":-1,"../parser/tokenizer/types":20}],
+}, {"lines-and-columns":-1,"../parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/util/getTSImportedNames.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _types = require('../parser/tokenizer/types');
 
@@ -2399,7 +2802,7 @@ function collectNamesForNamedImport(
   }
 }
 
-}, {"../parser/tokenizer/types":20,"./getImportExportSpecifierInfo":21}],
+}, {"../parser/tokenizer/types":22,"./getImportExportSpecifierInfo":23}],
 /* src/dsl/builder.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// The global builder API (doc/piece-dsl.md, Builder API; doc/visuals.md, Builder API).
 // `createBuilder(defs)` returns the API object a script sees and a `finish()` that returns the IR.
@@ -2410,6 +2813,7 @@ function collectNamesForNamedImport(
 var _exprjs = require('./expr.js');
 var _irwalkjs = require('./ir-walk.js');
 var _defsjs = require('./defs.js');
+var _programjs = require('./program.js');
 
 
 var _limitsjs = require('./limits.js');
@@ -2444,8 +2848,13 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
     /** @type {any[]} */ reactions: [],
     view: { projection: _limitsjs.DEFAULTS.projection, background: /** @type {Value} */ (_limitsjs.DEFAULTS.background) },
     /** @type {any[]} */ layers: [],
+    /** @type {any[]} */ handlers: [],
+    /** @type {string[]} */ follow: [],
     localOnly: false,
   };
+
+  // Program IO (doc/piece-dsl.md, Program): handlers, output calls, `read.*` and the seeded random.
+  const P = _programjs.createIo.call(void 0, { groupSource: (k) => _nullishCoalesce(_optionalChain([_defsjs.own.call(void 0, defs.groups, k), 'optionalAccess', _2 => _2.source]), () => ( null)), seed: () => st.seed });
 
   // ---------- helpers ----------
   /** @param {string} pointer @param {number | null} ln */
@@ -2527,7 +2936,7 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
 
   /** @param {string} group */
   const objectProxy = (group) => {
-    const hasOrbit = _nullishCoalesce(_optionalChain([_defsjs.own.call(void 0, defs.groups, group), 'optionalAccess', _2 => _2.orbit]), () => ( group.startsWith('celestrak.')));
+    const hasOrbit = _nullishCoalesce(_optionalChain([_defsjs.own.call(void 0, defs.groups, group), 'optionalAccess', _3 => _3.orbit]), () => ( group.startsWith('celestrak.')));
     return new Proxy(Object.create(null), {
       get(_, k) {
         if (typeof k === 'symbol') return undefined;
@@ -2569,7 +2978,7 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       const rec = typeof source === 'object' && source !== null ? records.get(source) : undefined;
       let src;
       let orbitSource = false;
-      if (_optionalChain([rec, 'optionalAccess', _3 => _3.kind]) === 'lfo') src = { lfo: rec.id };
+      if (_optionalChain([rec, 'optionalAccess', _4 => _4.kind]) === 'lfo') src = { lfo: rec.id };
       else if (source instanceof _exprjs.Expr) {
         src = { expr: source.node };
         _irwalkjs.forEachNode.call(void 0, source.node, '', (n) => { if (n.op === 'orbit') orbitSource = true; });
@@ -2578,6 +2987,19 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       const smoothMs = o.smoothMs === undefined ? dflt : clampNum(o.smoothMs, /** @type {[number, number]} */ (_limitsjs.RANGES.smoothMs), where, 'smoothMs');
       mark(`/mods/${st.mods.length}`, ln);
       st.mods.push({ target: `${owner.id}.${name}`, source: src, depth, smoothMs });
+    },
+    /** Program output: sets the base value from a handler. @param {unknown} value @param {unknown} [opts] */
+    set(value, opts) {
+      const where = `${name}.set()`;
+      P.inHandler(where);
+      const o = plainObject(opts, where);
+      onlyKeys(o, ['smoothMs'], where);
+      const types = owner.kind === 'instrument' ? defs.instruments : defs.effects;
+      const spec = _defsjs.own.call(void 0, _nullishCoalesce(_optionalChain([_defsjs.own.call(void 0, types, /** @type {any} */ (owner).type), 'optionalAccess', _5 => _5.params]), () => ( {})), name);
+      if (!spec || spec.kind !== 'number') throw new TypeError(`${where}: ${name} is not a numeric parameter of ${/** @type {any} */ (owner).type}`);
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${where}: value must be a number`);
+      const smoothMs = o.smoothMs === undefined ? _limitsjs.DEFAULTS.smoothMs : clampNum(o.smoothMs, /** @type {[number, number]} */ (_limitsjs.RANGES.smoothMs), where, 'smoothMs');
+      P.emit(where, { op: 'set', target: `${owner.id}.${name}`, value: clamp(value, /** @type {number} */ (spec.min), /** @type {number} */ (spec.max)), smoothMs });
     },
   });
 
@@ -2589,7 +3011,13 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       mark(`/bindings/${st.bindings.length}`, ln);
       st.bindings.push({ id: `b${st.bindings.length}`, kind: 'fxBypass', slot: owner.id, expr: _exprjs.toValue.call(void 0, value, 'bypass.follow()') });
     },
-    mod() { throw new TypeError('bypass accepts follow() only'); },
+    mod() { throw new TypeError('bypass accepts follow() and set() only'); },
+    /** Program output. @param {unknown} on */
+    set(on) {
+      P.inHandler('bypass.set()');
+      if (typeof on !== 'boolean') throw new TypeError('bypass.set(): use true or false');
+      P.emit('bypass.set()', { op: 'set', target: `${owner.id}.bypass`, value: on });
+    },
   });
 
   /** @param {any} rec @param {(name: string) => unknown} special */
@@ -2621,6 +3049,73 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
     owner.fxLine = ln;
   };
 
+  // ---------- program output on instruments ----------
+  /** @param {unknown} v @param {string} where @returns {number | null} */
+  const notePitch = (v, where) => {
+    if (v === null || v === undefined) return null;
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError(`${where}: pitch must be a number (MIDI note) or null`);
+    return clamp(v, _limitsjs.RANGES.pitch[0], _limitsjs.RANGES.pitch[1]);
+  };
+  /** @param {unknown} v @param {readonly number[]} range @param {number} dflt @param {string} where @param {string} name */
+  const optNum = (v, range, dflt, where, name) => (v === undefined ? dflt : clampNum(v, /** @type {[number, number]} */ (range), where, name));
+  /** @param {unknown} k @param {string} where */
+  const keyOf = (k, where) => {
+    if (typeof k !== 'string' || k.length === 0 || k.length > _limitsjs.PROGRAM.keyChars) throw new TypeError(`${where}: key must be text of 1 to ${_limitsjs.PROGRAM.keyChars} characters`);
+    return k;
+  };
+  /** @param {any} rec */
+  const instrumentIo = (rec) => Object.freeze({
+    /** @param {unknown} pitch @param {unknown} [opts] */
+    play(pitch, opts) {
+      const where = `${rec.type}.play()`;
+      P.inHandler(where);
+      const o = plainObject(opts, where);
+      onlyKeys(o, ['velocity', 'pan', 'durationMs'], where);
+      const p = notePitch(pitch, where);
+      if (p === null) return;
+      P.emit(where, {
+        op: 'play', inst: rec.id, pitch: p,
+        velocity: optNum(o.velocity, _limitsjs.RANGES.velocity, _limitsjs.DEFAULTS.velocity, where, 'velocity'),
+        pan: optNum(o.pan, _limitsjs.RANGES.pan, _limitsjs.DEFAULTS.pan, where, 'pan'),
+        durationMs: optNum(o.durationMs, _limitsjs.RANGES.durationMs, _limitsjs.DEFAULTS.durationMs, where, 'durationMs'),
+      });
+    },
+    /** @param {unknown} key @param {unknown} pitch @param {unknown} [opts] */
+    hold(key, pitch, opts) {
+      const where = `${rec.type}.hold()`;
+      P.inHandler(where);
+      const k = keyOf(key, where);
+      const o = plainObject(opts, where);
+      onlyKeys(o, ['velocity', 'pan'], where);
+      const p = notePitch(pitch, where);
+      if (p === null) return;
+      P.emit(where, {
+        op: 'hold', inst: rec.id, key: k, pitch: p,
+        velocity: optNum(o.velocity, _limitsjs.RANGES.velocity, _limitsjs.DEFAULTS.velocity, where, 'velocity'),
+        pan: optNum(o.pan, _limitsjs.RANGES.pan, _limitsjs.DEFAULTS.pan, where, 'pan'),
+      });
+    },
+    /** @param {unknown} key @param {unknown} pitch @param {unknown} [ms] */
+    glide(key, pitch, ms) {
+      const where = `${rec.type}.glide()`;
+      P.inHandler(where);
+      const k = keyOf(key, where);
+      const p = notePitch(pitch, where);
+      if (p === null) return;
+      P.emit(where, { op: 'glide', inst: rec.id, key: k, pitch: p, ms: optNum(ms, _limitsjs.PROGRAM.glideMs, _limitsjs.PROGRAM.defaultGlideMs, where, 'ms') });
+    },
+    /** @param {unknown} key */
+    stop(key) {
+      const where = `${rec.type}.stop()`;
+      P.inHandler(where);
+      P.emit(where, { op: 'stop', inst: rec.id, key: keyOf(key, where) });
+    },
+    stopAll() {
+      const where = `${rec.type}.stopAll()`;
+      P.emit(where, { op: 'stopAll', inst: rec.id });
+    },
+  });
+
   // ---------- instruments ----------
   /** @param {string} type */
   const instrumentFactory = (type) => (/** @type {unknown} */ opts) => {
@@ -2645,7 +3140,9 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
     }
     mark(`/instruments/${st.instruments.length}`, ln);
     st.instruments.push(rec);
-    return handleProxy(rec, (k) => (k === 'fx' ? (/** @type {unknown[]} */ ...slots) => setChain(rec, slots, `${type}.fx()`) : undefined));
+    const out = instrumentIo(rec);
+    return handleProxy(rec, (k) => (k === 'fx' ? (/** @type {unknown[]} */ ...slots) => setChain(rec, slots, `${type}.fx()`)
+      : Object.prototype.hasOwnProperty.call(out, k) ? /** @type {any} */ (out)[k] : undefined));
   };
 
   // ---------- effects ----------
@@ -2849,7 +3346,7 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
         if (typeof v !== 'string' || !_limitsjs.COLOR_HEX.test(v)) throw new TypeError(`${where}: colour must look like '#rrggbb'`);
         return v;
       case 'enum':
-        if (typeof v !== 'string' || !_optionalChain([spec, 'access', _4 => _4.options, 'optionalAccess', _5 => _5.includes, 'call', _6 => _6(v)])) throw new TypeError(`${where}: use one of ${_optionalChain([spec, 'access', _7 => _7.options, 'optionalAccess', _8 => _8.join, 'call', _9 => _9(', ')])}`);
+        if (typeof v !== 'string' || !_optionalChain([spec, 'access', _6 => _6.options, 'optionalAccess', _7 => _7.includes, 'call', _8 => _8(v)])) throw new TypeError(`${where}: use one of ${_optionalChain([spec, 'access', _9 => _9.options, 'optionalAccess', _10 => _10.join, 'call', _11 => _11(', ')])}`);
         return v;
       default:
         if (typeof v !== 'string') throw new TypeError(`${where}: value must be text`);
@@ -2875,18 +3372,39 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       }
       for (const k of spec.order) if (!(k in out)) out[k] = /** @type {Value} */ (spec.props[k].default);
       mark(`/layers/${st.layers.length}`, ln);
-      st.layers.push({ id: `l${st.layers.length}`, type, group, select, props: out });
+      const id = `l${st.layers.length}`;
+      st.layers.push({ id, type, group, select, props: out });
+      return layerHandle(id, type, spec);
     };
     if (spec.group) {
       return (/** @type {unknown} */ g, /** @type {unknown} */ props) => {
         const ln = line();
         const rec = typeof g === 'object' && g !== null ? records.get(g) : undefined;
         if (!rec || rec.kind !== 'group') throw new TypeError(`layer.${type}(): first argument must be sky.group(...)`);
-        add(rec.key, rec.select, props, ln);
+        return add(rec.key, rec.select, props, ln);
       };
     }
     return (/** @type {unknown} */ props) => add(null, null, props, line());
   };
+
+  /** Program output on a layer: constant property values. @param {string} id @param {string} type @param {any} spec */
+  const layerHandle = (id, type, spec) => Object.freeze({
+    /** @param {unknown} props */
+    set(props) {
+      const where = `layer.${type}().set()`;
+      P.inHandler(where);
+      const o = plainObject(props, where);
+      /** @type {Record<string, Value>} */
+      const out = {};
+      for (const [k, v] of Object.entries(o)) {
+        const p = _defsjs.own.call(void 0, spec.props, k);
+        if (!p) throw new TypeError(`${where}: ${type} layers have no property '${k}'`);
+        if (_exprjs.isExpr.call(void 0, v)) throw new TypeError(`${where}: ${k} must be a constant value here`);
+        out[k] = layerValue(p, v, `${where} ${k}`);
+      }
+      P.emit(where, { op: 'layer', layer: id, props: out });
+    },
+  });
 
   /** @type {Record<string, Function>} */
   const layer = {};
@@ -2964,6 +3482,49 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       return new (0, _exprjs.ColorExpr)({ op: 'color', args: [hex] });
     },
     audio,
+    // Program (doc/piece-dsl.md, Program).
+    /** @param {unknown} group @param {unknown} kind @param {unknown} fn */
+    on(group, kind, fn) {
+      if (typeof group !== 'string' || !group) throw new TypeError("on(): group must be text such as 'jpl.scout'");
+      if (typeof kind !== 'string' || !_limitsjs.HANDLER_EVENTS.includes(kind)) throw new TypeError(`on(): kind must be one of ${_limitsjs.HANDLER_EVENTS.map((k) => `'${k}'`).join(', ')}`);
+      register('on()', { kind: 'on', group, event: kind }, fn);
+    },
+    /** @param {unknown} interval @param {unknown} fn */
+    every(interval, fn) {
+      if (typeof interval === 'number') {
+        register('every()', { kind: 'every', intervalMs: clampNum(interval, /** @type {[number, number]} */ (_limitsjs.PROGRAM.intervalMs), 'every()', 'interval') }, fn);
+      } else if (typeof interval === 'string' && defs.syncNames.includes(interval)) {
+        register('every()', { kind: 'every', sync: interval }, fn);
+      } else throw new TypeError(`every(): interval must be milliseconds or a sync value such as '1/8'; sync values are ${defs.syncNames.join(', ')}`);
+    },
+    /** @param {unknown} ms @param {unknown} fn */
+    after(ms, fn) {
+      if (P.io.phase !== 'setup') return P.after(ms, fn);
+      const h = register('after()', { kind: 'after', ms: clampNum(ms, /** @type {[number, number]} */ (_limitsjs.PROGRAM.afterMs), 'after()', 'ms') }, fn);
+      return () => { h.disabled = true; };
+    },
+    /** @param {unknown} source @param {unknown} fn */
+    onFreshness(source, fn) {
+      if (typeof source !== 'string' || !source) throw new TypeError("onFreshness(): source must be a source id, a group or '*'");
+      register('onFreshness()', { kind: 'freshness', source }, fn);
+    },
+    /** @param {unknown[]} groups */
+    follow(...groups) {
+      if (P.io.phase !== 'setup') throw new TypeError('follow(): call it in the setup code');
+      const ln = line();
+      for (const g of groups) {
+        if (typeof g !== 'string' || !g) throw new TypeError("follow(): groups must be text such as 'swpc.kp'");
+        if (!st.follow.includes(g)) {
+          mark(`/program/follow/${st.follow.length}`, ln);
+          st.follow.push(g);
+        }
+      }
+    },
+    read: P.read,
+    time: () => P.io.now,
+    random: P.random.random,
+    randInt: P.random.randInt,
+    choose: P.random.choose,
     /** @param {unknown} source */
     fn: (source) => {
       if (typeof source !== 'string') throw new TypeError("fn(): source must be text such as 'o => o.fields.inclination / 2'");
@@ -2980,6 +3541,20 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
     api[type] = effectFactory(type);
   }
   Object.freeze(api);
+
+  /**
+   * Registers a handler during setup.
+   * @param {string} name @param {Record<string, unknown>} rec @param {unknown} fn
+   */
+  function register(name, rec, fn) {
+    if (P.io.phase !== 'setup') throw new TypeError(`${name}: register handlers in the setup code, not inside a handler`);
+    if (typeof fn !== 'function') throw new TypeError(`${name}: the last argument must be a function`);
+    const ln = line();
+    const h = { id: `h${st.handlers.length}`, ...rec, fn, disabled: false };
+    mark(`/program/handlers/${st.handlers.length}`, ln);
+    st.handlers.push(h);
+    return h;
+  }
 
   /** @param {any} slot */
   const slotIr = (slot) => ({ id: slot.id, type: slot.type, params: { ...slot.params }, bypass: slot.bypass });
@@ -3015,11 +3590,21 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       groups: /** @type {string[]} */ ([]),
       localOnly: st.localOnly,
     };
+    if (st.handlers.length || st.follow.length) {
+      /** @type {any} */ (ir).program = {
+        handlers: st.handlers.map(({ fn, disabled, ...h }) => h),
+        follow: [...st.follow],
+      };
+    }
     ir.groups = _irwalkjs.collectGroups.call(void 0, ir);
-    return { ir: structuredCloneJson(ir), lines };
+    return {
+      ir: structuredCloneJson(ir),
+      lines,
+      program: { handlers: st.handlers, io: P.io, tempo: st.tempo },
+    };
   }
 
-  return { api, finish };
+  return { api, finish, seededMath: P.seededMath };
 } exports.createBuilder = createBuilder;
 
 /** Constants in note, velocity and pan positions clamp to their range; expressions pass through. */
@@ -3045,7 +3630,7 @@ function structuredCloneJson(v) {
 }
 
 
-}, {"./expr.js":42,"./ir-walk.js":43,"./defs.js":44,"./limits.js":16}],
+}, {"./expr.js":44,"./ir-walk.js":45,"./defs.js":46,"./program.js":3,"./limits.js":17}],
 /* src/dsl/limits.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Validator constants, ranges, defaults and vocabularies of the piece DSL (doc/piece-dsl.md).
 // content/learn/reference.md restates the limits; the guide tests compare them with these values.
@@ -3069,7 +3654,35 @@ function structuredCloneJson(v) {
   irBytes: 256 * 1024,
   sourceChars: 200000,
   timeoutMs: 1500,
+  handlers: 64,
 }); exports.LIMITS = LIMITS;
+
+/** Program limits (doc/piece-dsl.md, Program, Errors and limits). */
+ const PROGRAM = Object.freeze({
+  /** Longest wait for a reply to a program message, ms. */
+  batchTimeoutMs: 250,
+  commandsPerBatch: 256,
+  pendingTimers: 256,
+  /** Timer calls the VM makes in one batch before it yields. */
+  timerCallsPerBatch: 1024,
+  /** A timer later than this fires once and skips its missed calls, ms. */
+  lateMs: 1000,
+  intervalMs: [10, 3600000],
+  afterMs: [0, 3600000],
+  glideMs: [0, 10000],
+  keyChars: 64,
+  defaultGlideMs: 150,
+  /** Delay between a command's program time and its audio time, s. */
+  latencyS: 0.1,
+  /** Period of the page's batch loop, ms. */
+  batchMs: 25,
+  noteStartsPerSecond: 200,
+}); exports.PROGRAM = PROGRAM;
+
+/** Event kinds of `on(group, kind, fn)`. */
+ const HANDLER_EVENTS = Object.freeze(['enter', 'update', 'exit', '*']); exports.HANDLER_EVENTS = HANDLER_EVENTS;
+/** Kinds of IR program handlers. */
+ const HANDLER_KINDS = Object.freeze(['on', 'every', 'after', 'freshness']); exports.HANDLER_KINDS = HANDLER_KINDS;
 
 /** Inclusive [min, max] ranges. The builder clamps into them; the validator rejects values outside. */
  const RANGES = Object.freeze({
@@ -3240,6 +3853,7 @@ class Checker {
     this.reactions();
     this.view();
     this.layers();
+    this.program();
     this.expressions();
     this.groupList();
     this.localOnly();
@@ -3516,6 +4130,37 @@ class Checker {
     });
   }
 
+  /** Registered handlers and followed groups (doc/piece-dsl.md, Program). */
+  program() {
+    const pr = this.ir.program;
+    if (pr === undefined) return;
+    if (pr.handlers.length > _limitsjs.LIMITS.handlers) this.add('limit_handlers', `/program/handlers/${_limitsjs.LIMITS.handlers}`, `A piece registers at most ${_limitsjs.LIMITS.handlers} handlers`);
+    pr.handlers.forEach((/** @type {any} */ h, /** @type {number} */ i) => {
+      const p = `/program/handlers/${i}`;
+      if (h.id !== `h${i}`) this.add('ir_reference', `${p}/id`, `Handler ${i} must have id h${i}`);
+      if (!_limitsjs.HANDLER_KINDS.includes(h.kind)) { this.add('ir_schema', `${p}/kind`, `Unknown handler kind ${h.kind}`); return; }
+      const keys = { on: ['group', 'event'], every: h.sync !== undefined ? ['sync'] : ['intervalMs'], after: ['ms'], freshness: ['source'] }[/** @type {'on'} */ (h.kind)];
+      for (const k of Object.keys(h)) if (k !== 'id' && k !== 'kind' && !keys.includes(k)) this.add('ir_schema', `${p}/${k}`, `A ${h.kind} handler takes no ${k}`);
+      for (const k of keys) if (h[k] === undefined) this.add('ir_schema', `${p}/${k}`, `A ${h.kind} handler needs ${k}`);
+      if (h.kind === 'on') {
+        if (typeof h.group === 'string') this.group(h.group, `${p}/group`);
+        if (!_limitsjs.HANDLER_EVENTS.includes(h.event)) this.add('ir_schema', `${p}/event`, `event must be one of ${_limitsjs.HANDLER_EVENTS.join(', ')}`);
+      } else if (h.kind === 'every') {
+        if (h.sync !== undefined) {
+          if (!this.defs.syncNames.includes(h.sync)) this.add('ir_schema', `${p}/sync`, `Unknown sync value ${h.sync}`);
+        } else if (typeof h.intervalMs !== 'number') this.add('ir_schema', `${p}/intervalMs`, 'intervalMs must be a number');
+        else this.range(h.intervalMs, _limitsjs.PROGRAM.intervalMs, `${p}/intervalMs`, 'intervalMs');
+      } else if (h.kind === 'after') {
+        if (typeof h.ms !== 'number') this.add('ir_schema', `${p}/ms`, 'ms must be a number');
+        else this.range(h.ms, _limitsjs.PROGRAM.afterMs, `${p}/ms`, 'ms');
+      } else if (typeof h.source !== 'string' || !h.source) this.add('ir_schema', `${p}/source`, 'source must be text');
+      else if (h.source !== '*' && !this.defs.sources.includes(h.source) && !_defsjs.own.call(void 0, this.defs.groups, h.source)) {
+        this.add('unknown_group', `${p}/source`, `No source or group ${h.source}`);
+      }
+    });
+    pr.follow.forEach((/** @type {string} */ g, /** @type {number} */ i) => this.group(g, `/program/follow/${i}`));
+  }
+
   /** @param {string} key @param {string} path @returns {boolean} */
   group(key, path) {
     if (_defsjs.own.call(void 0, this.defs.groups, key)) return true;
@@ -3676,7 +4321,49 @@ function byteLength(s) {
   return new TextEncoder().encode(s).length;
 }
 
-}, {"./ir.schema.json":45,"./schema-check.js":46,"./defs.js":44,"./problem-codes.js":3,"./ir-walk.js":43,"./limits.js":16}],
+}, {"./ir.schema.json":47,"./schema-check.js":48,"./defs.js":46,"./problem-codes.js":4,"./ir-walk.js":45,"./limits.js":17}],
+/* src/expr/rand.js */ [function (module, exports, require) {
+"use strict";Object.defineProperty(exports, "__esModule", {value: true});// Deterministic `rand(lo, hi)` (doc/piece-dsl.md, Expressions): seeded by the piece seed,
+// the binding id and the object id. No Math.random().
+
+/**
+ * 32-bit FNV-1a hash of a string.
+ * @param {string} s
+ * @returns {number} unsigned 32-bit integer
+ */
+ function hash32(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+} exports.hash32 = hash32;
+
+/**
+ * One mulberry32 step from a 32-bit state, as a number in [0, 1).
+ * @param {number} a
+ * @returns {number}
+ */
+ function mulberry32Once(a) {
+  let t = (a + 0x6d2b79f5) | 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+} exports.mulberry32Once = mulberry32Once;
+
+/**
+ * Deterministic number in [0, 1) for (seed, bindingId, objectId).
+ * @param {number} seed
+ * @param {string} bindingId
+ * @param {string} objectId
+ * @returns {number}
+ */
+ function rand01(seed, bindingId, objectId) {
+  return mulberry32Once(hash32(`${seed}\u0000${bindingId}\u0000${objectId}`));
+} exports.rand01 = rand01;
+
+}, {}],
 /* node_modules/sucrase/dist/parser/tokenizer/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }/* eslint max-len: 0 */
 
@@ -4683,7 +5370,7 @@ function readTmplToken() {
   }
 } exports.skipWord = skipWord;
 
-}, {"../traverser/base":27,"../traverser/util":47,"../util/charcodes":23,"../util/identifier":48,"../util/whitespace":49,"./keywords":19,"./readWord":50,"./types":20}],
+}, {"../traverser/base":29,"../traverser/util":49,"../util/charcodes":25,"../util/identifier":50,"../util/whitespace":51,"./keywords":21,"./readWord":52,"./types":22}],
 /* node_modules/sucrase/dist/parser/tokenizer/keywords.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var ContextualKeyword; (function (ContextualKeyword) {
   const NONE = 0; ContextualKeyword[ContextualKeyword["NONE"] = NONE] = "NONE";
@@ -5188,7 +5875,7 @@ function isSpecifierEnd(tokens, index) {
   return token.type === _types.TokenType.braceR || token.type === _types.TokenType.comma;
 }
 
-}, {"../parser/tokenizer/types":20}],
+}, {"../parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/util/getNonTypeIdentifiers.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _tokenizer = require('../parser/tokenizer');
@@ -5234,7 +5921,7 @@ var _getJSXPragmaInfo = require('./getJSXPragmaInfo'); var _getJSXPragmaInfo2 = 
   return nonTypeIdentifiers;
 } exports.getNonTypeIdentifiers = getNonTypeIdentifiers;
 
-}, {"../parser/tokenizer":18,"../parser/tokenizer/types":20,"../transformers/JSXTransformer":35,"./getJSXPragmaInfo":51}],
+}, {"../parser/tokenizer":20,"../parser/tokenizer/types":22,"../transformers/JSXTransformer":37,"./getJSXPragmaInfo":53}],
 /* node_modules/sucrase/dist/parser/util/charcodes.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var charCodes; (function (charCodes) {
   const backSpace = 8; charCodes[charCodes["backSpace"] = backSpace] = "backSpace";
@@ -5370,7 +6057,7 @@ var _types = require('../parser/tokenizer/types');
   return names;
 } exports.default = getIdentifierNames;
 
-}, {"../parser/tokenizer/types":20}],
+}, {"../parser/tokenizer/types":22}],
 /* node_modules/ts-interface-checker/dist/index.js */ [function (module, exports, require) {
 "use strict";
 var __spreadArrays = (this && this.__spreadArrays) || function () {
@@ -5597,7 +6284,7 @@ var Checker = /** @class */ (function () {
 }());
 exports.Checker = Checker;
 
-}, {"./types":52,"./util":53}],
+}, {"./types":54,"./util":55}],
 /* node_modules/sucrase/dist/Options-gen-types.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { newObj[key] = obj[key]; } } } newObj.default = obj; return newObj; } }/**
  * This module was automatically generated by `ts-interface-builder`
@@ -5642,7 +6329,7 @@ const exportedTypeSuite = {
 };
 exports. default = exportedTypeSuite;
 
-}, {"ts-interface-checker":25}],
+}, {"ts-interface-checker":27}],
 /* node_modules/sucrase/dist/parser/traverser/base.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _state = require('../tokenizer/state'); var _state2 = _interopRequireDefault(_state);
 var _charcodes = require('../util/charcodes');
@@ -5705,7 +6392,7 @@ var _charcodes = require('../util/charcodes');
   exports.isFlowEnabled = isFlowEnabledArg;
 } exports.initParser = initParser;
 
-}, {"../tokenizer/state":54,"../util/charcodes":23}],
+}, {"../tokenizer/state":56,"../util/charcodes":25}],
 /* node_modules/sucrase/dist/parser/traverser/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 var _index = require('../tokenizer/index');
@@ -5726,7 +6413,7 @@ var _statement = require('./statement');
   return _statement.parseTopLevel.call(void 0, );
 } exports.parseFile = parseFile;
 
-}, {"../tokenizer/index":18,"../util/charcodes":23,"./base":27,"./statement":55}],
+}, {"../tokenizer/index":20,"../util/charcodes":25,"./base":29,"./statement":57}],
 /* node_modules/sucrase/dist/util/isAsyncOperation.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _keywords = require('../parser/tokenizer/keywords');
 
@@ -5767,7 +6454,7 @@ var _statement = require('./statement');
   return false;
 } exports.default = isAsyncOperation;
 
-}, {"../parser/tokenizer/keywords":19}],
+}, {"../parser/tokenizer/keywords":21}],
 /* node_modules/sucrase/dist/util/getClassInfo.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -6122,7 +6809,7 @@ function skipFieldName(tokens) {
   }
 }
 
-}, {"../parser/tokenizer/keywords":19,"../parser/tokenizer/types":20}],
+}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/transformers/CJSImportTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -7041,7 +7728,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = CJSImportTransformer;
 
-}, {"../parser/tokenizer":18,"../parser/tokenizer/keywords":19,"../parser/tokenizer/types":20,"../util/elideImportEquals":56,"../util/getDeclarationInfo":57,"../util/getImportExportSpecifierInfo":21,"../util/isExportFrom":58,"../util/removeMaybeImportAttributes":59,"../util/shouldElideDefaultExport":60,"./Transformer":61,"foo":null,"baz":null}],
+}, {"../parser/tokenizer":20,"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"../util/elideImportEquals":58,"../util/getDeclarationInfo":59,"../util/getImportExportSpecifierInfo":23,"../util/isExportFrom":60,"../util/removeMaybeImportAttributes":61,"../util/shouldElideDefaultExport":62,"./Transformer":63,"foo":null,"baz":null}],
 /* node_modules/sucrase/dist/transformers/ESMImportTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -7459,7 +8146,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = ESMImportTransformer;
 
-}, {"../parser/tokenizer/keywords":19,"../parser/tokenizer/types":20,"../util/elideImportEquals":56,"../util/getDeclarationInfo":57,"../util/getImportExportSpecifierInfo":21,"../util/getNonTypeIdentifiers":22,"../util/isExportFrom":58,"../util/removeMaybeImportAttributes":59,"../util/shouldElideDefaultExport":60,"./Transformer":61,"foo":null,"T":null}],
+}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"../util/elideImportEquals":58,"../util/getDeclarationInfo":59,"../util/getImportExportSpecifierInfo":23,"../util/getNonTypeIdentifiers":24,"../util/isExportFrom":60,"../util/removeMaybeImportAttributes":61,"../util/shouldElideDefaultExport":62,"./Transformer":63,"foo":null,"T":null}],
 /* node_modules/sucrase/dist/transformers/FlowTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _keywords = require('../parser/tokenizer/keywords');
 var _types = require('../parser/tokenizer/types');
@@ -7644,7 +8331,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = FlowTransformer;
 
-}, {"../parser/tokenizer/keywords":19,"../parser/tokenizer/types":20,"./Transformer":61,"flow-enums-runtime":null}],
+}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22,"./Transformer":63,"flow-enums-runtime":null}],
 /* node_modules/sucrase/dist/transformers/JestHoistTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }
 
@@ -7758,7 +8445,7 @@ const HOISTED_METHODS = ["mock", "unmock", "enableAutomock", "disableAutomock"];
   }
 } exports.default = JestHoistTransformer;
 
-}, {"../parser/tokenizer/types":20,"./Transformer":61}],
+}, {"../parser/tokenizer/types":22,"./Transformer":63}],
 /* node_modules/sucrase/dist/transformers/JSXTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -8494,7 +9181,7 @@ function isHexDigit(code) {
   );
 }
 
-}, {"../parser/plugins/jsx/xhtml":62,"../parser/tokenizer":18,"../parser/tokenizer/types":20,"../parser/util/charcodes":23,"../util/getJSXPragmaInfo":51,"./Transformer":61,"${path}":null}],
+}, {"../parser/plugins/jsx/xhtml":64,"../parser/tokenizer":20,"../parser/tokenizer/types":22,"../parser/util/charcodes":25,"../util/getJSXPragmaInfo":53,"./Transformer":63,"${path}":null}],
 /* node_modules/sucrase/dist/transformers/NumericSeparatorTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _types = require('../parser/tokenizer/types');
 
@@ -8517,7 +9204,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = NumericSeparatorTransformer;
 
-}, {"../parser/tokenizer/types":20,"./Transformer":61}],
+}, {"../parser/tokenizer/types":22,"./Transformer":63}],
 /* node_modules/sucrase/dist/transformers/OptionalCatchBindingTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _types = require('../parser/tokenizer/types');
@@ -8539,7 +9226,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = OptionalCatchBindingTransformer;
 
-}, {"../parser/tokenizer/types":20,"./Transformer":61}],
+}, {"../parser/tokenizer/types":22,"./Transformer":63}],
 /* node_modules/sucrase/dist/transformers/OptionalChainingNullishTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _types = require('../parser/tokenizer/types');
@@ -8697,7 +9384,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = OptionalChainingNullishTransformer;
 
-}, {"../parser/tokenizer/types":20,"./Transformer":61}],
+}, {"../parser/tokenizer/types":22,"./Transformer":63}],
 /* node_modules/sucrase/dist/transformers/ReactDisplayNameTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -8860,7 +9547,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = ReactDisplayNameTransformer;
 
-}, {"../parser/tokenizer":18,"../parser/tokenizer/types":20,"./Transformer":61}],
+}, {"../parser/tokenizer":20,"../parser/tokenizer/types":22,"./Transformer":63}],
 /* node_modules/sucrase/dist/transformers/ReactHotLoaderTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }var _tokenizer = require('../parser/tokenizer');
 
@@ -8932,7 +9619,7 @@ ${namesToRegister
   }
 } exports.default = ReactHotLoaderTransformer;
 
-}, {"../parser/tokenizer":18,"./Transformer":61,"react-hot-loader":null}],
+}, {"../parser/tokenizer":20,"./Transformer":63,"react-hot-loader":null}],
 /* node_modules/sucrase/dist/transformers/TypeScriptTransformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 var _types = require('../parser/tokenizer/types');
@@ -9214,7 +9901,7 @@ var _Transformer = require('./Transformer'); var _Transformer2 = _interopRequire
   }
 } exports.default = TypeScriptTransformer;
 
-}, {"../parser/tokenizer/types":20,"../util/isIdentifier":63,"./Transformer":61}],
+}, {"../parser/tokenizer/types":22,"../util/isIdentifier":65,"./Transformer":63}],
 /* src/dsl/expr.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Expression builders (doc/piece-dsl.md, Expressions). An expression is an immutable wrapper
 // around one IR node `{ op, args }`; each step returns a new expression. The expression
@@ -9333,9 +10020,9 @@ function step(op, self, rest) {
   return x;
 } exports.finite = finite;
 
-}, {"./limits.js":16}],
+}, {"./limits.js":17}],
 /* src/dsl/ir-walk.js */ [function (module, exports, require) {
-"use strict";Object.defineProperty(exports, "__esModule", {value: true});// Enumerates the expression positions of an IR document with their JSON Pointers and evaluation
+"use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }// Enumerates the expression positions of an IR document with their JSON Pointers and evaluation
 // contexts, and collects the groups a document references. Shared by the builder and the validator.
 
 /**
@@ -9439,6 +10126,8 @@ function step(op, self, rest) {
   const out = new Set();
   for (const b of ir.bindings) if (typeof b.group === 'string') out.add(b.group);
   for (const l of ir.layers) if (typeof l.group === 'string') out.add(l.group);
+  for (const h of _nullishCoalesce(_optionalChain([ir, 'access', _ => _.program, 'optionalAccess', _2 => _2.handlers]), () => ( []))) if (h.kind === 'on' && typeof h.group === 'string') out.add(h.group);
+  for (const g of _nullishCoalesce(_optionalChain([ir, 'access', _3 => _3.program, 'optionalAccess', _4 => _4.follow]), () => ( []))) if (typeof g === 'string') out.add(g);
   forEachExprPosition(ir, (value, path) => forEachNode(value, path, (node) => {
     const g = nodeGroup(node);
     if (g) out.add(g);
@@ -9682,9 +10371,9 @@ function isObject(v) {
   return obj && Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
 } exports.own = own;
 
-}, {"./limits.js":16}],
+}, {"./limits.js":17}],
 /* src/dsl/ir.schema.json */ [function (module, exports, require) {
-module.exports = {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://sphaerenmusik/ir.schema.json","title":"Sphärenmusik piece IR, version 1","description":"Structure of the IR (doc/piece-dsl.md, IR). Ranges, vocabularies and references are semantic checks in src/dsl/validate.js.","type":"object","additionalProperties":false,"required":["irVersion","seed","tempo","scale","instruments","master","lfos","mods","bindings","reactions","view","layers","groups","localOnly"],"properties":{"irVersion":{"type":"integer"},"seed":{"type":"integer"},"tempo":{"type":"number"},"scale":{"type":"object","additionalProperties":false,"required":["root","mode"],"properties":{"root":{"type":"string"},"mode":{"type":"string"}}},"instruments":{"type":"array","items":{"$ref":"#/$defs/instrument"}},"master":{"type":"object","additionalProperties":false,"required":["fx"],"properties":{"fx":{"$ref":"#/$defs/chain"}}},"lfos":{"type":"array","items":{"$ref":"#/$defs/lfo"}},"mods":{"type":"array","items":{"$ref":"#/$defs/mod"}},"bindings":{"type":"array","items":{"$ref":"#/$defs/binding"}},"reactions":{"type":"array","items":{"$ref":"#/$defs/reaction"}},"view":{"type":"object","additionalProperties":false,"required":["projection","background"],"properties":{"projection":{"type":"string"},"background":{"$ref":"#/$defs/value"}}},"layers":{"type":"array","items":{"$ref":"#/$defs/layer"}},"groups":{"type":"array","items":{"type":"string"}},"localOnly":{"type":"boolean"}},"$defs":{"id":{"type":"string","pattern":"^[a-z]+[0-9]+$"},"expr":{"type":"object","additionalProperties":false,"required":["op","args"],"properties":{"op":{"type":"string"},"args":{"type":"array","items":{"$ref":"#/$defs/value"}}}},"value":{"anyOf":[{"type":"number"},{"type":"string"},{"type":"boolean"},{"type":"null"},{"$ref":"#/$defs/expr"}]},"select":{"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["top","by","order"],"properties":{"top":{"type":"integer"},"by":{"type":"string"},"order":{"type":"string"}}}]},"slot":{"type":"object","additionalProperties":false,"required":["id","type","params","bypass"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"params":{"type":"object"},"bypass":{"type":"boolean"}}},"chain":{"type":"array","items":{"$ref":"#/$defs/slot"}},"instrument":{"type":"object","additionalProperties":false,"required":["id","type","volumeDb","octave","cents","params","fx"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"volumeDb":{"type":"number"},"octave":{"type":"integer"},"cents":{"type":"number"},"params":{"type":"object"},"fx":{"$ref":"#/$defs/chain"}}},"lfo":{"type":"object","additionalProperties":false,"required":["id","shape","rate","phase","retrigger","smooth"],"properties":{"id":{"$ref":"#/$defs/id"},"shape":{"type":"string"},"rate":{"anyOf":[{"type":"number"},{"type":"object","additionalProperties":false,"required":["sync"],"properties":{"sync":{"type":"string"}}},{"type":"object","additionalProperties":false,"required":["expr","min","max"],"properties":{"expr":{"$ref":"#/$defs/expr"},"min":{"type":"number"},"max":{"type":"number"}}}]},"phase":{"type":"number"},"retrigger":{"type":"boolean"},"smooth":{"type":"number"}}},"mod":{"type":"object","additionalProperties":false,"required":["target","source","depth","smoothMs"],"properties":{"target":{"type":"string","pattern":"^[a-z]+[0-9]+\\.[A-Za-z0-9_]+$"},"source":{"anyOf":[{"type":"object","additionalProperties":false,"required":["lfo"],"properties":{"lfo":{"$ref":"#/$defs/id"}}},{"type":"object","additionalProperties":false,"required":["expr"],"properties":{"expr":{"$ref":"#/$defs/expr"}}}]},"depth":{"type":"number"},"smoothMs":{"type":"number"}}},"binding":{"anyOf":[{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","pitch","velocity","pan","voiceMods"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"voices"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"pan":{"$ref":"#/$defs/value"},"voiceMods":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","event","when","pitch","velocity","durationMs","maxPerSecond"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"trigger"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"event":{"type":"string"},"when":{"$ref":"#/$defs/value"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"durationMs":{"type":"number"},"maxPerSecond":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"param"},"inst":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxParam"},"slot":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","expr"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxBypass"},"slot":{"$ref":"#/$defs/id"},"expr":{"$ref":"#/$defs/value"}}}]},"reaction":{"type":"object","additionalProperties":false,"required":["on","source","actions"],"properties":{"on":{"type":"string"},"source":{"type":"string"},"actions":{"type":"object","additionalProperties":false,"properties":{"detuneCents":{"type":"number"},"mute":{"type":"array","items":{"$ref":"#/$defs/id"}},"only":{"type":"array","items":{"$ref":"#/$defs/id"}},"desaturate":{"type":"number"}}}}},"layer":{"type":"object","additionalProperties":false,"required":["id","type","group","select","props"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"group":{"type":["string","null"]},"select":{"$ref":"#/$defs/select"},"glsl":{"type":"string"},"props":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}}}};
+module.exports = {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://sphaerenmusik/ir.schema.json","title":"Sphärenmusik piece IR, version 1","description":"Structure of the IR (doc/piece-dsl.md, IR). Ranges, vocabularies and references are semantic checks in src/dsl/validate.js.","type":"object","additionalProperties":false,"required":["irVersion","seed","tempo","scale","instruments","master","lfos","mods","bindings","reactions","view","layers","groups","localOnly"],"properties":{"irVersion":{"type":"integer"},"seed":{"type":"integer"},"tempo":{"type":"number"},"scale":{"type":"object","additionalProperties":false,"required":["root","mode"],"properties":{"root":{"type":"string"},"mode":{"type":"string"}}},"instruments":{"type":"array","items":{"$ref":"#/$defs/instrument"}},"master":{"type":"object","additionalProperties":false,"required":["fx"],"properties":{"fx":{"$ref":"#/$defs/chain"}}},"lfos":{"type":"array","items":{"$ref":"#/$defs/lfo"}},"mods":{"type":"array","items":{"$ref":"#/$defs/mod"}},"bindings":{"type":"array","items":{"$ref":"#/$defs/binding"}},"reactions":{"type":"array","items":{"$ref":"#/$defs/reaction"}},"view":{"type":"object","additionalProperties":false,"required":["projection","background"],"properties":{"projection":{"type":"string"},"background":{"$ref":"#/$defs/value"}}},"layers":{"type":"array","items":{"$ref":"#/$defs/layer"}},"groups":{"type":"array","items":{"type":"string"}},"localOnly":{"type":"boolean"},"program":{"type":"object","additionalProperties":false,"required":["handlers","follow"],"properties":{"handlers":{"type":"array","items":{"$ref":"#/$defs/handler"}},"follow":{"type":"array","items":{"type":"string"}}}}},"$defs":{"id":{"type":"string","pattern":"^[a-z]+[0-9]+$"},"handler":{"type":"object","required":["id","kind"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"type":"string"},"group":{"type":"string"},"event":{"type":"string"},"intervalMs":{"type":"number"},"sync":{"type":"string"},"ms":{"type":"number"},"source":{"type":"string"}}},"expr":{"type":"object","additionalProperties":false,"required":["op","args"],"properties":{"op":{"type":"string"},"args":{"type":"array","items":{"$ref":"#/$defs/value"}}}},"value":{"anyOf":[{"type":"number"},{"type":"string"},{"type":"boolean"},{"type":"null"},{"$ref":"#/$defs/expr"}]},"select":{"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["top","by","order"],"properties":{"top":{"type":"integer"},"by":{"type":"string"},"order":{"type":"string"}}}]},"slot":{"type":"object","additionalProperties":false,"required":["id","type","params","bypass"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"params":{"type":"object"},"bypass":{"type":"boolean"}}},"chain":{"type":"array","items":{"$ref":"#/$defs/slot"}},"instrument":{"type":"object","additionalProperties":false,"required":["id","type","volumeDb","octave","cents","params","fx"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"volumeDb":{"type":"number"},"octave":{"type":"integer"},"cents":{"type":"number"},"params":{"type":"object"},"fx":{"$ref":"#/$defs/chain"}}},"lfo":{"type":"object","additionalProperties":false,"required":["id","shape","rate","phase","retrigger","smooth"],"properties":{"id":{"$ref":"#/$defs/id"},"shape":{"type":"string"},"rate":{"anyOf":[{"type":"number"},{"type":"object","additionalProperties":false,"required":["sync"],"properties":{"sync":{"type":"string"}}},{"type":"object","additionalProperties":false,"required":["expr","min","max"],"properties":{"expr":{"$ref":"#/$defs/expr"},"min":{"type":"number"},"max":{"type":"number"}}}]},"phase":{"type":"number"},"retrigger":{"type":"boolean"},"smooth":{"type":"number"}}},"mod":{"type":"object","additionalProperties":false,"required":["target","source","depth","smoothMs"],"properties":{"target":{"type":"string","pattern":"^[a-z]+[0-9]+\\.[A-Za-z0-9_]+$"},"source":{"anyOf":[{"type":"object","additionalProperties":false,"required":["lfo"],"properties":{"lfo":{"$ref":"#/$defs/id"}}},{"type":"object","additionalProperties":false,"required":["expr"],"properties":{"expr":{"$ref":"#/$defs/expr"}}}]},"depth":{"type":"number"},"smoothMs":{"type":"number"}}},"binding":{"anyOf":[{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","pitch","velocity","pan","voiceMods"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"voices"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"pan":{"$ref":"#/$defs/value"},"voiceMods":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","event","when","pitch","velocity","durationMs","maxPerSecond"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"trigger"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"event":{"type":"string"},"when":{"$ref":"#/$defs/value"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"durationMs":{"type":"number"},"maxPerSecond":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"param"},"inst":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxParam"},"slot":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","expr"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxBypass"},"slot":{"$ref":"#/$defs/id"},"expr":{"$ref":"#/$defs/value"}}}]},"reaction":{"type":"object","additionalProperties":false,"required":["on","source","actions"],"properties":{"on":{"type":"string"},"source":{"type":"string"},"actions":{"type":"object","additionalProperties":false,"properties":{"detuneCents":{"type":"number"},"mute":{"type":"array","items":{"$ref":"#/$defs/id"}},"only":{"type":"array","items":{"$ref":"#/$defs/id"}},"desaturate":{"type":"number"}}}}},"layer":{"type":"object","additionalProperties":false,"required":["id","type","group","select","props"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"group":{"type":["string","null"]},"select":{"$ref":"#/$defs/select"},"glsl":{"type":"string"},"props":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}}}};
 }, {}],
 /* src/dsl/schema-check.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } }// A JSON Schema (draft 2020-12) checker for the subset used by ir.schema.json: type, const,
@@ -9786,7 +10475,7 @@ function fail(out, path, message) {
   return false;
 }
 
-}, {"./ir-walk.js":43}],
+}, {"./ir-walk.js":45}],
 /* node_modules/sucrase/dist/parser/traverser/util.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _index = require('../tokenizer/index');
 
@@ -9893,7 +10582,7 @@ var _base = require('./base');
   _index.finishToken.call(void 0, _types.TokenType.eof);
 } exports.unexpected = unexpected;
 
-}, {"../tokenizer/index":18,"../tokenizer/types":20,"../util/charcodes":23,"./base":27}],
+}, {"../tokenizer/index":20,"../tokenizer/types":22,"../util/charcodes":25,"./base":29}],
 /* node_modules/sucrase/dist/parser/util/identifier.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _charcodes = require('./charcodes');
 var _whitespace = require('./whitespace');
@@ -9930,7 +10619,7 @@ for (let numChar = _charcodes.charCodes.digit0; numChar <= _charcodes.charCodes.
   exports.IS_IDENTIFIER_START[numChar] = 0;
 }
 
-}, {"./charcodes":23,"./whitespace":49}],
+}, {"./charcodes":25,"./whitespace":51}],
 /* node_modules/sucrase/dist/parser/util/whitespace.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _charcodes = require('./charcodes');
 
@@ -9966,7 +10655,7 @@ for (const char of exports.WHITESPACE_CHARS) {
   exports.IS_WHITESPACE[char] = 1;
 }
 
-}, {"./charcodes":23}],
+}, {"./charcodes":25}],
 /* node_modules/sucrase/dist/parser/tokenizer/readWord.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _base = require('../traverser/base');
 var _charcodes = require('../util/charcodes');
@@ -10033,7 +10722,7 @@ var _types = require('./types');
   _index.finishToken.call(void 0, _types.TokenType.name);
 } exports.default = readWord;
 
-}, {"../traverser/base":27,"../util/charcodes":23,"../util/identifier":48,"./index":18,"./readWordTree":64,"./types":20}],
+}, {"../traverser/base":29,"../util/charcodes":25,"../util/identifier":50,"./index":20,"./readWordTree":66,"./types":22}],
 /* node_modules/sucrase/dist/util/getJSXPragmaInfo.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -10627,7 +11316,7 @@ for (var _i = 0, _a = [Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uin
     _loop_1(array_1);
 }
 
-}, {"./util":53}],
+}, {"./util":55}],
 /* node_modules/ts-interface-checker/dist/util.js */ [function (module, exports, require) {
 "use strict";
 var __extends = (this && this.__extends) || (function () {
@@ -10869,7 +11558,7 @@ var _types = require('./types');
   }
 } exports.default = State;
 
-}, {"./keywords":19,"./types":20}],
+}, {"./keywords":21,"./types":22}],
 /* node_modules/sucrase/dist/parser/traverser/statement.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});/* eslint max-len: 0 */
 
@@ -12204,7 +12893,7 @@ function maybeParseImportAttributes() {
   }
 }
 
-}, {"../index":10,"../plugins/flow":65,"../plugins/typescript":66,"../tokenizer":18,"../tokenizer/keywords":19,"../tokenizer/state":54,"../tokenizer/types":20,"../util/charcodes":23,"./base":27,"./expression":67,"./lval":68,"./util":47,"T":null}],
+}, {"../index":11,"../plugins/flow":67,"../plugins/typescript":68,"../tokenizer":20,"../tokenizer/keywords":21,"../tokenizer/state":56,"../tokenizer/types":22,"../util/charcodes":25,"./base":29,"./expression":69,"./lval":70,"./util":49,"T":null}],
 /* node_modules/sucrase/dist/util/elideImportEquals.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _types = require('../parser/tokenizer/types');
 
@@ -12236,7 +12925,7 @@ function maybeParseImportAttributes() {
   }
 } exports.default = elideImportEquals;
 
-}, {"../parser/tokenizer/types":20,"A":null}],
+}, {"../parser/tokenizer/types":22,"A":null}],
 /* node_modules/sucrase/dist/util/getDeclarationInfo.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _tokenizer = require('../parser/tokenizer');
 var _types = require('../parser/tokenizer/types');
@@ -12279,7 +12968,7 @@ var _types = require('../parser/tokenizer/types');
   return {typeDeclarations, valueDeclarations};
 } exports.default = getDeclarationInfo;
 
-}, {"../parser/tokenizer":18,"../parser/tokenizer/types":20}],
+}, {"../parser/tokenizer":20,"../parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/util/isExportFrom.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _keywords = require('../parser/tokenizer/keywords');
 var _types = require('../parser/tokenizer/types');
@@ -12300,7 +12989,7 @@ var _types = require('../parser/tokenizer/types');
   );
 } exports.default = isExportFrom;
 
-}, {"../parser/tokenizer/keywords":19,"../parser/tokenizer/types":20}],
+}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/util/removeMaybeImportAttributes.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _keywords = require('../parser/tokenizer/keywords');
 var _types = require('../parser/tokenizer/types');
@@ -12325,7 +13014,7 @@ var _types = require('../parser/tokenizer/types');
   }
 } exports.removeMaybeImportAttributes = removeMaybeImportAttributes;
 
-}, {"../parser/tokenizer/keywords":19,"../parser/tokenizer/types":20}],
+}, {"../parser/tokenizer/keywords":21,"../parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/util/shouldElideDefaultExport.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _types = require('../parser/tokenizer/types');
 
@@ -12366,7 +13055,7 @@ var _types = require('../parser/tokenizer/types');
   );
 } exports.default = shouldElideDefaultExport;
 
-}, {"../parser/tokenizer/types":20}],
+}, {"../parser/tokenizer/types":22}],
 /* node_modules/sucrase/dist/transformers/Transformer.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); class Transformer {
   // Return true if anything was processed, false otherwise.
@@ -12728,7 +13417,7 @@ const RESERVED_WORDS = new Set([
   return !RESERVED_WORDS.has(name);
 } exports.default = isIdentifier;
 
-}, {"../parser/util/identifier":48}],
+}, {"../parser/util/identifier":50}],
 /* node_modules/sucrase/dist/parser/tokenizer/readWordTree.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});// Generated file, do not edit! Run "yarn generate" to re-generate this file.
 var _keywords = require('./keywords');
@@ -13402,7 +14091,7 @@ var _types = require('./types');
   (_types.TokenType._yield << 1) + 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 ]); exports.READ_WORD_TREE = READ_WORD_TREE;
 
-}, {"./keywords":19,"./types":20}],
+}, {"./keywords":21,"./types":22}],
 /* node_modules/sucrase/dist/parser/plugins/flow.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});/* eslint max-len: 0 */
 
@@ -14510,7 +15199,7 @@ function flowParseEnumMember() {
   }
 }
 
-}, {"../tokenizer/index":18,"../tokenizer/keywords":19,"../tokenizer/types":20,"../traverser/base":27,"../traverser/expression":67,"../traverser/statement":55,"../traverser/util":47}],
+}, {"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/types":22,"../traverser/base":29,"../traverser/expression":69,"../traverser/statement":57,"../traverser/util":49}],
 /* node_modules/sucrase/dist/parser/plugins/typescript.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -16145,7 +16834,7 @@ function tsParseTypeArguments() {
   _statement.baseParseMaybeDecoratorArguments.call(void 0, );
 } exports.tsParseMaybeDecoratorArguments = tsParseMaybeDecoratorArguments;
 
-}, {"../tokenizer/index":18,"../tokenizer/keywords":19,"../tokenizer/types":20,"../traverser/base":27,"../traverser/expression":67,"../traverser/lval":68,"../traverser/statement":55,"../traverser/util":47,"./jsx":69,"A":null}],
+}, {"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/types":22,"../traverser/base":29,"../traverser/expression":69,"../traverser/lval":70,"../traverser/statement":57,"../traverser/util":49,"./jsx":71,"A":null}],
 /* node_modules/sucrase/dist/parser/traverser/expression.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});/* eslint max-len: 0 */
 
@@ -17170,7 +17859,7 @@ function parseModuleExpression() {
   _statement.parseBlockBody.call(void 0, _types3.TokenType.braceR);
 }
 
-}, {"../plugins/flow":65,"../plugins/jsx/index":69,"../plugins/types":70,"../plugins/typescript":66,"../tokenizer/index":18,"../tokenizer/keywords":19,"../tokenizer/state":54,"../tokenizer/types":20,"../util/charcodes":23,"../util/identifier":48,"./base":27,"./lval":68,"./statement":55,"./util":47}],
+}, {"../plugins/flow":67,"../plugins/jsx/index":71,"../plugins/types":72,"../plugins/typescript":68,"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/state":56,"../tokenizer/types":22,"../util/charcodes":25,"../util/identifier":50,"./base":29,"./lval":70,"./statement":57,"./util":49}],
 /* node_modules/sucrase/dist/parser/traverser/lval.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _flow = require('../plugins/flow');
 var _typescript = require('../plugins/typescript');
@@ -17332,7 +18021,7 @@ function parseAssignableListItemTypes() {
   _base.state.tokens[eqIndex].rhsEndIndex = _base.state.tokens.length;
 } exports.parseMaybeDefault = parseMaybeDefault;
 
-}, {"../plugins/flow":65,"../plugins/typescript":66,"../tokenizer/index":18,"../tokenizer/keywords":19,"../tokenizer/types":20,"./base":27,"./expression":67,"./util":47}],
+}, {"../plugins/flow":67,"../plugins/typescript":68,"../tokenizer/index":20,"../tokenizer/keywords":21,"../tokenizer/types":22,"./base":29,"./expression":69,"./util":49}],
 /* node_modules/sucrase/dist/parser/plugins/jsx/index.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});
 
@@ -17702,7 +18391,7 @@ function nextJSXExprToken() {
   jsxReadToken();
 }
 
-}, {"../../tokenizer/index":18,"../../tokenizer/types":20,"../../traverser/base":27,"../../traverser/expression":67,"../../traverser/util":47,"../../util/charcodes":23,"../../util/identifier":48,"../typescript":66}],
+}, {"../../tokenizer/index":20,"../../tokenizer/types":22,"../../traverser/base":29,"../../traverser/expression":69,"../../traverser/util":49,"../../util/charcodes":25,"../../util/identifier":50,"../typescript":68}],
 /* node_modules/sucrase/dist/parser/plugins/types.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true});var _index = require('../tokenizer/index');
 var _types = require('../tokenizer/types');
@@ -17742,7 +18431,7 @@ var _typescript = require('./typescript');
   }
 } exports.typedParseParenItem = typedParseParenItem;
 
-}, {"../tokenizer/index":18,"../tokenizer/types":20,"../traverser/base":27,"../traverser/expression":67,"./flow":65,"./typescript":66}]
+}, {"../tokenizer/index":20,"../tokenizer/types":22,"../traverser/base":29,"../traverser/expression":69,"./flow":67,"./typescript":68}]
   ];
   var cache = [];
   function load(id) {

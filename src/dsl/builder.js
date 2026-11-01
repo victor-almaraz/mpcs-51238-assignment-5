@@ -7,8 +7,9 @@
 import { ColorExpr, Expr, expr, finite, isExpr, toValue } from './expr.js';
 import { collectGroups, forEachNode } from './ir-walk.js';
 import { own } from './defs.js';
+import { createIo } from './program.js';
 import {
-  COLOR_HEX, CURRENT_IR_VERSION, DEFAULTS, EVENT_KINDS, LFO_SHAPES, NOTE_ROOT, PROJECTIONS, RANGES, SCALE_MODES,
+  COLOR_HEX, CURRENT_IR_VERSION, DEFAULTS, EVENT_KINDS, HANDLER_EVENTS, LFO_SHAPES, NOTE_ROOT, PROGRAM, PROJECTIONS, RANGES, SCALE_MODES,
 } from './limits.js';
 
 /** @typedef {import('./defs.js').Defs} Defs */
@@ -41,8 +42,13 @@ export function createBuilder(defs, { line = () => null } = {}) {
     /** @type {any[]} */ reactions: [],
     view: { projection: DEFAULTS.projection, background: /** @type {Value} */ (DEFAULTS.background) },
     /** @type {any[]} */ layers: [],
+    /** @type {any[]} */ handlers: [],
+    /** @type {string[]} */ follow: [],
     localOnly: false,
   };
+
+  // Program IO (doc/piece-dsl.md, Program): handlers, output calls, `read.*` and the seeded random.
+  const P = createIo({ groupSource: (k) => own(defs.groups, k)?.source ?? null, seed: () => st.seed });
 
   // ---------- helpers ----------
   /** @param {string} pointer @param {number | null} ln */
@@ -176,6 +182,19 @@ export function createBuilder(defs, { line = () => null } = {}) {
       mark(`/mods/${st.mods.length}`, ln);
       st.mods.push({ target: `${owner.id}.${name}`, source: src, depth, smoothMs });
     },
+    /** Program output: sets the base value from a handler. @param {unknown} value @param {unknown} [opts] */
+    set(value, opts) {
+      const where = `${name}.set()`;
+      P.inHandler(where);
+      const o = plainObject(opts, where);
+      onlyKeys(o, ['smoothMs'], where);
+      const types = owner.kind === 'instrument' ? defs.instruments : defs.effects;
+      const spec = own(own(types, /** @type {any} */ (owner).type)?.params ?? {}, name);
+      if (!spec || spec.kind !== 'number') throw new TypeError(`${where}: ${name} is not a numeric parameter of ${/** @type {any} */ (owner).type}`);
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${where}: value must be a number`);
+      const smoothMs = o.smoothMs === undefined ? DEFAULTS.smoothMs : clampNum(o.smoothMs, /** @type {[number, number]} */ (RANGES.smoothMs), where, 'smoothMs');
+      P.emit(where, { op: 'set', target: `${owner.id}.${name}`, value: clamp(value, /** @type {number} */ (spec.min), /** @type {number} */ (spec.max)), smoothMs });
+    },
   });
 
   /** @param {{ kind: 'slot', id: string }} owner */
@@ -186,7 +205,13 @@ export function createBuilder(defs, { line = () => null } = {}) {
       mark(`/bindings/${st.bindings.length}`, ln);
       st.bindings.push({ id: `b${st.bindings.length}`, kind: 'fxBypass', slot: owner.id, expr: toValue(value, 'bypass.follow()') });
     },
-    mod() { throw new TypeError('bypass accepts follow() only'); },
+    mod() { throw new TypeError('bypass accepts follow() and set() only'); },
+    /** Program output. @param {unknown} on */
+    set(on) {
+      P.inHandler('bypass.set()');
+      if (typeof on !== 'boolean') throw new TypeError('bypass.set(): use true or false');
+      P.emit('bypass.set()', { op: 'set', target: `${owner.id}.bypass`, value: on });
+    },
   });
 
   /** @param {any} rec @param {(name: string) => unknown} special */
@@ -218,6 +243,73 @@ export function createBuilder(defs, { line = () => null } = {}) {
     owner.fxLine = ln;
   };
 
+  // ---------- program output on instruments ----------
+  /** @param {unknown} v @param {string} where @returns {number | null} */
+  const notePitch = (v, where) => {
+    if (v === null || v === undefined) return null;
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError(`${where}: pitch must be a number (MIDI note) or null`);
+    return clamp(v, RANGES.pitch[0], RANGES.pitch[1]);
+  };
+  /** @param {unknown} v @param {readonly number[]} range @param {number} dflt @param {string} where @param {string} name */
+  const optNum = (v, range, dflt, where, name) => (v === undefined ? dflt : clampNum(v, /** @type {[number, number]} */ (range), where, name));
+  /** @param {unknown} k @param {string} where */
+  const keyOf = (k, where) => {
+    if (typeof k !== 'string' || k.length === 0 || k.length > PROGRAM.keyChars) throw new TypeError(`${where}: key must be text of 1 to ${PROGRAM.keyChars} characters`);
+    return k;
+  };
+  /** @param {any} rec */
+  const instrumentIo = (rec) => Object.freeze({
+    /** @param {unknown} pitch @param {unknown} [opts] */
+    play(pitch, opts) {
+      const where = `${rec.type}.play()`;
+      P.inHandler(where);
+      const o = plainObject(opts, where);
+      onlyKeys(o, ['velocity', 'pan', 'durationMs'], where);
+      const p = notePitch(pitch, where);
+      if (p === null) return;
+      P.emit(where, {
+        op: 'play', inst: rec.id, pitch: p,
+        velocity: optNum(o.velocity, RANGES.velocity, DEFAULTS.velocity, where, 'velocity'),
+        pan: optNum(o.pan, RANGES.pan, DEFAULTS.pan, where, 'pan'),
+        durationMs: optNum(o.durationMs, RANGES.durationMs, DEFAULTS.durationMs, where, 'durationMs'),
+      });
+    },
+    /** @param {unknown} key @param {unknown} pitch @param {unknown} [opts] */
+    hold(key, pitch, opts) {
+      const where = `${rec.type}.hold()`;
+      P.inHandler(where);
+      const k = keyOf(key, where);
+      const o = plainObject(opts, where);
+      onlyKeys(o, ['velocity', 'pan'], where);
+      const p = notePitch(pitch, where);
+      if (p === null) return;
+      P.emit(where, {
+        op: 'hold', inst: rec.id, key: k, pitch: p,
+        velocity: optNum(o.velocity, RANGES.velocity, DEFAULTS.velocity, where, 'velocity'),
+        pan: optNum(o.pan, RANGES.pan, DEFAULTS.pan, where, 'pan'),
+      });
+    },
+    /** @param {unknown} key @param {unknown} pitch @param {unknown} [ms] */
+    glide(key, pitch, ms) {
+      const where = `${rec.type}.glide()`;
+      P.inHandler(where);
+      const k = keyOf(key, where);
+      const p = notePitch(pitch, where);
+      if (p === null) return;
+      P.emit(where, { op: 'glide', inst: rec.id, key: k, pitch: p, ms: optNum(ms, PROGRAM.glideMs, PROGRAM.defaultGlideMs, where, 'ms') });
+    },
+    /** @param {unknown} key */
+    stop(key) {
+      const where = `${rec.type}.stop()`;
+      P.inHandler(where);
+      P.emit(where, { op: 'stop', inst: rec.id, key: keyOf(key, where) });
+    },
+    stopAll() {
+      const where = `${rec.type}.stopAll()`;
+      P.emit(where, { op: 'stopAll', inst: rec.id });
+    },
+  });
+
   // ---------- instruments ----------
   /** @param {string} type */
   const instrumentFactory = (type) => (/** @type {unknown} */ opts) => {
@@ -242,7 +334,9 @@ export function createBuilder(defs, { line = () => null } = {}) {
     }
     mark(`/instruments/${st.instruments.length}`, ln);
     st.instruments.push(rec);
-    return handleProxy(rec, (k) => (k === 'fx' ? (/** @type {unknown[]} */ ...slots) => setChain(rec, slots, `${type}.fx()`) : undefined));
+    const out = instrumentIo(rec);
+    return handleProxy(rec, (k) => (k === 'fx' ? (/** @type {unknown[]} */ ...slots) => setChain(rec, slots, `${type}.fx()`)
+      : Object.prototype.hasOwnProperty.call(out, k) ? /** @type {any} */ (out)[k] : undefined));
   };
 
   // ---------- effects ----------
@@ -472,18 +566,39 @@ export function createBuilder(defs, { line = () => null } = {}) {
       }
       for (const k of spec.order) if (!(k in out)) out[k] = /** @type {Value} */ (spec.props[k].default);
       mark(`/layers/${st.layers.length}`, ln);
-      st.layers.push({ id: `l${st.layers.length}`, type, group, select, props: out });
+      const id = `l${st.layers.length}`;
+      st.layers.push({ id, type, group, select, props: out });
+      return layerHandle(id, type, spec);
     };
     if (spec.group) {
       return (/** @type {unknown} */ g, /** @type {unknown} */ props) => {
         const ln = line();
         const rec = typeof g === 'object' && g !== null ? records.get(g) : undefined;
         if (!rec || rec.kind !== 'group') throw new TypeError(`layer.${type}(): first argument must be sky.group(...)`);
-        add(rec.key, rec.select, props, ln);
+        return add(rec.key, rec.select, props, ln);
       };
     }
     return (/** @type {unknown} */ props) => add(null, null, props, line());
   };
+
+  /** Program output on a layer: constant property values. @param {string} id @param {string} type @param {any} spec */
+  const layerHandle = (id, type, spec) => Object.freeze({
+    /** @param {unknown} props */
+    set(props) {
+      const where = `layer.${type}().set()`;
+      P.inHandler(where);
+      const o = plainObject(props, where);
+      /** @type {Record<string, Value>} */
+      const out = {};
+      for (const [k, v] of Object.entries(o)) {
+        const p = own(spec.props, k);
+        if (!p) throw new TypeError(`${where}: ${type} layers have no property '${k}'`);
+        if (isExpr(v)) throw new TypeError(`${where}: ${k} must be a constant value here`);
+        out[k] = layerValue(p, v, `${where} ${k}`);
+      }
+      P.emit(where, { op: 'layer', layer: id, props: out });
+    },
+  });
 
   /** @type {Record<string, Function>} */
   const layer = {};
@@ -561,6 +676,49 @@ export function createBuilder(defs, { line = () => null } = {}) {
       return new ColorExpr({ op: 'color', args: [hex] });
     },
     audio,
+    // Program (doc/piece-dsl.md, Program).
+    /** @param {unknown} group @param {unknown} kind @param {unknown} fn */
+    on(group, kind, fn) {
+      if (typeof group !== 'string' || !group) throw new TypeError("on(): group must be text such as 'jpl.scout'");
+      if (typeof kind !== 'string' || !HANDLER_EVENTS.includes(kind)) throw new TypeError(`on(): kind must be one of ${HANDLER_EVENTS.map((k) => `'${k}'`).join(', ')}`);
+      register('on()', { kind: 'on', group, event: kind }, fn);
+    },
+    /** @param {unknown} interval @param {unknown} fn */
+    every(interval, fn) {
+      if (typeof interval === 'number') {
+        register('every()', { kind: 'every', intervalMs: clampNum(interval, /** @type {[number, number]} */ (PROGRAM.intervalMs), 'every()', 'interval') }, fn);
+      } else if (typeof interval === 'string' && defs.syncNames.includes(interval)) {
+        register('every()', { kind: 'every', sync: interval }, fn);
+      } else throw new TypeError(`every(): interval must be milliseconds or a sync value such as '1/8'; sync values are ${defs.syncNames.join(', ')}`);
+    },
+    /** @param {unknown} ms @param {unknown} fn */
+    after(ms, fn) {
+      if (P.io.phase !== 'setup') return P.after(ms, fn);
+      const h = register('after()', { kind: 'after', ms: clampNum(ms, /** @type {[number, number]} */ (PROGRAM.afterMs), 'after()', 'ms') }, fn);
+      return () => { h.disabled = true; };
+    },
+    /** @param {unknown} source @param {unknown} fn */
+    onFreshness(source, fn) {
+      if (typeof source !== 'string' || !source) throw new TypeError("onFreshness(): source must be a source id, a group or '*'");
+      register('onFreshness()', { kind: 'freshness', source }, fn);
+    },
+    /** @param {unknown[]} groups */
+    follow(...groups) {
+      if (P.io.phase !== 'setup') throw new TypeError('follow(): call it in the setup code');
+      const ln = line();
+      for (const g of groups) {
+        if (typeof g !== 'string' || !g) throw new TypeError("follow(): groups must be text such as 'swpc.kp'");
+        if (!st.follow.includes(g)) {
+          mark(`/program/follow/${st.follow.length}`, ln);
+          st.follow.push(g);
+        }
+      }
+    },
+    read: P.read,
+    time: () => P.io.now,
+    random: P.random.random,
+    randInt: P.random.randInt,
+    choose: P.random.choose,
     /** @param {unknown} source */
     fn: (source) => {
       if (typeof source !== 'string') throw new TypeError("fn(): source must be text such as 'o => o.fields.inclination / 2'");
@@ -577,6 +735,20 @@ export function createBuilder(defs, { line = () => null } = {}) {
     api[type] = effectFactory(type);
   }
   Object.freeze(api);
+
+  /**
+   * Registers a handler during setup.
+   * @param {string} name @param {Record<string, unknown>} rec @param {unknown} fn
+   */
+  function register(name, rec, fn) {
+    if (P.io.phase !== 'setup') throw new TypeError(`${name}: register handlers in the setup code, not inside a handler`);
+    if (typeof fn !== 'function') throw new TypeError(`${name}: the last argument must be a function`);
+    const ln = line();
+    const h = { id: `h${st.handlers.length}`, ...rec, fn, disabled: false };
+    mark(`/program/handlers/${st.handlers.length}`, ln);
+    st.handlers.push(h);
+    return h;
+  }
 
   /** @param {any} slot */
   const slotIr = (slot) => ({ id: slot.id, type: slot.type, params: { ...slot.params }, bypass: slot.bypass });
@@ -612,11 +784,21 @@ export function createBuilder(defs, { line = () => null } = {}) {
       groups: /** @type {string[]} */ ([]),
       localOnly: st.localOnly,
     };
+    if (st.handlers.length || st.follow.length) {
+      /** @type {any} */ (ir).program = {
+        handlers: st.handlers.map(({ fn, disabled, ...h }) => h),
+        follow: [...st.follow],
+      };
+    }
     ir.groups = collectGroups(ir);
-    return { ir: structuredCloneJson(ir), lines };
+    return {
+      ir: structuredCloneJson(ir),
+      lines,
+      program: { handlers: st.handlers, io: P.io, tempo: st.tempo },
+    };
   }
 
-  return { api, finish };
+  return { api, finish, seededMath: P.seededMath };
 }
 
 /** Constants in note, velocity and pan positions clamp to their range; expressions pass through. */
