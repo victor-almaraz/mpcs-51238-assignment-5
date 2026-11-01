@@ -43,12 +43,12 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 
 | Section | Heading | Content | Visual |
 |---|---|---|---|
-| Hero | `# Sphärenmusik` | What the name means; one sentence on what the piece does | Live orbit map: `celestrak.stations` propagated in the page with `satellite.js` every 2 s and drawn on a 2D canvas in the `map` projection's equirectangular geometry, with a graticule, the night side shaded from the subsolar point, and 45-minute ground-track trails; the ISS is labelled. Elements come from the live strip's snapshot. Drawn once per snapshot with reduced motion |
+| Hero | `# Sphärenmusik` | What the name means; the inspiration (music of the spheres, the quadrivium); one sentence on what the piece does | Live orbit map: `celestrak.stations` propagated in the page with `satellite.js` every 2 s and drawn on a 2D canvas in the `map` projection's equirectangular geometry, with a graticule, the night side shaded from the subsolar point, and 45-minute ground-track trails; the ISS is labelled. Elements come from the live strip's snapshot. Drawn once per snapshot with reduced motion |
 | Actions | | Listen Now (`/listen`, the one highlighted action), Start Composing (`/sign-in`; Open Projects when signed in), Learn the Piece Script (`/learn`) | Buttons |
 | Live strip | | Kp, solar wind speed, stations in orbit, next launch name and time, each with its freshness icon and label | Four tiles under the hero: label, monospace value, freshness icon |
 | Spheres | The music of the spheres | Pythagorean ratios; Plato, Boethius and Kepler; the physics caveat | The four sources as a timeline (a list, one bold title per item); a string divided at 2:1, 3:2 and 4:3, drawn as SVG with a text alternative |
-| Quadrivium | Four sister sciences | Plato's "sister sciences", Nicomachus's division, Boethius's term, the seven liberal arts | Plato's sentence as a pull quote; the division as a real 2 × 2 table styled as a grid, with the "In motion" column (music and astronomy) tinted |
-| App | What Sphärenmusik does | The four arts in the app; four kinds of sky motion; the ISS twenty octaves up | The four kinds of motion as cards (a list, one bold title per item) |
+| Quadrivium | Four sister sciences | Plato's "sister sciences", Nicomachus's division, Boethius's term, the seven liberal arts | Plato's sentence as a pull quote; the division as a real 2 × 2 table styled as a grid, with the "In relation or in motion" column (music and astronomy) tinted |
+| App | What Sphärenmusik does | The four kinds of live data and their sources; the ISS twenty octaves up | The four kinds of data as cards (a list, one bold title per item) |
 | How | How it works | Four-step pipeline and the five-line script from `first-piece` | Numbered steps in two columns above the code block, highlighted with the editor's syntax colours; actions repeated, with Your First Piece (`/learn/first-piece`) in place of Learn |
 | Honesty | What is real | Live data, composed mapping, no claim of sound in the sky | Set as a larger statement on a panel band |
 | Reading | Further reading | Primary sources and one sourcebook | List |
