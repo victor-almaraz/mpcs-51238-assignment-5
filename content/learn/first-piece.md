@@ -9,7 +9,7 @@ This page builds a piece in which every object in the space-stations group (the 
 
 ## Create a project
 1. Open **Projects** and select **New Project** → **Blank**.
-2. The editor opens with an empty `piece.ts`.
+2. The editor opens `piece.ts` with a blank script: two comment lines and no code.
 
 ## Write the script
 Type the following script:
@@ -35,14 +35,14 @@ Scripts are TypeScript. You do not need to write any type annotations: the edito
 
 - **Completion.** Typing `additive({ ` lists the additive synthesizer's parameters. Typing `sky.group('` lists the groups.
 - **Hover.** Pointing at a name shows its type and, for parameters, its range.
-- **Problems.** A misspelled option, an unknown group or a field that the group does not have is underlined in amber as you type, and listed in the **Problems** tab.
+- **Problems.** A misspelled option, an unknown group or a field that the group does not have is underlined in yellow as you type, and listed in the **Problems** tab.
 
-Amber type problems do not stop a piece from running, so you can try an idea before it is finished. Red problems, such as a syntax error or a limit exceeded, stop the piece until you fix them.
+Type problems (yellow) do not stop a piece from running, so you can try an idea before it is finished. Each build checks the script again: red problems, such as a syntax error, an unknown option or group, or a limit exceeded, stop the piece until you fix them. A field that no object in the group has stays a yellow warning.
 
 ## Run it
-1. Press **Run** (`Mod-Enter`; `Mod` is `Cmd` on macOS, `Ctrl` elsewhere). The browser allows sound only after this click.
+1. Press **Run** (`Mod-Enter`; `Mod` is `Cmd` on macOS, `Ctrl` elsewhere). The first time, a notice shows the volume and photosensitivity warnings; select **Start Sound**. The browser allows sound only after a click.
 2. A chord sounds: one note per station.
-3. The status bar shows `● celestrak` when the orbital data is fresh.
+3. The status bar shows `celestrak.stations` with a check-mark icon when the orbital data is fresh.
 
 The chord changes each time CelesTrak publishes orbital elements, about every two hours. The [Live data states](live-data-states) page shows how to hear changes faster while composing.
 

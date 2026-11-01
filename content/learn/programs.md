@@ -5,7 +5,7 @@ order: 5
 
 # Programs
 
-A script is a program. Its top-level code, the **setup**, runs when you press Run or save: it creates instruments, effects and layers. **Handlers** keep running while the piece plays. They are functions that Sphärenmusik calls when sky data changes or a timer fires. Variables that the setup declares keep their values between calls, so a piece can remember what happened and decide what comes next.
+A script is a program. Its top-level code, the **setup**, runs when the piece is built (when the editor opens it and each time you save): it creates instruments, effects and layers. **Handlers** keep running while the piece plays. They are functions that Sphärenmusik calls when sky data changes or a timer fires. Variables that the setup declares keep their values between calls, so a piece can remember what happened and decide what comes next.
 
 Use bindings ([Sound](sound)) when each object maps straight onto a note or a parameter. Use handlers when the music has a state of its own: a chord progression, a counter, a melody that walks.
 
@@ -72,7 +72,7 @@ Inside a handler, instruments, parameters and layers take commands:
 Commands work only inside handlers. In the setup they stop the build with `io_outside_handler`.
 
 ## Reading live values
-`read.swpc(path)`, `read.group(key)`, `read.object(id)` and `read.freshness(source)` return the current sky inside a handler. A piece reads only groups it follows: groups named in `on`, bindings, layers and `sky.swpc`, plus any listed with `follow(...)`:
+`read.swpc(path)`, `read.group(key)`, `read.object(id)` and `read.freshness(source)` return the current sky inside a handler. A piece reads only groups it follows: groups named in `on`, bindings, layers and expressions such as `sky.swpc`, plus any listed with `follow(...)`. `read.swpc` or `read.group` on any other group throws an error that names the missing `follow`:
 
 ```ts piece
 const drone = subtractive({ volume: -6, attack: 2, release: 3, cutoff: 800 });

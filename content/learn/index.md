@@ -8,7 +8,7 @@ order: 0
 Sphärenmusik plays music and images from live space data: satellites in orbit, the solar wind, asteroids passing Earth and rocket launches. A **piece** decides how that data sounds and looks. You write a piece as a short TypeScript **script** in the editor.
 
 ## How a piece works
-1. When you press Run or save, the script's top-level code runs. It creates instruments and effects, names the data each one follows, and sets up what the screen shows.
+1. When the editor opens the piece and each time you save, the script's top-level code runs. It creates instruments and effects, names the data each one follows, and sets up what the screen shows.
 2. While the piece plays, every change in the followed data plays notes, moves parameters and redraws the picture.
 3. A script can also register **handlers**: functions that run on each change and on timers, remember what happened, and decide what to play next ([Programs](programs)).
 
@@ -29,4 +29,4 @@ The script runs in a sandbox. It reaches sound, pictures and data only through t
 | [Reference](reference) | Every function, parameter, group and limit |
 | [Troubleshooting](troubleshooting) | Problem codes and silent or empty pieces |
 
-Every code block marked **Try It** opens in the editor as an unsaved copy.
+A **Try It** link follows every complete example; it opens the example in the editor as an unsaved copy.

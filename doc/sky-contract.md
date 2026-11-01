@@ -30,7 +30,7 @@ type SkyEvent =
   | { type: 'freshness'; freshness: Freshness; replay?: true; synthetic?: true };
 ```
 - `obj` and `prev` are frozen. For `exit`, `obj` holds the last fields and `prev` is the same object.
-- `initial: true` marks the `enter` events of a group's first snapshot after `follow` adds the group. Sustained-voice bindings treat them as enters; trigger bindings ignore them, so existing objects do not fire triggers when a piece starts.
+- `initial: true` marks the `enter` events of a group's first snapshot: in live mode, the rows of a group of which the store held no object before the `follow`; in replay, the starting snapshot. Sustained-voice bindings treat them as enters; trigger bindings ignore them, so existing objects do not fire triggers when a piece starts.
 
 ## API
 ```ts
@@ -46,38 +46,39 @@ interface Sky {
   close(): void;                                                      // stops channels and timers
 }
 ```
-`src/sky/index.js` exports `createSky`, `createReplay`, `createSynthetic`, the orbit functions and the group helpers.
+`src/sky/index.js` exports `createSky`, `checkGroups`, `createReplay`, `REPLAY_SPEEDS`, `createSynthetic`, `evaluateFreshness`, the group helpers (`GROUPS`, `groupKeys`, `groupOf`, `hasOrbit`, `isGroup`, `sourceOf`), `toOmm`, `OmmError` and the orbit functions (`ORBIT_QUANTITIES`, `createOrbit`, `orbitValue`, `periodMinutes`, `scaledTime`, `sunDirection`, `isSunlit`, `argumentOfLatitude`).
 
 ```js
 const sky = createSky({ client, now, timers, doc, trace, uuid });
 ```
 | Dependency | Meaning | Default |
 |---|---|---|
-| `client` | Supabase client (`auth.md`, Clients); required | |
+| `client` | Supabase client (`auth.md`, Clients) with `channel()` and `from()`; required, otherwise `createSky` throws `TypeError` | |
 | `now` | Clock, `() => ms since epoch` | `Date.now` |
 | `timers` | `{ setTimeout, clearTimeout, setInterval, clearInterval }` | globals |
 | `doc` | Object with `visibilityState` and `addEventListener('visibilitychange', fn)` | `globalThis.document`, or always visible |
 | `trace` | Trace function (`console.md`, Trace bus) | `trace` from `src/trace/bus.js` |
 | `uuid` | `() => string` | `crypto.randomUUID` |
 
-- A listener that throws is traced at level `error` and does not stop other listeners.
+- A listener that throws is traced as `REALTIME` / `listener_error` at level `error` and does not stop other listeners.
 
 ## Live mode
-- `follow` rejects with an error naming the key when a group is not in `groups.json`, or when more than 100 groups are given.
+- `follow` rejects with a `RangeError` naming the key when a group is not in `groups.json`, or when more than 100 distinct groups are given. It sorts and deduplicates the keys. An empty list closes the channel.
 - `follow` subscribes to `postgres_changes` on `sky_objects` with the filter `group_key=in.(...)`. After the channel reports `SUBSCRIBED`, it selects the live rows of the groups (`removed_at is null`, id order, pages of 1,000). Events received before the select resolves are buffered and applied after it. Each subscription opens a channel with a topic of its own (`sky:<groups>:<n>`): realtime-js keeps a removed channel registered until the server acknowledges the leave and hands it back for the same topic, so reusing a topic after a re-follow would leave the new subscription silent.
-- The select is applied as a diff against the held objects: a new row emits `enter`, a row whose `trace_id` differs emits `update`, a held object missing from the result emits `exit`. The trace id of such an exit is the row's current `trace_id` (read by id), or a new UUID when the row has been pruned. Rows of a group that the store did not hold before emit `enter` with `initial: true`.
+- The select is applied as a diff against the held objects: a new row emits `enter`, a row whose `trace_id` differs emits `update`, a held object missing from the result emits `exit`. A row whose `updated_at` is older than the held object's is skipped unless the held object is synthetic. Enters and updates are emitted in id order. The trace id of such an exit is the row's current `trace_id` (read by id in chunks of 100), or a new UUID when the row has been pruned or keeps the held trace id. A failed lookup is traced as `REALTIME` / `exit_lookup_failed` at level `warn`. Rows of a group of which the store held no object before emit `enter` with `initial: true`.
+- A failed select is traced as `REALTIME` / `select_failed` at level `error`; `follow` rejects and the store retries as after a channel error.
 - Groups removed from the followed set are dropped without events.
-- A payload with `removed_at` set emits `exit` for a held object and is ignored otherwise. A payload without `removed_at` emits `update` for a held object and `enter` otherwise, so a payload that clears `removed_at` emits `enter`.
+- A payload for a group outside the followed set is ignored. A payload with `removed_at` set emits `exit` for a held object and is ignored otherwise. A payload without `removed_at` emits `update` for a held object and `enter` otherwise, so a payload that clears `removed_at` emits `enter`.
 - A payload whose `trace_id` equals the held object's, or whose `updated_at` is older than the held object's, is a duplicate and is ignored. `DELETE` payloads emit `exit` only for a held object.
 - The trace id of a live event is the row's `trace_id` column, which arrives in the Realtime payload.
-- Every Realtime payload and REST row is validated: `id`, `source` and `group_key` are non-empty strings, `fields` is a flat object of finite numbers, strings, booleans and `null`, `trace_id` is a string, `updated_at` is an ISO 8601 time, and `removed_at` is `null` or an ISO 8601 time. An invalid payload is dropped and traced as `REALTIME` / `invalid_payload` at level `error`; an invalid REST row is dropped and traced as `REALTIME` / `invalid_row`. The landing page's live strip (`src/landing/live.js`) validates its REST snapshot the same way and traces each dropped row as `REALTIME` / `invalid_row` (component `landing`, level `warn`, `data` `{ table, error }`).
-- Each applied live change produces a `CHANGE` record (`{ objectId, group, source, kind, diff: { before, after }, initial? }`) and, for Realtime payloads, a `REALTIME` record (`{ table: 'sky_objects', latencyMs }`, from `commit_timestamp`), both with the event's trace id.
-- On `CHANNEL_ERROR`, `TIMED_OUT` or an unrequested `CLOSED`, the store removes the channel, calls `client.realtime.setAuth()` and calls `follow` again after 1 s, 2 s, 4 s, … up to 30 s. A `SUBSCRIBED` status resets the delay.
+- Every Realtime payload and REST row is validated (`parseSkyRow`, `src/sky/validate.js`): `id`, `source`, `group_key` and `trace_id` are non-empty strings, `id` starts with `<group_key>:`, `fields` is a flat object of finite numbers, strings, booleans and `null`, `updated_at` is an ISO 8601 time, and `removed_at` is `null` or an ISO 8601 time. An invalid payload is dropped and traced as `REALTIME` / `invalid_payload` at level `error`; an invalid REST row is dropped and traced as `REALTIME` / `invalid_row` at level `error`. The landing page's live strip (`src/landing/live.js`) validates its REST snapshot the same way and traces each dropped row as `REALTIME` / `invalid_row` (component `landing`, level `warn`, `data` `{ table, error }`).
+- Each applied live change produces a `CHANGE` record (component `sky`, event the change kind, `data` `{ objectId, group, source, kind, diff: { before, after }, initial? }`) and, for Realtime payloads, a `REALTIME` record (event the payload's `eventType`, `data` `{ table: 'sky_objects', latencyMs }`, from `commit_timestamp`), both with the event's trace id.
+- On `CHANNEL_ERROR`, `TIMED_OUT` or an unrequested `CLOSED`, the store traces `REALTIME` / `channel_error` at level `warn`, removes the channel, calls `client.realtime.setAuth()`, traces `resubscribe`, and calls `follow` again after 1 s, 2 s, 4 s, … up to 30 s. A `SUBSCRIBED` status, traced as `subscribed`, resets the delay.
 - The followed set of a running project is its `project_subscriptions.group_key` values.
-- The store closes its channel 60 s after `document.visibilityState` becomes `hidden`, and calls `follow` again when the tab is visible.
+- The store closes its channel 60 s after `document.visibilityState` becomes `hidden`, traces `REALTIME` / `closed_hidden`, and calls `follow` again when the tab is visible.
 
 ## Freshness
-The store reads `source_status` by REST every 30 s, starting when it is created, and evaluates each source every 5 s and after each read.
+The store reads `source_status` by REST every 30 s, starting when it is created, and evaluates every source with a status row, every source of a followed group and every synthetic override every 5 s, after each read and on each channel status change. Each status row is validated (`parseStatusRow`); an invalid row is skipped and traced as `REALTIME` / `invalid_status` at level `warn`.
 
 | State | Rule |
 |---|---|
@@ -86,19 +87,20 @@ The store reads `source_status` by REST every 30 s, starting when it is created,
 | `stale` | `last_success_at` is null, or `now - last_success_at > 3 × interval_sec` |
 | `fresh` | Otherwise |
 
-`lastRun` is `last_attempt_at`; `lastSuccess` is `last_success_at`. A state change emits a `freshness` event. The status bar and freshness reactions consume these events. For CelesTrak (interval 7500 s), `stale` begins after 6 h 15 min without a successful run. A failed read keeps the previous rows and is traced as `REALTIME` / `status_poll_failed` at level `warn`.
+`lastRun` is `last_attempt_at`; `lastSuccess` is `last_success_at`. A state change emits a `freshness` event; a source's first state emits none when it is `loading`. The status bar and freshness reactions consume these events. For CelesTrak (interval 7500 s), `stale` begins after 6 h 15 min without a successful run. A failed read keeps the previous rows and is traced as `REALTIME` / `status_poll_failed` at level `warn`.
 
 ## Replay mode
 ```js
-const sky = createReplay({ client, from, to, speed, now, timers, trace, onEnd });
+const sky = createReplay({ client, from, to, speed, now, timers, trace, uuid, onEnd });
 await sky.follow(groups);   // loads the window and starts playback
 sky.now();                  // replay clock, ms since epoch
 ```
-- Replay reads `changes` for a time window within the 7-day retention and plays the events at 1×, 10×, 100× or 1000×. `from` and `to` are ms since epoch; `to` defaults to the time of `follow`.
-- The starting snapshot is the state of each object at `from`: for an object with a change at or after `from`, the `before` value of its first such change; otherwise its current `sky_objects` row, when that row is live. This covers objects that did not change within the retention window. The snapshot emits `enter` events with `initial: true`.
-- Events in the window play at `(at - from) / speed` after `follow` resolves. The replay clock `now()` returns `from + (elapsed × speed)`; the orbit propagator uses it, so orbits stay consistent with the replayed elements.
-- Replayed events carry their original `traceId` and `replay: true`. Freshness is reported as `fresh` for every source during replay. Replayed `CHANGE` records carry `replay: <speed>`.
-- `onEnd` is called once after the last event; the objects keep their final state. `close()` stops playback.
+- Replay reads `changes` for a time window within the 7-day retention and plays the events at 1×, 10×, 100× or 1000× (`REPLAY_SPEEDS`); another speed throws `RangeError`. `from` and `to` are ms since epoch; `to` must be after `from` and defaults to the time of the first `follow`. A `from` older than the retention is traced as `REALTIME` / `replay_window_retention` at level `warn`, and replay proceeds with the rows that remain.
+- Each `follow` validates its groups as in live mode, clears the held objects and loads the window again. Each `changes` row is validated (`parseChangeRow`); an invalid row is skipped and traced as `REALTIME` / `invalid_change` at level `error`.
+- The starting snapshot is the state of each object at `from`: for an object with a change at or after `from`, the `before` value of its first such change; otherwise its current `sky_objects` row, when that row is live. This covers objects that did not change within the retention window. The snapshot emits `enter` events with `initial: true`, in id order; an object taken from a change gets a new UUID as its trace id, and an object taken from `sky_objects` keeps the row's `trace_id`.
+- Changes with `from ≤ at < to` play at `(at - from) / speed` after `follow` resolves. The replay clock `now()` returns `from + (elapsed × speed)`; the orbit propagator uses it, so orbits stay consistent with the replayed elements.
+- Replayed events carry their original `traceId` and `replay: true`. Freshness is reported as `fresh` for every source of every group during replay. Replayed `CHANGE` records carry `replay: <speed>`.
+- After the last event the store traces `REALTIME` / `replay_end` and calls `onEnd` once; the objects keep their final state. `close()` stops playback.
 - Replay uses the same `Sky` interface; bindings cannot tell replayed events from live ones.
 
 ## Synthetic triggers
@@ -108,14 +110,16 @@ syn.enter(group, key, fields);   // object id `${group}:${key}`
 syn.update(objectId, fields);    // merges fields into the held object
 syn.exit(objectId);
 syn.freshness(source, state);    // holds state until syn.clear(); null releases the source
-syn.clear();                     // removes overrides and calls follow again
+syn.clear();                     // removes overrides and calls follow again; returns its promise
 ```
-- With `?dev=1`, the editor shows a panel that emits fabricated `enter`, `update`, `exit` and `freshness` events for any group.
-- Synthetic events carry `synthetic: true` and a trace id prefixed `syn-`. They change only the store in that tab and never write to the database.
+- `createSynthetic` requires a live store from `createSky`; it throws `TypeError` for a replay store.
+- With `?dev=1`, the editor's bottom panel shows a panel that emits fabricated `enter`, `update`, `exit` and `freshness` events for any group.
+- `enter` throws for an unknown group or an object already held; `update` and `exit` throw for an object that is not held. Fields are validated as for live rows. A freshness state is `loading`, `fresh`, `stale`, `down` or `null`.
+- Synthetic events carry `synthetic: true` and a trace id prefixed `syn-`; their `CHANGE` records carry `synthetic: true`. They change only the store in that tab and never write to the database.
 - `sky.mode` is `synthetic` from the first synthetic event until `clear()`. A later `follow` replaces synthetic objects with the database rows.
 
 ## Groups
-`src/sky/groups.json` lists every group with its registry id, class and fields. The DSL type generator, the editor completion, the Sky browser and the guide tests read it.
+`src/sky/groups.json` lists every group with its registry id, class and fields. The sky store, the DSL validator and type generator, the editor completion, the Sky browser and the tests read it; `tests/sky-groups.test.js` checks it against `sources.md`.
 ```json
 {
   "swpc.wind": {
@@ -137,10 +141,11 @@ syn.clear();                     // removes overrides and calls follow again
 | `fields` | Every field the normalizer writes, with `type` (`number`, `string`, `boolean`) and `unit` (`""` when unitless) |
 
 ## Orbit sources
-`src/sky/orbit.js` computes the VLFO quantities of `piece-dsl.md` (Orbits) with `satellite.js` 6. The SGP4 worker, the landing map and tests call it; it has no other dependencies. `propagateAt` is the one SGP4 step that `sample`, the worker's position records and the landing map's ground tracks share.
+`src/sky/orbit.js` computes the VLFO quantities of `piece-dsl.md` (Orbits) with `satellite.js` 6. The SGP4 worker (`src/visual/propagation-core.js`), the projections, the landing map and tests call it; it depends only on `satellite.js` and `src/sky/omm.js`. `propagateAt` is the one SGP4 step that `sample`, the worker's position records and the landing map's ground tracks share.
 ```js
 const orb = createOrbit(fields);           // json2satrec(toOmm(fields)); throws OmmError on missing elements
 orb.periodMin;                             // 1440 / meanMotion
+orb.satrec; orb.perigeeKm; orb.apogeeKm;   // satrec and perigee and apogee altitudes, km
 orb.sample(ms, observer);                  // { ok: true, values, eci, geodetic } or { ok: false, error }
 orbitValue(orb, quantity, ms, observer);   // one quantity or null
 propagateAt(satrec, ms);                   // { ok: true, eci, velocity, gmst, geodetic (rad, km) } or { ok: false, error }

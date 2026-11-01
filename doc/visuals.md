@@ -18,14 +18,14 @@ Draw the IR's layers each frame from sky data and audio signals, within the visu
 | `layer.field(props)` | Full-screen gradient or noise |
 | `layer.aurora(props)` | Full-screen aurora band |
 | `layer.shader(glsl, props)` | Fragment shader; local-only |
-| `color(hex)` | Colour expression; `.mix(otherHex, t)` blends by expression `t` |
+| `color(hex)` | Colour expression; `.mix(other, t)` blends toward `other` (a hex string or colour expression) by `t`, a number or expression clamped to 0–1 |
 | `audio.level(inst)` | RMS level of the instrument output, 0–1 |
 | `audio.spectrum(inst, bands)` | Array of `bands` (4–32) band levels, 0–1 |
 | `audio.voice(inst).env()` | Envelope value of the voice bound to the current object, 0–1 |
 
 Every layer constructor except `layer.shader` returns a layer handle. Inside a program's handlers, `handle.set(props)` sets constant property values (`piece-dsl.md`, Program). The session pushes them with the sky-driven values through `setLayerValues`; a pushed value overrides the layer's constant, and the flash guard holds colours and opacities as it does for expression-driven ones.
 
-`audio.voice(inst).env()` is computed from the voice's envelope model (`envValueAt` in the engine) and needs no analyser. `audio.level` and `audio.spectrum` read an `AnalyserNode` tapped on the instrument output.
+`audio.voice(inst).env()` is computed from the voice's envelope model (`envValueAt` in the engine) and needs no analyser; it reads the voice of the first `voices` binding on `inst` that sounds for the current object, and is `null` when none does. `audio.level` and `audio.spectrum` read an `AnalyserNode` tapped on the instrument output.
 
 ## Object positions
 | Group | Position |
@@ -85,7 +85,7 @@ Property meanings:
 | `ice` | `#04080c`, `#1f6f8b`, `#d6f3ff` |
 
 ### Shader layers
-The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group": null, "glsl": string, "props": { "opacity": ... } }`. `glsl` is GLSL ES 3.00 source that defines `void mainImage(out vec4 color, in vec2 coord)`. The renderer prepends `#version 300 es`, `precision highp float;` and these uniforms:
+The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group": null, "select": null, "glsl": string, "props": { "opacity": ... } }`. `glsl` is GLSL ES 3.00 source that defines `void mainImage(out vec4 color, in vec2 coord)`. The renderer (`userShaderSource`, `src/visual/shaders.js`) prepends `#version 300 es`, `precision highp float;` and these uniforms:
 
 | Uniform | Value |
 |---|---|
@@ -93,13 +93,13 @@ The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group
 | `vec2 uResolution` | Canvas size in device pixels |
 | `float uOpacity` | The layer's `opacity` |
 
-`coord` is in device pixels from the bottom-left corner. The output is non-premultiplied RGBA and is multiplied by `uOpacity`. A shader that fails to compile disables its layer and emits a `VISUAL` trace record at level `error` with the compiler log.
+`coord` is in device pixels from the bottom-left corner. The output is non-premultiplied RGBA, clamped to 0–1; its alpha is multiplied by `uOpacity`. The renderer sets no other uniforms, so shader `props` other than `opacity` have no effect. A shader that fails to compile disables its layer and emits a `VISUAL` trace record at level `error` with the compiler log.
 
 ## Renderer
 - One `<canvas>` with a WebGL2 context. Each layer is one instanced draw.
-- Frame loop: `requestAnimationFrame`. Layer properties that depend only on sky data are re-evaluated on sky events; properties that use `audio.*` are re-evaluated each frame.
-- Without WebGL2, the preview shows a static text summary of the followed groups and the status bar shows `Visuals unavailable (WebGL2)`.
-- Installation mode renders at device pixel ratio up to 2. The editor preview renders at the resolution set in settings.
+- Frame loop: `requestAnimationFrame`. Layer properties that depend only on sky data are re-evaluated on sky events and pushed with `setLayerValues`; properties that use `audio.*` are re-evaluated each frame through `frameValues`.
+- Without WebGL2, the preview shows `Visuals unavailable (WebGL2)` and a static text summary with one line per followed group (object count and freshness), and the status bar shows `Visuals unavailable (WebGL2)`.
+- Installation mode renders at the device pixel ratio, at most 2. The editor preview renders at `visual.previewScale` (0.25–1) pixels per CSS pixel (`pixelRatioFor`, `src/visual/motion.js`).
 - Each frame draws the scene into an offscreen texture, then a composite pass applies `desaturate` and the flash guard's limit and writes the canvas. `desaturate` changes at most 1.0 per second, with or without reduced motion.
 
 ### Interface
@@ -116,6 +116,7 @@ The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group
 | `observer` | `data.observer`, `{ lat, lon }` in degrees |
 | `audioClock` | Function returning `audioNow(ctx)` in seconds, or `null` before Run |
 | `frameValues` | Function `(audioTime) => LayerValues` called each frame for properties that use `audio.*` |
+| `now`, `raf`, `cancelRaf` | Clock and frame scheduling; default `Date.now`, `requestAnimationFrame` and `cancelAnimationFrame`. Tests replace them. |
 
 | Method | Effect |
 |---|---|
@@ -124,13 +125,14 @@ The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group
 | `setLayerValues(values)` | Replaces the evaluated sky-driven property values |
 | `setBackground(color)` | Sets the evaluated background colour, `#rrggbb` |
 | `setDesaturate(amount)` | 0–1; the reaction action `desaturate` (`bindings.md`). 1 draws in grey |
-| `setSettings(partial)` | Updates `pixelRatio`, `reducedMotion`, `maxFlashesPerSecond`, `observer` |
+| `setSettings(partial)` | Updates `pixelRatio` (clamped to 0.25–2), `reducedMotion`, `maxFlashesPerSecond`, `observer` |
 | `start()`, `stop()` | Start and stop the frame loop |
 | `setGroups(groups)` | The IR's `groups`, listed by the text summary |
-| `highlight(objectId)` | Draws a marker around one object (Sounding voices panel); `null` clears it |
+| `highlight(objectId)` | Draws a marker around one object (console Voices panel); `null` clears it |
+| `summaryLines()` | The text summary: one line per followed group |
 | `dispose()` | Releases GPU resources and listeners |
 
-`available` is `false` when no WebGL2 context exists; the methods are then no-ops and `summaryLines()` returns the text summary.
+`available` is `false` when no WebGL2 context exists; the other methods are then no-ops, `summaryLines()` returns the text summary, and `statusText` is `Visuals unavailable (WebGL2)` (empty otherwise).
 
 `LayerValues` has the form `{ [layerId]: { [prop]: value | { [objectId]: value } } }`. A plain value applies to every object of the layer; an object maps object ids to values. Numbers are clamped to the property's range, colours are `#rrggbb` strings, and invalid values are ignored so the previous value stays. A property absent from both the values and the IR's constants uses its default. Values from `frameValues` override `setLayerValues` for the same property.
 
@@ -139,14 +141,18 @@ The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group
 |---|---|---|---|
 | `enter`, `update`, `exit` | `info` | A sky event in a layer's group, with the event's `traceId` | `{ "layer": "l0", "objectId": "..." }` |
 | `fallback` | `warn` | WebGL2 is unavailable | `{ "reason": "webgl2" }` |
+| `layerError` | `error` | `setLayers` receives an entry it cannot read or a duplicate layer id; the entry is skipped | `{ "index": 2, "message": "..." }` |
 | `shaderError` | `error` | A layer shader fails to compile | `{ "layer": "l3", "log": "..." }` |
+| `error` | `error` | A layer property expression throws in the binding runtime, once per property until the next reload; the property uses its default | `{ "layer": "l0", "prop": "size", "message": "..." }` |
+| `layerSet` | `info` | A program sets layer properties (`bindings.md`, Program host) | `{ "layer": "l0", "props": { ... } }` |
 | `contextLost` | `error` | The WebGL context is lost | `{}` |
 | `propagationFailed` | `warn` | Propagation of an object fails, once per object and element set | `{ "objectId": "...", "code": 1, "message": "..." }` |
 | `frameError` | `error` | A frame throws. Each distinct message is traced once; while it repeats, a record with `repeats`, the count since the previous record, follows at most once per second | `{ "message": "..." }` or `{ "message": "...", "repeats": n }` |
+| `frameValuesError` | `error` | `frameValues` throws; the frame uses the pushed values | `{ "message": "..." }` |
 | `workerError` | `error` | The SGP4 worker fails to load or throws | `{ "message": "..." }` |
 | `invalidObserver` | `warn` | The SGP4 worker receives an observer without finite `lat` and `lon`; the previous observer stays | `{ "observer": ... }` |
 
-Stage `VISUAL`; component `layer.<id>`, `renderer` or `sgp4`.
+Stage `VISUAL`; component `layer.<id>` (sky events, `shaderError`, `error`), `renderer`, `program` (`layerSet`) or `sgp4`.
 
 ## Orbit propagation
 The orbit propagator serves both the renderer and the binding runtime. It runs whenever the piece follows a `celestrak.*` group, with or without layers.
@@ -156,20 +162,21 @@ The orbit propagator serves both the renderer and the binding runtime. It runs w
 - When propagation returns no position, or the element set cannot be read, the object is omitted from that frame and the worker traces the satrec error code once per object and element set.
 - The ISS is the `celestrak.stations` object with `noradId` `25544`; it is propagated like any other object.
 - For every orbit source in the IR (`piece-dsl.md`, Orbits), the worker also computes the quantity at each 2 Hz step with the orbit's `sample` and posts it with the positions. `sky-contract.md` (Orbit sources) defines each quantity.
-- Sources with `timeScale` above 1 propagate at `t₀ + (t − t₀) · timeScale`, where `t₀` is the engine start time.
+- Sources with `timeScale` above 1 propagate at `t₀ + (t − t₀) · timeScale`, where `t₀` is the clock's `t0SimMs`: the time the worker starts or the page returns to live mode, and the window start in replay.
 - In replay, the propagator's clock runs at the replay speed from the replay window's start, so orbits stay consistent with the replayed elements.
-- For `lines` and `trail`, the worker computes paths every 5 s on request; the renderer joins each trail to the object's current position.
+- For `lines` and `trail`, the worker computes paths every 5 s on request, at most 240 samples per path; the renderer joins each trail to the object's current position.
+- The propagator sends element sets to the worker 50 ms after the first of a run of sky events in its groups, and starts the worker with the first set.
 
 ### Propagator interface
-`src/visual/propagator.js` exports `createPropagator(options)`, which starts the worker.
+`src/visual/propagator.js` exports `createPropagator(options)`. It creates the worker when it first sends element sets; configuration set before then is sent when the worker starts.
 
 | Method | Effect |
 |---|---|
-| `follow(sky)` | Subscribes to the store's events for `celestrak.*` groups and sends element sets to the worker |
-| `setGroups(groups)` | Sets the followed `celestrak.*` groups |
+| `follow(sky)` | Subscribes to the store's `enter`, `update` and `exit` events and sends the element sets of the propagator's groups to the worker |
+| `setGroups(groups)` | Sets the propagator's groups: the given groups with orbital elements (`hasOrbit`). With none, the worker stops. |
 | `setObserver({ lat, lon })` | Observer for `sky` and `elevation` |
 | `setOrbitSources(sources)` | `[{ objectId, group, quantity, timeScale }]`; `objectId` `null` computes the quantity for every object of `group` |
-| `setClock({ simMs, wallMs, speed, t0SimMs })` | Simulated time is `simMs + (now − wallMs) · speed`; `t0SimMs` is the engine start |
+| `setClock({ simMs, wallMs, speed, t0SimMs })` | Simulated time is `simMs + (now − wallMs) · speed`; `t0SimMs` is the time origin of time-scaled sources. The worker starts with `{ now, now, 1, now }`; the session sets the clock when it enters replay and when it returns to live mode. |
 | `setPaths(requests)` | `[{ key, group, fromSec, toSec, stepSec }]`, offsets from the current time |
 | `positions(nowMs)` | `{ ids, data, stride, index }`, interpolated; omitted objects hold `NaN`; `index` maps object id to record number |
 | `simTime(nowMs)` | Simulated time of the propagator's clock, or `null` before the first sample |
@@ -183,10 +190,10 @@ A position record has 8 floats: ECI `x`, `y`, `z` (km), geodetic latitude and lo
 ## Audio-visual synchronization
 Visuals that use `audio.*` are drawn at the time the listener hears the audio, not the time the engine schedules it. `src/visual/av-sync.js` exports this function:
 ```js
-function audioNow(ctx) {
+function audioNow(ctx, perfNow = () => performance.now()) {
   const ts = ctx.getOutputTimestamp?.();
-  if (ts && Number.isFinite(ts.contextTime) && ts.contextTime <= ctx.currentTime) {
-    return ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+  if (ts && Number.isFinite(ts.contextTime) && Number.isFinite(ts.performanceTime) && ts.contextTime <= ctx.currentTime) {
+    return ts.contextTime + (perfNow() - ts.performanceTime) / 1000;
   }
   return ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
 }
@@ -209,18 +216,20 @@ Guard algorithm (`src/visual/flash-guard.js`):
 4. The intervention lasts until, in both the output and the scene, no window has cells with at least half of that transition count covering more than half of that area. Measuring the scene keeps the guard engaged while the scene underneath still strobes. After the intervention ends, the change limit stays on for 2 s, long enough for any pixel to reach the scene at 0.5 per second, so the held colours and the background return gradually instead of in one frame.
    - The two output targets hold 32-bit floats (`EXT_color_buffer_float`), so storage rounding never adds to a limited step. Without the extension they are 8-bit, and each limited step rounds toward the previous frame; a slow change can then stall while the guard intervenes, which is stricter.
    - A canvas resize copies the last output into the new targets, so the limit continues across a resize.
-5. Each intervention emits a `SAFETY` trace record with event `flashLimit` (component `flash-guard`, level `warn`, `data` `{ "measured": "output" | "scene", "kind": "general" | "red", "cells": n, "window": [x, y] }`); its end emits `flashLimitEnd` at level `info` with `data` `{ "measured": … }`. The output and the scene each emit their own records.
+5. Each intervention emits a `SAFETY` trace record with event `flashLimit` (component `flash-guard`, level `warn`, trace id `safety-flash-<measured>-<n>`, `data` `{ "measured": "output" | "scene", "kind": "general" | "red", "cells": n, "window": [x, y] }`); its end emits `flashLimitEnd` at level `info` with the same trace id and `data` `{ "measured": … }`. The output and the scene each emit their own records.
 
-The flash limit is `visual.maxFlashesPerSecond` (0–3); 0 intervenes on any single transition over the flash area. A fractional limit rounds down to whole transitions: 2.4 allows 4 transitions (2 flashes). A limit above 3 acts as 3 and a negative limit as 0; a limit that is not a finite number throws `RangeError` in `createFlashGuard`, `setMaxFlashes` and the renderer's `setSettings`, which then changes nothing.
+The flash limit is `visual.maxFlashesPerSecond` (0–3); 0 intervenes on any single transition over the flash area. A fractional limit rounds down to whole transitions: at 2.4 the threshold is 4 transitions (2 flashes). A limit above 3 acts as 3 and a negative limit as 0; a limit that is not a finite number throws `RangeError` in `createFlashGuard`, `setMaxFlashes` and the renderer's `setSettings`, which then changes nothing.
 
 Photosensitivity warning: the guard averages each of its 64×48 cells and cannot rule out every pattern that affects people with photosensitive epilepsy, such as fine stripes or rapid movement. Before the first Run in a session, the start notice (`audio/audio-safety.md`, Safety UI) and the installation-mode "Begin Listening" button read: "Photosensitivity warning: this piece shows moving and changing light. Flashing is limited to three per second, but some patterns can still affect people with photosensitive epilepsy. If you are sensitive to light, watch with care and stop if you feel unwell."
 
 Reduced motion: when `prefers-reduced-motion: reduce` matches, or the setting forces it, trails, ring pulses, glyph fades, aurora drift and camera motion are off, and data-driven changes apply in steps no faster than 1 Hz. Concretely, `trail` and `fade` are 0, `drift` is 0, the camera does not turn, and the renderer applies new property values (from sky events and from `audio.*`) at most once per second, so ring radii driven by audio step instead of pulsing. Orbital motion of objects continues; it is not a data change.
 
-Bursts: trigger rate limits (`bindings.md`) apply to visual event effects as well.
+Bursts: the renderer responds to every sky event in a layer's group, for example by restarting a glyph's `fade`; trigger rate limits (`bindings.md`) apply to audio only. The flash guard bounds the visual result of a burst.
 
-## Open items
-- Verify `getOutputTimestamp()` values in Safari before relying on them; the fallback applies when they are non-finite.
+## Limitations
+- `audioNow` trusts any finite `getOutputTimestamp()` values at or before `currentTime`; only non-finite values or a later `contextTime` select the latency fallback.
+- `layer.shader` receives only `uTime`, `uResolution` and `uOpacity`; other shader `props` are stored in the IR and ignored.
+- The flash guard averages each of its 64×48 cells, so patterns finer than a cell, such as fine stripes, are outside its measurement (Visual safety).
 
 ## Sources
 - W3C, Understanding Success Criterion 2.3.1 Three Flashes or Below Threshold: https://www.w3.org/WAI/WCAG22/Understanding/three-flashes-or-below-threshold.html

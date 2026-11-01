@@ -11,8 +11,8 @@ Clerk sign-in, Clerk as a Supabase third-party auth provider, the Supabase clien
 ## Clerk setup
 1. Install `@clerk/nextjs`. Wrap the root layout in `<ClerkProvider>`.
 2. Create `proxy.ts` at the project root exporting `clerkMiddleware()` with `{ signInUrl: '/sign-in', signUpUrl: '/sign-up' }`, and pass the same URLs to `<ClerkProvider>`, so protected routes redirect to the app's own sign-in page rather than the Clerk-hosted one. In Next.js 16, `proxy.ts` replaces `middleware.ts`.
-3. Public routes: `/`, `/listen`, `/console`, `/learn(.*)`, `/try`, `/sign-in(.*)`, `/sign-up(.*)`. All other routes call `auth.protect()`.
-4. Server components and route handlers check `auth()` again. `proxy.ts` is a routing layer, not the security boundary; RLS is.
+3. Public routes: `/`, `/listen`, `/console`, `/learn(.*)`, `/try`, `/sign-in(.*)`, `/sign-up(.*)`, `/dsl-sandbox.js`. All other routes call `auth.protect()`. The `matcher` in `proxy.ts` skips `_next`, `worklets` and static files by extension (`.css`, `.js`, `.json`, `.map`, `.png`, `.svg`, `.ico`, `.woff`, `.woff2`, `.txt`, `.wasm`).
+4. Server components check `auth()` again (`/projects`, `/settings`, the project loader in `src/ui/load-project.server.ts`). `proxy.ts` is a routing layer, not the security boundary; RLS is.
 
 ## Clerk–Supabase integration
 1. Clerk Dashboard → Integrations → Supabase → Activate. Copy the Clerk domain.
@@ -52,15 +52,16 @@ export function serverClient() {
   );
 }
 ```
-- Client components create one browser client per tab, passing `useSession().session?.getToken`. Signed-out visitors pass a function returning `null`.
+- `SupabaseProvider` in `src/ui/app-providers.tsx` creates one browser client per tab for client components. Its token function returns `useAuth().getToken()` while the visitor is signed in and `null` otherwise.
+- The landing page's live snapshot (`app/_landing/live-snapshot.tsx`) creates its own client with a token function that returns `null`, and reads by REST only.
 - With `accessToken` set, `supabase-js` sends the Clerk token on REST requests and on the Realtime socket. These clients never call `supabase.auth.*`.
-- The worker uses its own client created with `SUPABASE_SECRET_KEY` (`worker.md`).
+- The worker uses its own client created with the secret key: the `default` entry of `SUPABASE_SECRET_KEYS` in the Edge Function, `SUPABASE_SECRET_KEY` in local runs (`worker.md`).
 
 ## Realtime authentication
 - One client shares one WebSocket for all channels in a tab.
 - Realtime caches RLS decisions per connection and re-evaluates them when the client sends a refreshed token. `supabase-js` calls `accessToken` again before expiry.
-- On `CHANNEL_ERROR` or `TIMED_OUT`, the sky store calls `supabase.realtime.setAuth()` and resubscribes with exponential backoff (1 s to 30 s).
-- Check the setup by running `select auth.jwt() ->> 'role'` through the browser client while signed in. The result is `authenticated`.
+- On `CHANNEL_ERROR`, `TIMED_OUT` or `CLOSED`, the sky store calls `supabase.realtime.setAuth()` and resubscribes with exponential backoff (1 s to 30 s).
+- Check the setup while signed in: `/projects` lists the account's projects. RLS returns `projects` rows only to `authenticated` requests whose `sub` equals `user_id`, and `anon` holds no grant on `projects`, so a token that Supabase rejects or that lacks `"role": "authenticated"` makes the list fail to load.
 
 ## Keys
 | Key | Format | Location | Behavior |

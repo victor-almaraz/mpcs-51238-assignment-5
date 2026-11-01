@@ -109,10 +109,10 @@ Read space weather with `sky.swpc(path)`.
 A field can be `null` when the source does not report it. Expressions pass `null` through, and a note whose pitch is `null` does not play.
 
 ## Browsing live values
-The **Sky** panel in the editor's sidebar lists every group with its objects and current field values. Selecting a field inserts `field('<name>')` at the cursor.
+The **Sky** panel in the editor's side panel lists every group by provider, with its fields and their units. Groups the piece follows are marked **followed** with their object count, and their fields show the values of one object. Selecting a field inserts `field('<name>')` at the cursor; selecting a group name opens this page.
 
 ## Which groups a piece follows
-Sphärenmusik follows every group the script names, in any `sky.group(...)`, `sky.swpc(...)` or `layer.*(...)` call. The Projects list shows them per project. A piece that names no group receives no data.
+Sphärenmusik follows every group the script uses: in `voices` and `trigger` bindings, in layers, in expressions (`count`, `mean`, `spread`, `sky.swpc`, `sky.value`, `sky.orbit`), in `on(...)` handlers and in `follow(...)`. A `sky.group(...)` that nothing uses follows no group. The Projects list shows the followed groups per project. A piece that follows no group receives no data.
 
 ## Choosing groups
 - For change you can hear while you listen, use `swpc.*`: it changes every minute.

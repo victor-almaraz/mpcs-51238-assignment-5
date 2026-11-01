@@ -61,21 +61,21 @@ grit.bypass.follow(sky.swpc('kp.kp').lt(5));   // distortion only during geomagn
 `.mod(source, { depth })` adds movement around a parameter's base value. Sources are LFOs or data expressions.
 
 ### LFOs
-An LFO (low-frequency oscillator) is a slow, repeating wave:
+An LFO (low-frequency oscillator) is a slow, repeating wave. In the fragments below, `drone` is a `subtractive` instrument, which has a `cutoff`, and `verb` is a `reverb`:
 
 ```ts
 const breathe = lfo({ shape: 'sine', rate: 0.03 });   // one cycle every 33 seconds
-pad.cutoff.mod(breathe, { depth: 0.1 });
+drone.cutoff.mod(breathe, { depth: 0.1 });
 verb.decay.mod(breathe, { depth: 0.2 });
 ```
 
 | Option | Values |
 |---|---|
-| `shape` | `sine`, `triangle`, `square`, `saw`, `random` (a step to a random value each cycle), `smooth` (random, with glides) |
-| `rate` | Cycles per second, 0.01–20; a tempo-synced note value such as `'1/4'` or `'1/8t'`; or an expression ending in `.map(...)` |
-| `phase` | Starting point in the cycle, 0–1 |
-| `retrigger` | `true` restarts the LFO with each note (instrument parameters only) |
-| `smooth` | 0–1; how much `random` and `smooth` glide between values |
+| `shape` | `sine`, `triangle`, `square`, `saw`, `random` (a step to a random value each cycle), `smooth` (random, with glides); default `sine` |
+| `rate` | Cycles per second, 0.01–20; a tempo-synced note value such as `'1/4'` or `'1/8t'`; or an expression ending in `.map(...)` or `.clamp(...)`, whose output range sets the rate range; default 0.1 |
+| `phase` | Starting point in the cycle, 0–1; default 0 |
+| `retrigger` | `true` restarts the LFO with each note (instrument parameters only, at most 2 retrigger LFOs per instrument); default `false` |
+| `smooth` | 0–1; how much `random` and `smooth` glide between values; default 0.5 for `smooth`, 0 otherwise |
 
 One LFO can drive several parameters; they move together. A data-driven rate makes the LFO speed follow the sky:
 
@@ -143,8 +143,8 @@ A negative depth reverses the source. Modulation never moves a parameter outside
 `follow` sets where a parameter sits. `mod` sets how it moves around that point. Both can act on one parameter:
 
 ```ts
-pad.cutoff.follow(sky.swpc('wind.speed').map(300, 800, 400, 4000, 'log'));   // where
-pad.cutoff.mod(breathe, { depth: 0.08 });                                     // movement
+drone.cutoff.follow(sky.swpc('wind.speed').map(300, 800, 400, 4000, 'log'));   // where
+drone.cutoff.mod(breathe, { depth: 0.08 });                                     // movement
 ```
 
 ### Limits

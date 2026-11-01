@@ -10,11 +10,11 @@ order: 11
 |---|---|
 | The piece has not been started | Press **Run**. Browsers allow sound only after a click. |
 | The script has errors | Open the **Problems** tab. A piece with errors does not run. |
-| No group is followed | Add a `sky.group(...)` or `sky.swpc(...)` call. |
+| No group is followed | Use a group in a binding, a layer or an expression, for example `sky.group(...).voices(...)` or `sky.swpc(...)`. A `sky.group(...)` that nothing uses follows nothing. |
 | The group is empty | Check the **Sky** panel. `jpl.scout` and `jpl.cad` can be empty for hours. |
 | Every pitch is `null` | A field name is misspelled, or a value is absent. Check the **Console** for the object's fields. |
 | A reaction muted the instrument | Check the status bar for stale or down sources and the piece's `onStale`/`onDown` calls. |
-| Volume | Check `volume` on each instrument and the master level in Settings. |
+| Volume | Check `volume` on each instrument, the master volume in the transport strip, and `audio.masterDb` and `audio.maxMasterDb` in Settings. |
 
 ## Sound but no change
 Most groups change every few minutes to hours ([Sky data](sky-data)). Use **Replay** or test events ([Live data states](live-data-states)) to hear changes on demand, or follow `swpc.*` for change every minute.
@@ -23,7 +23,7 @@ Most groups change every few minutes to hours ([Sky data](sky-data)). Use **Repl
 | Code | Meaning | Fix |
 |---|---|---|
 | `syntax_error` | The script is not valid TypeScript | Fix the line shown |
-| `type_error` (warning) | The type checker found a mismatch, such as a misspelled option or field, or a text value where a number belongs | Read the message on the underlined code; the piece still runs |
+| `type_error` (warning) | The type checker found a mismatch, such as a misspelled option or field, or a text value where a number belongs | Read the message on the underlined code; a type error alone does not stop the piece |
 | `runtime_error` | The script threw an error while running | Read the message; often a misspelled function name |
 | `timeout` | The script ran longer than 1.5 s | Remove loops that do not end |
 | `unknown_option` | An instrument, effect or layer option does not exist, or a `voiceMods` name is not a parameter `.mod()` accepts on that instrument | Check the parameter names in the [Reference](reference) |

@@ -53,10 +53,10 @@ flowchart LR
 | Cron trigger | Invokes the worker once a minute | `cron.job` `harvest` | HTTP POST | Failed POST: logged in `net._http_response`; next minute retries |
 | Source registry | Declares each source's endpoint, schedule, normalizer and failure policy | `supabase/functions/harvest/sources.json` | Validated entries | Invalid entry: HTTP 500 naming the entry; nothing runs |
 | Scheduler | Selects and claims due sources, one request per host at a time | Registry, `source_status` | Jobs | Entry claimed by an overlapping invocation: skipped |
-| Fetcher | Performs one HTTP GET with User-Agent and timeout | URL | Body, status | Non-200 or timeout: `FetchError` |
-| Normalizer | Converts one raw body into sky objects | Body | `SkyObject[]` | Malformed body: `NormalizeError` |
-| Upserter | Writes changed objects and their diffs | `SkyObject[]` | `changes` rows | RPC error: run fails |
-| Run logger | Records each run | Run result | `runs`, `source_status` | Write error: logged to stderr |
+| Fetcher | Performs one HTTP GET with User-Agent, timeout and no redirect following | URL | Status, body, `Retry-After` seconds | Never throws. Timeout or network error: status 0 and error text `timeout: ...` or `network: ...`. The pipeline treats every status other than 200 as a failed run |
+| Normalizer | Converts one raw body into sky objects | Body | `SkyObject[]` | Malformed body: `NormalizeError`. Any normalizer error fails the run with `normalize: ...` |
+| Upserter | Writes changed objects and their diffs | `SkyObject[]` | `changes` rows | RPC error: run fails with `store: ...` |
+| Run logger | Records each run | Run result | `source_status`, then `runs` | Write error: logged to stderr with event `tick_error`; the tick continues with the next entry |
 | Sky store | Holds followed objects and source freshness; emits events | Realtime, REST | `SkyEvent` stream | Channel error: sources show `down` |
 | DSL sandbox (VM) | Removes TypeScript syntax, runs the script's setup and returns IR; while the piece plays, runs its handlers | Script text; batches of sky events and clock time | IR, problems; program commands | Setup timeout after 1500 ms: problem `timeout`. Batch without reply after 250 ms: worker terminated, problem `handler_timeout` |
 | Type checker | Type-checks the script in the editor | Script text, `builder.d.ts` | Diagnostics, completions, hover text | Diagnostics are warnings; never blocks Run |
@@ -75,12 +75,12 @@ flowchart LR
 - Scripts share only the builder API. During playback, script code runs only in the sandbox worker, and it reaches the page only as program commands, which the program host checks before the engine or renderer sees them (`bindings.md`, Program host).
 
 ## Trace of one change
-1. **SOURCE.** The cron job invokes the Edge Function. The scheduler claims `swpc.wind`. The fetcher receives HTTP 200.
+1. **SOURCE.** The cron job invokes the Edge Function. The tick claims `swpc.wind` with `claim_source`. The fetcher receives HTTP 200.
 2. **NORMALIZE.** The normalizer strips trailing NUL bytes, selects the newest row with `active: true`, maps `-9999` to `null`, and emits `{ id: "swpc.wind:l1", group: "swpc.wind", fields: { speed: 512.3, density: 4.1, temperature: 91000, spacecraft: "...", timeTag: "..." } }`.
 3. **CHANGE.** The upserter computes `hash = sha256(canonicalJson(fields))` and calls `upsert_sky_objects`. The RPC updates the row because the hash differs and inserts a `changes` row with a `trace_id`.
-4. **RUN.** The run logger inserts `runs { ok: true, rows_changed: 1 }` and updates `source_status`.
+4. **RUN.** The run logger updates `source_status`, then inserts `runs { ok: true, rows_changed: 1 }`.
 5. **REALTIME.** Supabase sends an `UPDATE` to every subscriber whose filter includes `swpc.wind` and whose RLS check passes.
-6. **BIND.** The sky store emits `update`. A param binding evaluates `sky.swpc('wind.speed').map(300, 800, 300, 4000, 'log')` and calls `setParam('cutoff', 1220.4)` on the target instrument.
+6. **BIND.** The sky store emits `update`. A param binding evaluates `sky.swpc('wind.speed').map(300, 800, 300, 4000, 'log')` and calls `setParam('cutoff', 901.1)` on the target instrument.
 7. **AUDIO.** The trace records the requested value and the value after `coerceParam`.
 8. **VISUAL.** An `aurora` layer bound to the same field updates its drift.
 

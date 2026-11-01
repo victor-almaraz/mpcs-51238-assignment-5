@@ -6,7 +6,7 @@ The TypeScript language that users write: the builder API, programs, their types
 ## Model
 - A **script** is a TypeScript program written in the editor (`piece.ts`). Plain JavaScript is valid script source, since the type annotations are optional.
 - The script runs in the sandbox worker, which is the program's VM. Sky data is its input; instruments, effect parameters and layers are its output.
-- **Setup** is the script's top-level code. It runs when the piece is built and again at every Run. It opens the IO devices (instruments, effects, LFOs, layers, the view), declares bindings, and registers **handlers** (Program).
+- **Setup** is the script's top-level code. It runs when the piece is built and, for a piece with handlers, again each time the program starts (VM). It opens the IO devices (instruments, effects, LFOs, layers, the view), declares bindings, and registers **handlers** (Program).
 - While the piece plays, the VM keeps the script's variables and calls its handlers on sky events, timers and freshness changes. Handlers read live values and send commands. The page checks every command at the IO boundary before the engine or renderer receives it (`bindings.md`, Program host).
 - Building produces an **IR**: a JSON document that describes instruments, effects, modulation, bindings, reactions, the view, layers and the registered handlers. The IR is what is validated, stored and diffed on hot reload. A piece without handlers plays from its IR alone; a piece with handlers needs its source and the VM.
 - **Bindings** are the declarative part of the language: expressions (chained builder calls that compile to JSON expression nodes) that the binding runtime evaluates without script code. Builders that accept a function call it once, at build time, with a typed **object proxy** whose properties build expression nodes (Typed objects).
@@ -125,6 +125,14 @@ A slot belongs to one chain. Passing one slot handle to two chains is a build er
 |---|---|
 | `lfo({ shape, rate, phase, retrigger, smooth })` | LFO handle. `rate` is a number in Hz, a sync name such as `'1/4d'`, or an expression mapped to Hz. |
 
+| Option | Values | Default |
+|---|---|---|
+| `shape` | `sine`, `triangle`, `square`, `saw`, `random`, `smooth` | `sine` |
+| `rate` | 0.01–20 Hz, a sync name, or an expression | 0.1 Hz |
+| `phase` | 0–1 | 0 |
+| `retrigger` | `true` or `false` | `false` |
+| `smooth` | 0–1 | 0.5 for `smooth`, otherwise 0 |
+
 An expression `rate` must end in `.map(...)` or `.clamp(...)`; that step's output range becomes the rate range (`min`, `max` in the IR), clamped to 0.01–20 Hz. Any other expression, and a range that is empty after clamping (`min` not below `max`, for example `.map(0, 9, 5, 5)` or `.map(0, 9, 25, 30)`), is a build error with code `lfo_rate_range`.
 
 `.mod(source, opts)` accepts an LFO handle or an expression. An expression source is a data source: its value must lie in −1 to 1 (values outside are clamped), and `smoothMs` (default 250) sets its smoothing. `depth` is −1 to 1 in normalized units; depth 0.1 on a log parameter spanning 10 octaves moves one octave. `audio/modulation.md` defines the model, `down` parameters and evaluation.
@@ -133,7 +141,7 @@ An expression `rate` must end in `.map(...)` or `.clamp(...)`; that step's outpu
 | Call | Returns |
 |---|---|
 | `sky.group(key)` | Group handle |
-| `group.top(n, field, order)` | Group handle restricted to the first `n` objects by `field`; `order` is `desc` (default) or `asc` |
+| `group.top(n, field, order)` | Group handle restricted to the first `n` objects by `field` (`n` rounded down, at least 1); `order` is `desc` (default) or `asc` |
 | `group.voices(inst, opts)` | Sustained-voice binding; `opts` is `{ pitch, velocity, pan, voiceMods }` or a function of the group's object proxy returning it |
 | `group.on(kind)` | Event handle; `kind` is `enter`, `update` or `exit` |
 | `event.when(expr)` | Event handle with a condition; `expr` is an expression or a function of the object proxy returning one. A second `when` combines with the first by `and`. |
@@ -162,7 +170,7 @@ Orbital motion is a very-low-frequency oscillator (VLFO): periodic, continuous a
 
 | Option | Values | Default |
 |---|---|---|
-| `timeScale` | 1–1000; multiplies elapsed time from the engine start | 1 |
+| `timeScale` | 1–1000; multiplies elapsed time since the time origin of the orbit propagator's clock (`visuals.md`, Orbit propagation) | 1 |
 
 - A VLFO is an expression: it is valid in `.mod()` (as a data source), in `follow`, in voice options (`pan`, `voiceMods`, `velocity`) and in layer properties.
 - `orbit(...)` refers to the current object and is valid where a current object exists: voice options, trigger options and layer properties. `sky.orbit(...)` is valid everywhere.
@@ -188,7 +196,7 @@ pad.vibratoDepth.follow(sky.orbit('celestrak.stations:25544', 'latitude').map(-1
 | `onStale(source, actions)` | Applies `actions` while `source` is `stale` |
 | `onDown(source, actions)` | Applies `actions` while `source` is `down` |
 
-`source` is a registry id, a group key, or `'*'`. Actions: `{ detuneCents: n }`, `{ mute: [inst, ...] }`, `{ only: [inst, ...] }`, `{ desaturate: 0–1 }`.
+`source` is a registry id, a group key, or `'*'`. Actions: `{ detuneCents: n }` (−100 to 100), `{ mute: [inst, ...] }`, `{ only: [inst, ...] }`, `{ desaturate: 0–1 }`; one reaction may combine several.
 
 ### Typed objects
 A function passed to `voices`, `when`, `trigger` or a layer constructor receives the group's object proxy `o`:
@@ -241,7 +249,7 @@ Handlers are registered during setup only. Registering one inside a handler thro
 |---|---|
 | `on(group, kind, fn)` | For each event of `kind` (`enter`, `update`, `exit` or `'*'`) in `group`, with `(o, e)` |
 | `every(interval, fn)` | Every `interval`, with `(t)`: milliseconds (10–3,600,000) or a sync name (`1/32`–`1/1`, with `d` or `t`) at the piece tempo. The first call is at the start of the program. |
-| `after(ms, fn)` | Once, `ms` (0–3,600,000) after the call. Valid in setup and in handlers. Returns a function that cancels the call. |
+| `after(ms, fn)` | Once, `ms` (0–3,600,000) after the call; called in setup, `ms` after the start of the program. Valid in setup and in handlers. Returns a function that cancels the call. |
 | `onFreshness(source, fn)` | When the freshness of `source` (a registry id, a group key or `'*'`) changes, with `({ source, state })` |
 | `follow(...groups)` | Follows groups the script reads with `read.*` but names nowhere else |
 
@@ -256,13 +264,13 @@ Output methods are valid inside handlers only. In setup they throw, and the buil
 |---|---|
 | `inst.play(pitch, { velocity, pan, durationMs })` | One note. Defaults: velocity 100, pan 0, `durationMs` 250 (20–10,000). |
 | `inst.hold(key, pitch, { velocity, pan })` | Starts a sustained note named `key` (text, at most 64 characters). Holding a key that already sounds restarts it. |
-| `inst.glide(key, pitch, ms)` | Moves a held note to `pitch` over `ms` (default 150) |
+| `inst.glide(key, pitch, ms)` | Moves a held note to `pitch` over `ms` (0–10,000, default 150) |
 | `inst.stop(key)`, `inst.stopAll()` | Releases one held note, or all of the instrument's held notes |
 | `inst.<param>.set(value, { smoothMs })`, `slot.<param>.set(value, { smoothMs })` | Sets a numeric parameter's base value; `smoothMs` default 250. Values outside the range move to the nearest end. |
 | `slot.bypass.set(on)` | Bypasses an effect slot |
-| `layerHandle.set(props)` | Sets constant layer properties; `layer.*(...)` returns the handle |
+| `layerHandle.set(props)` | Sets constant layer properties; every `layer.*(...)` constructor except `layer.shader` returns the handle. An unknown property or an expression value throws. |
 
-A `null` pitch plays nothing, as in expressions. Any other value of the wrong kind throws a `TypeError`. Commands take effect 100 ms after the handler's time, so timer handlers keep steady timing.
+A `null` pitch plays nothing, as in expressions. Any other value of the wrong kind throws a `TypeError`. `inst.<param>.set` accepts numeric parameters only. Commands take effect 100 ms after the handler's time, so timer handlers keep steady timing.
 
 ### Input
 | Call | Returns |
@@ -270,10 +278,10 @@ A `null` pitch plays nothing, as in expressions. Any other value of the wrong ki
 | `read.swpc(path)` | Current SWPC value, or `null` |
 | `read.group(key)` | Current records of a group, in id order |
 | `read.object(id)` | One record, or `null` |
-| `read.freshness(source)` | `loading`, `fresh`, `stale` or `down` |
+| `read.freshness(source)` | `loading`, `fresh`, `stale` or `down`; `source` is a registry id or a group key. A source without a known state is `loading`. |
 | `time()` | Milliseconds since the program started; in a timer handler, the timer's scheduled time |
 
-`read.*` is valid inside handlers only. It reads groups the piece follows: the groups of its bindings, layers, `on` handlers, `sky.swpc` expressions and `follow` calls. Reading another group throws.
+`read.*` is valid inside handlers only. `read.swpc` and `read.group` read groups the piece follows: the groups of its bindings, layers, `on` handlers, `sky.swpc` expressions and `follow` calls. Reading another group throws. `read.object` returns `null` for an object outside the followed groups.
 
 ### Determinism
 - `random()` returns a number in `[0, 1)`, `randInt(n)` an integer in `[0, n)`, and `choose(list)` one element. All three are seeded by `seed()`, so two runs with the same seed and the same events make the same choices. `Math.random` is the same generator.
@@ -287,11 +295,13 @@ A `null` pitch plays nothing, as in expressions. Any other value of the wrong ki
 | One batch of handler calls runs longer than 250 ms | The VM is stopped, the program's notes are released, and Problems shows `handler_timeout`. The bindings keep playing. |
 | More than 64 handlers | Build error `limit_handlers` |
 | More than 256 pending `after` calls | The `after` call throws |
+| More than 1024 timer calls due in one batch | The remaining calls run in the next batch |
 | More than 256 commands in one batch | The rest are dropped and traced |
 | More than 200 note starts per second | The rest are dropped and traced |
+| More than 4096 sky events waiting for the next batch | The oldest are dropped and traced |
 
 ## Types
-`src/dsl/builder.d.ts` declares the global builder API. Its types are generated from `PARAM_DEFS`, the effect registry, `src/visual/layer-defs.js` and `src/sky/groups.json` by `scripts/gen-builder-dts.mjs` (`src/dsl/gen-dts.js`), which also writes `src/dsl/builder-dts.js` (the same text as a module) and `src/dsl/ts-lib-files.js` (the ES2022 library declarations) for the type-check worker. Generation depends only on the tables, so it is deterministic; `--check` fails when a generated file is out of date.
+`src/dsl/builder.d.ts` declares the global builder API. Its types are generated from `PARAM_DEFS`, the effect registry, `src/visual/layer-defs.js` and `src/sky/groups.json` by `scripts/gen-builder-dts.mjs` (`src/dsl/gen-dts.js`), which also writes `src/dsl/builder-dts.js` (the same text as a module) and `src/dsl/ts-lib-files.js` (the ES2022 library declarations) for the type-check worker. Generation depends only on the tables and the installed TypeScript library files, so it is deterministic; `--check` fails when a generated file is out of date.
 
 | Type | Meaning |
 |---|---|
@@ -303,7 +313,7 @@ A `null` pitch plays nothing, as in expressions. Any other value of the wrong ki
 | `Fields<G>` | Field names and value types of group `G`, from `groups.json` |
 | `ObjectProxy<G>` | `{ [K in keyof Fields<G>]: Expr<Fields<G>[K]> }`, plus `orbit` when `G` is a `celestrak.*` key |
 | `ParamsOf<T>` | Option object of instrument or effect type `T`: numeric params as `number`, enum params as their option-name union, `harmonics` as an 8-tuple |
-| `Handle<T>` | An instrument or effect handle; each numeric parameter has `follow` and `mod`; `mod` exists only on modulatable parameters |
+| `Handle<T>` | An instrument or effect handle; each numeric parameter has `follow`, `set` and `mod`; `mod` exists only on modulatable parameters |
 | `OrbitQuantity` | `'latitude' \| 'phaseSin' \| 'phaseCos' \| 'altitude' \| 'longitude' \| 'sunlit' \| 'elevation'` |
 | `SwpcPath` | `'kp.kp' \| 'kp.kpEstimated' \| 'wind.speed' \| ...` |
 
@@ -360,6 +370,8 @@ Pitch values are MIDI note numbers and may be fractional. Velocity values are 1�
 Evaluation rules:
 - `null` propagates: any step with a `null` input returns `null`.
 - A non-finite number becomes `null`.
+- A value of the wrong type for a step, for example text into `.add` or a number into `.and`, gives `null`.
+- `.map` with `inMin` equal to `inMax` gives `null`. The `log` curve needs `outMin` and `outMax` of one sign and the `exp` curve `inMin` and `inMax` of one sign; otherwise the result is `null`.
 - A voice whose pitch evaluates to `null` is not started. A trigger whose pitch is `null` does not fire. A parameter that evaluates to `null` keeps its last value.
 
 ## IR
@@ -450,31 +462,31 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 - `select` is `null` or `{ "top": n, "by": field, "order": "asc" | "desc" }`. Voices, triggers and layers carry it.
 - Binding kinds: `voices` and `trigger` as above; `param` `{ id, kind, inst, param, expr, smoothMs }` for `inst.<param>.follow`; `fxParam` `{ id, kind, slot, param, expr, smoothMs }` for `slot.<param>.follow`; `fxBypass` `{ id, kind, slot, expr }` for `slot.bypass.follow`.
 - Instrument `params` hold only the options the script sets: numbers, choice option names (`"sawtooth"`) and arrays (`harmonics`). Effect slot `params` hold numbers only, and a choice is its option index (`filter({ mode: 'highpass' })` stores `"mode": 1`), matching `FxSlotSpec` (`audio/effects.md`).
-- Layers: `{ id, type, group, select, props }`; `group` and `select` are `null` for `field` and `aurora`. `props` holds every property of the layer type, with defaults filled in. A shader layer is `{ id, type: "shader", group: null, select: null, glsl, props }`; its `props` are the shader's uniforms plus the declared shader properties.
+- Layers: `{ id, type, group, select, props }`; `group` and `select` are `null` for `field` and `aurora`. `props` holds every property of the layer type, with defaults filled in. A shader layer is `{ id, type: "shader", group: null, select: null, glsl, props }`; its `props` hold `opacity`, with its default filled in, and any other value the script passes. The validator does not check shader `props`, and the renderer reads only `opacity` (`visuals.md`, Shader layers).
 - `view` defaults to `{ "projection": "orbital", "background": "#000000" }`.
-- `groups` lists every group referenced by a binding, expression, layer or program handler, including `swpc.*` groups referenced by `sky.swpc` and groups named by `follow`. On save, the page replaces the project's `project_subscriptions` rows with these values.
+- `groups` lists every group referenced by a binding, expression, layer or program handler, including `swpc.*` groups referenced by `sky.swpc` and groups named by `follow`, in sorted order. On save, the page inserts and deletes `project_subscriptions` rows so that the project's rows equal these values.
 - `program` is present only when the script registers handlers or calls `follow`: `{ "handlers": [...], "follow": [group, ...] }`. Each handler is `{ "id": "h<n>", "kind": "on", "group", "event" }`, `{ "id", "kind": "every", "intervalMs" }` or `{ "id", "kind": "every", "sync" }`, `{ "id", "kind": "after", "ms" }` (registered in setup) or `{ "id", "kind": "freshness", "source" }`. The functions stay in the VM; the IR records what was registered, so hot reload can diff it and the page knows the piece needs the VM.
 
 ### Schema file
-`src/dsl/ir.schema.json` is a JSON Schema (draft 2020-12) for the document. Validation runs the schema check, then the semantic checks below.
+`src/dsl/ir.schema.json` is a JSON Schema (draft 2020-12) for the document. `validateIr` (`src/dsl/validate.js`) checks `irVersion`, the nesting depth of the document and its serialized size, then runs the schema check, then the semantic checks below. A version, nesting or schema error ends validation before the semantic checks.
 
 ## Validation
 | Check | Rule |
 |---|---|
 | Instruments | At most 16. `type` is a `PARAM_DEFS` key. Every param name exists for the type. `granular.source` is not `sample`. |
-| Bindings | At most 64. `inst` exists. `param` is a numeric param of the instrument's type. |
+| Bindings | At most 64. `inst` exists. `param` is a parameter of the instrument's or slot's type and not an array parameter (`not_numeric`). |
 | Voices | `select.top` at most 16, or 4 for granular. Without `select`, a group larger than the cap uses the first objects by id. Each `voiceMods` name is a modulatable parameter of the instrument's type (`unknown_option`); constant values lie in −1 to 1. |
 | Triggers | `maxPerSecond` 0.1–20. `durationMs` 20–10000. |
 | Effects | At most 8 slots per chain and 4 `reverb` slots per piece. `type` is an effect registry key. Every param exists for the type. Each slot id appears in one chain. |
 | Modulation | At most 16 LFOs, 2 `retrigger` LFOs per instrument, 32 routes, 4 routes per target. `depth` −1 to 1. Targets exist and are modulatable (not `enum`, array or `mod: null`). LFO `rate` 0.01–20 Hz. `tempo` 20–300. |
 | Layers | At most 16. Props exist in `src/visual/layer-defs.js` (`unknown_option`). Constant values lie in range and match the property type. |
-| Groups | Every group key exists in the source registry, copied to `src/sky/groups.json` at build time. |
+| Groups | Every group key exists in `src/sky/groups.json`; `tests/sky-groups.test.js` checks that file against the source table in `sources.md`. A reaction or `onFreshness` source is `'*'`, a group key or a registry id. |
 | Orbits | `orbit` and `sky.orbit` reference `celestrak.*` groups or objects; `quantity` is a listed quantity; `timeScale` 1–1000; at most 64 distinct (object, quantity, timeScale) orbit sources per piece. |
 | Expressions | Depth at most 32. Every `op` is known with the right argument count. `audio.*` ops appear only in layer props. |
-| Program | At most 64 handlers. `kind` is `on`, `every`, `after` or `freshness`. `event` is `enter`, `update`, `exit` or `*`. `intervalMs` 10–3,600,000; `sync` is a sync name; `ms` 0–3,600,000. Groups exist. |
+| Program | At most 64 handlers. Handler `n` has id `h<n>`. `kind` is `on`, `every`, `after` or `freshness`, with only the fields of its kind. `event` is `enter`, `update`, `exit` or `*`. `intervalMs` 10–3,600,000; `sync` is a sync name; `ms` 0–3,600,000. Groups exist. |
 | Size | Serialized IR at most 256 KB. Script source at most 200,000 characters (`limit_source`). |
 | References | Every instrument, slot and LFO id a binding, route, reaction or expression names exists. `groups` lists exactly the referenced groups. |
-| Ranges | Every constant lies in its range: `tempo`, LFO `phase` and `smooth`, `depth`, `maxPerSecond`, `durationMs`, `timeScale`, constant pitch, velocity and pan, `detuneCents` −100–100, `desaturate` 0–1, parameter values. The builder clamps constants, so only a hand-made IR fails these. |
+| Ranges | Every constant lies in its range: `tempo`, LFO `rate`, `phase` and `smooth`, `depth`, `smoothMs` 0–60,000, `maxPerSecond`, `durationMs`, `timeScale`, constant pitch, velocity, pan and `voiceMods` values, `detuneCents` −100–100, `desaturate` 0–1, `spectrum` bands 4–32, instrument `volumeDb`, `octave` and `cents`, parameter values and layer properties. The builder clamps constants, so only a hand-made IR fails these. |
 
 ### Problem codes
 | Code | Severity | Condition |
@@ -517,20 +529,20 @@ A problem is `{ "severity": "error" | "warning", "code": string, "path": string,
 `unknown_field` checks a field name against the group's field list in `groups.json`; when the page passes the last snapshot of the group, a field present in any of its objects is also known.
 
 ## Versioning
-- `irVersion` is an integer. `src/dsl/migrations.js` exports `migrations[n]`, a pure function from version `n` to `n + 1`, each with its own test.
-- Loading applies migrations in order, then validates. A version greater than the current one is rejected with code `ir_version_unsupported`.
+- `irVersion` is a positive integer; the current version is 1 (`CURRENT_IR_VERSION`, `src/dsl/limits.js`). `src/dsl/migrations.js` exports `migrations`, which maps each version `n` below the current one to a pure function from version `n` to `n + 1`. Version 1 is the first version, so the map is empty. `tests/dsl-migrations.test.js` requires one step, tested on a fixture, for every version below the current one.
+- Loading (`loadIr`) applies migrations in order, then validates. A version greater than the current one is rejected with code `ir_version_unsupported`; an `irVersion` that is not a positive integer is `ir_schema`.
 - Renaming, removing or changing the unit of any IR field requires a version bump.
 
 ## Sandbox
-- The script runs in a dedicated Web Worker loaded from `/dsl-sandbox.js`. The page posts `{ source, defs, snapshot? }` and receives `{ ir, problems }`. `defs` is the normalized definition object (`src/dsl/load-defs.js`, Definition tables); `snapshot` optionally maps groups to their last objects for `unknown_field`. `ir` is `null` after `syntax_error`, `runtime_error` or `timeout`. The worker's own validation runs in the same realm as the script, which can patch built-ins there, so the page validates the received IR again (`validateIr`) before loading or saving it; the worker's problems are kept for their script lines.
+- The script runs in a dedicated Web Worker loaded from `/dsl-sandbox.js`. The page posts `{ source, defs, snapshot? }` and receives `{ ir, problems }`. `defs` is the normalized definition object (`src/dsl/load-defs.js`, Definition tables); `snapshot` optionally maps groups to their last objects for `unknown_field`. `ir` is `null` after `syntax_error`, `runtime_error`, `timeout`, `io_outside_handler` or `limit_source`. The worker keeps the `defs` of the last message that carried them. The worker's own validation runs in the same realm as the script, which can patch built-ins there, so the page validates the received IR again (`validateIr`) before loading or saving it; the worker's problems are kept for their script lines.
 - `public/dsl-sandbox.js` is generated by `scripts/build-sandbox.mjs` from `src/dsl/sandbox-entry.js`: a small CommonJS linker bundles the DSL modules and Sucrase into one script without `import` or `export`, which loads as a classic or a module worker. The bundle contains no definition tables, so it does not depend on the engine. `--check` fails when the file is out of date.
 - `src/dsl/run-sandbox.js` (`createSandbox`) is the page side: it keeps one worker, runs builds one at a time, and applies the timeout below.
-- The worker removes TypeScript syntax with Sucrase (`transforms: ['typescript']`), which performs no type checking, then evaluates the result with `new Function`, passing the builder API as parameters and shadowing `self`, `globalThis`, `postMessage` and the network globals. Sucrase preserves line numbers, so problem positions refer to the TypeScript source; the script carries `//# sourceURL=piece.ts`, and the builder reads script lines from stack frames of that name. A Sucrase parse error is the problem `syntax_error`.
+- The worker removes TypeScript syntax with Sucrase (`transforms: ['typescript']`), which performs no type checking, then evaluates the result with `new Function`, passing the builder API and the seeded `Math` as parameters and shadowing `self`, `globalThis`, `postMessage`, `close`, `onmessage`, `addEventListener`, `removeEventListener`, `caches`, `Worker`, the network globals and the timer and clock globals. Sucrase preserves line numbers, so problem positions refer to the TypeScript source; the script carries `//# sourceURL=piece.ts`, and the builder reads script lines from stack frames of that name. A Sucrase parse error is the problem `syntax_error`.
 - The response for `/dsl-sandbox.js` carries its own policy, set in `next.config.ts` headers: `Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-eval'`. The worker can evaluate the script but has no network access.
-- Before evaluating the script, the worker also deletes `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `importScripts` and `indexedDB` from its global scope.
+- When it loads, before any script runs, the worker also deletes `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `importScripts` and `indexedDB` from its global object and that object's prototype chain (`lockGlobals`); a property that cannot be deleted is overwritten with `undefined`.
 - The worker posts `{ ready: true }` once it has loaded. The page waits for it before posting a build (up to 15 s; past that it reports `runtime_error` "The script sandbox did not start"), so the 1500 ms limit measures only the script's run, never the download and start of the worker.
 - The page calls `worker.terminate()` if no response arrives within 1500 ms of posting the build and reports problem `timeout`.
-- The script receives only the builder API. It cannot reach the page, the audio context, the database or the DOM. `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask`, `Date` and `performance` are shadowed, and `Math` is a copy whose `random` is the seeded generator (Program, Determinism).
+- The script receives only the builder API. It cannot reach the page, the audio context, the database or the DOM. `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask`, `requestAnimationFrame`, `Date` and `performance` are shadowed by values whose use throws a `TypeError` naming the replacement (`after`, `every` or `time()`), and `Math` is a copy whose `random` is the seeded generator (Program, Determinism).
 - Programs run only for their author: projects are owner-only (`database.md`), and a piece with handlers plays only from its source in the author's own session.
 - In local-only mode the page posts `{ fn: { id, source, arg } }` for each `fn` evaluation and receives `{ fn: { id, value } }` or `{ fn: { id, error } }` (`createSandbox().evalFn`). Values other than finite numbers, text and booleans become `null`. A call without a reply within 1500 ms terminates the worker like a build timeout; that call and every other pending `fn` call resolve `null`, as they do when the worker fails (`onerror`) or is disposed.
 
@@ -543,7 +555,7 @@ The worker keeps the source and handlers of its last build without errors. Build
 | `{ program: { id, op: 'batch', now, events, freshness } }` | `{ program: { id, commands, errors, dropped } }` |
 | `{ program: { id, op: 'stop' } }` | `{ program: { id, commands: [], errors: [], dropped: 0 } }` |
 
-- `start` runs the kept source again, so setup starts from fresh variables, then calls the initial `enter` handlers (Program, Handlers). `groups` are the IR's groups; `objects` are their current objects as `{ id, group, fields }`; `freshness` is the current state of every source as `{ source, state }`.
+- `start` builds the kept source again, so setup starts from fresh variables, then calls the initial `enter` handlers (Program, Handlers). `groups` are the IR's groups; `objects` are their current objects as `{ id, group, fields }`; `freshness` is the current state of every source as `{ source, state }`.
 - `batch` advances the program clock to `now` (ms since start). The VM first runs due timers in time order, each at its scheduled time. A timer more than 1000 ms late fires once and skips the missed calls. It then applies `events` (`{ kind, obj, prev, traceId, initial }`) to its copy of the followed groups and calls the matching `on` handlers, then `freshness` changes (`{ source, state }`) and the matching `onFreshness` handlers.
 - A command is `{ op, at, trace, src, ...args }`. `op` is `play`, `hold`, `glide`, `stop`, `stopAll`, `set` or `layer`; `at` is the handler's program time, `trace` the event's trace id (`null` for timers), `src` the handler id. At most 256 per batch; `dropped` counts the rest.
 - An error is `{ handler, line, message }`. The VM disables that handler. An error from `setup` or `vm` (the kept build failed, or the worker holds no running program) means the program is gone; the page reports it once and stops the program.
@@ -575,22 +587,23 @@ The builder, the validator, the sandbox and the type generator receive the defin
 
 | Module | Content |
 |---|---|
-| `src/dsl/engine-defs.js` | The only import of the user's engine tables: `PARAM_DEFS` and `TUNING_DEFS` from `src/audio/param-defs.js` (assumed path), the effect registry from `src/audio/fx/effects/registry.js` |
+| `src/dsl/engine-defs.js` | The only import of the user's engine tables: `PARAM_DEFS` and `TUNING_DEFS` from `src/audio/synths/param-defs.js`, the effect registry (`EFFECTS`, exported as `EFFECT_REGISTRY`) from `src/audio/fx/effects/registry.js` |
 | `src/dsl/layer-schema.js` | `LAYER_DEFS` from `src/visual/layer-defs.js` |
 | `src/dsl/sky-schema.js` | `src/sky/groups.json` |
 | `src/dsl/defs.js` | `normalizeDefs` merges the tables into one plain, structured-cloneable object |
 | `src/dsl/load-defs.js` | `DEFS`, the normalized tables of the running app |
 
-Reading of the engine tables: a synth `ParamDef` without `mod` is not modulatable; an effect `ParamDef` is modulatable unless `mod` is `null`; `mod.dir: 'down'` marks a lower-only parameter; a `ParamDef` with `options` is a choice; an array `default` marks an array parameter. Effect `ParamDef`s may name the parameter with `id` or `name`.
+Reading of the engine tables: a synth `ParamDef` without `mod` is not modulatable; an effect `ParamDef` is modulatable unless `mod` is `null`; only numeric parameters are modulatable; `mod.dir: 'down'` marks a lower-only parameter; a `ParamDef` with `options` or `scale: 'enum'` is a choice; an array `default` marks an array parameter. A `ParamDef` may name the parameter with `id` or `name`. Instrument `volume` is always −60 to 0 dB with default −6; `octave` and `cents` ranges come from `TUNING_DEFS`. The sync names are the `sync` options of the `delay` effect other than `off`.
 
 The build scripts (`scripts/gen-builder-dts.mjs`, `scripts/build-starters.mjs`) accept `--defs <module>` to replace any table; `--defs tests/fixtures/dsl/engine-defs.js` supplies fixture engine tables built from `content/learn/reference.md`.
 
 ## Editor support
 The editor's completion, hover and inline problems come from the type-check worker (`ui.md`). Until the worker has loaded, completion reads `PARAM_DEFS`, the effect registry, `layer-defs.js` and `groups.json` directly. The user guide (`guide.md`) teaches the API to people.
 
-## Open items
-- Verify that Safari applies the `/dsl-sandbox.js` response CSP to the worker. Where it does not, the global deletions in the worker are the only network barrier.
-- Measure the gzipped size of the type-check worker bundle (TypeScript compiler, `@typescript/vfs`, ES2022 library declarations) before release.
+## Limitations
+- Setup reruns under the 250 ms program watchdog when a program starts, while a build has 1500 ms. A setup that runs longer than 250 ms builds, but its program stops with `handler_timeout`.
+- Hot reload restarts a program from setup, so the program's variables do not survive a reload.
+- A browser that does not apply the `/dsl-sandbox.js` response CSP to the worker leaves the global deletions in the worker as the only network barrier.
 
 ## Sources
 - MDN, Web Workers API: https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API

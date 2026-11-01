@@ -8,7 +8,7 @@ The three hosted services, their environment variables, setup steps, free-tier l
 |---|---|---|
 | Vercel | Next.js page | Hobby |
 | Supabase | Postgres, Realtime, `pg_cron`, `pg_net`, Edge Function `harvest` (the worker) | Free |
-| Clerk | Sign-in | Free, development instance |
+| Clerk | Sign-in | Free |
 
 ## Environment variables
 | Variable | Vercel | Edge Function secrets | Local file |
@@ -25,12 +25,12 @@ The three hosted services, their environment variables, setup steps, free-tier l
 | `SOURCES_ENABLED` | | optional | `worker/.env` |
 | `LOG_LEVEL` | | optional | `worker/.env` |
 
-`.env.local` and `worker/.env` are in `.gitignore`. `.env.example` files list every name with no values.
+`.env.local` and `worker/.env` are in `.gitignore`. `.env.example` at the repository root lists the four page variables with no values. `worker/.env.example` lists the six local worker variables; only `LL2_BASE` has a value (`worker.md`, Secrets and environment).
 
 ## Supabase
 1. Create a project in the region nearest to Chicago.
-2. Enable the `pg_cron` and `pg_net` extensions (Database → Extensions).
-3. Run each file in `supabase/migrations/` in the SQL editor, in file-name order.
+2. Run each file in `supabase/migrations/` in the SQL editor, in file-name order. The first file creates the `pg_cron` and `pg_net` extensions when they are absent; Database → Extensions shows them enabled afterwards.
+3. Run `supabase/tests/upsert.sql` and `supabase/tests/seed_starters.sql` in the SQL editor (`testing.md`, SQL tests).
 4. Add Clerk as a third-party auth provider (`auth.md`).
 5. Copy the publishable key to Vercel. The secret key stays in Supabase; the Edge Function receives it as `SUPABASE_SECRET_KEYS`.
 6. Deploy the Edge Function and store the Vault secrets (`worker.md`, Deployment).
@@ -66,6 +66,7 @@ Hobby limits include 1,000,000 function invocations, 4 hours of active CPU and 1
 1. Create an application with email and GitHub sign-in.
 2. Activate the Supabase integration (`auth.md`).
 3. Add the Vercel production and preview domains to allowed origins.
+4. Copy the publishable key and the secret key of the Clerk instance to the Vercel variables `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`.
 
 ## Submission
 - Vercel URL of the deployed page.
