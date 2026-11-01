@@ -21,6 +21,8 @@ import { Preview } from './preview';
 import { PHOTOSENSITIVITY_WARNING, VOLUME_WARNING } from './safety-text';
 import { StatusBar } from './status-bar';
 import { Notices, Transport } from './transport';
+import { Brand } from './brand';
+import { button } from './styles';
 
 export const CHROME_HIDE_MS = 3000;
 
@@ -125,11 +127,13 @@ export function RunView({ ir, name, projectId = null, backHref = null, kiosk = f
           onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) hold('focus', false); }}
           className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-3 bg-black/70 px-3 py-2 transition-opacity ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
         >
-          <h1 className="text-sm">{name}</h1>
+          <Brand size="sm" />
+          <span aria-hidden="true" className="text-xs">/</span>
+          <h1 className="text-xs font-medium">{name}</h1>
           <Transport session={session} state={state} onRun={run} canRun={canRun} maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
           <span className="flex-1" />
-          <span className="text-xs text-fg-muted">C console · N voices · S status{backHref ? ' · Esc editor' : ''}</span>
-          {backHref && <Link href={backHref} className="text-xs underline">Editor</Link>}
+          <span className="text-xs">C console · N voices · S status{backHref ? ' · Esc editor' : ''}</span>
+          {backHref && <Link href={backHref} className={button('ghost', 'sm')}>Editor</Link>}
           {links}
         </div>
       )}

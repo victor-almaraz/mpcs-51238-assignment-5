@@ -6,18 +6,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { UserButton } from '@clerk/nextjs';
 import { BLANK_SOURCE, UNDO_MS, createLastRunStore, duplicateName, uniqueName } from '@/src/ui/projects.js';
 import { relativeTime } from '@/src/ui/status.js';
 import { Attribution } from '@/src/ui/attribution';
 import { useSupabase } from '@/src/ui/app-providers';
 import { createProject } from '@/src/ui/project-actions';
+import { button, container, heading } from '@/src/ui/styles';
+import { SiteHeader } from '@/src/ui/site-header';
 
 type Row = { id: string; name: string; updatedAt: string | null; starterSlug: string | null; groups: string[] };
 type Template = { slug: string; name: string; source: string; ir: unknown };
 
-const btn = 'rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50';
-const primary = 'rounded-sm bg-accent px-3 py-1 text-xs text-bg disabled:opacity-50';
+const btn = button('secondary', 'sm');
+const primary = button('primary', 'sm');
 
 export function ProjectsView({ rows: initial, error, seedError, templates }: { rows: Row[] | null; error: string | null; seedError: string | null; templates: Template[] }) {
   const router = useRouter();
@@ -100,9 +101,9 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
       </button>
       {menu && (
         <ul role="menu" className="absolute right-0 z-10 mt-1 w-64 border border-line bg-panel py-1 text-xs">
-          <li role="none"><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-panel-2" onClick={() => newProject(null)}>Blank</button></li>
+          <li role="none"><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-fg hover:text-bg" onClick={() => newProject(null)}>Blank</button></li>
           {templates.map((t) => (
-            <li role="none" key={t.slug}><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-panel-2" onClick={() => newProject(t)}>{t.name}</button></li>
+            <li role="none" key={t.slug}><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-fg hover:text-bg" onClick={() => newProject(t)}>{t.name}</button></li>
           ))}
         </ul>
       )}
@@ -111,18 +112,10 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex items-center gap-4 border-b border-line px-4 py-2 text-sm">
-        <Link href="/" className="hover:underline">Sphärenmusik</Link>
-        <nav aria-label="Site" className="flex flex-1 gap-4">
-          <Link href="/learn" className="hover:underline">Guide</Link>
-          <Link href="/console" className="hover:underline">Console</Link>
-          <Link href="/settings" className="hover:underline">Settings</Link>
-        </nav>
-        <UserButton />
-      </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
+      <SiteHeader />
+      <main className={`${container.page} flex-1`}>
         <div className="mb-6 flex items-center justify-between gap-4">
-          <h1 className="text-xl font-semibold">Projects</h1>
+          <h1 className={heading.page}>Projects</h1>
           {!error && templateMenu}
         </div>
         {actionError && <p role="alert" className="mb-4 text-xs text-error">{actionError} <button type="button" className={btn} onClick={() => setActionError(null)}>Dismiss</button></p>}

@@ -44,7 +44,7 @@ Render the guide's Markdown pages and make every example runnable in one click.
 
 ## Rendering
 - Pages render at build time with `generateStaticParams` over `content/learn/`. Markdown is parsed with `remark`, `remark-gfm` and `remark-frontmatter`, and converted with `remark-rehype` and `rehype-slug` (heading anchors).
-- Layout: the IDE shell of `ui.md` with the explorer replaced by the page list in `order`, the page in the main pane, and the page's headings in a right-hand outline.
+- Layout: the site header (`ui.md`, Design system), then three columns: the page list in `order` (a 240 px side panel, sticky, scrolling on its own), the page in a `reading` column centred in the remaining width, and the page's headings in a right-hand outline (224 px, sticky, from 1280 px). Below 768 px the page list becomes a Guide Pages disclosure above the page.
 - Code blocks use the editor's monospace font and theme. Each runnable example shows a **Try It** button that opens `/try?src=<slug>/<n>`.
 
 ## Try mode

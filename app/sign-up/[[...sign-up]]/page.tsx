@@ -1,9 +1,16 @@
 import { SignUp } from '@clerk/nextjs';
+import { auth } from '@clerk/nextjs/server';
+import { redirect } from 'next/navigation';
+import { AuthPage } from '@/src/ui/auth-page';
 
-export default function SignUpPage() {
+export const metadata = { title: 'Sign up' };
+
+export default async function SignUpPage() {
+  const { userId } = await auth();
+  if (userId) redirect('/projects');
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
+    <AuthPage title="Sign-Up">
       <SignUp signInUrl="/sign-in" fallbackRedirectUrl="/projects" />
-    </main>
+    </AuthPage>
   );
 }

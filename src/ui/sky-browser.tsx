@@ -8,6 +8,7 @@ import { GROUPS } from '@/src/sky/groups.js';
 import { formatValue } from '@/src/ui/console-filters.js';
 import { CircleCheck } from 'lucide-react';
 import { Icon } from './icons';
+import { SourceGlyph } from './glyphs';
 
 const PROVIDERS = ['celestrak', 'swpc', 'jpl', 'll2'];
 
@@ -45,7 +46,7 @@ export function SkyBrowser({ sky, followed, onInsert }: { sky: any | null; follo
     <div className="font-mono text-xs">
       {byProvider.map(([provider, groups]) => (
         <details key={provider} open={open[provider] ?? groups.some((g) => followedSet.has(g))} onToggle={(e) => { const o = (e.target as HTMLDetailsElement).open; setOpen((s) => ({ ...s, [provider]: o })); }}>
-          <summary className="cursor-pointer py-0.5">{provider}</summary>
+          <summary className="cursor-pointer py-0.5"><span className="inline-flex items-center gap-1.5 align-middle"><SourceGlyph id={`${provider}.x`} size={12} />{provider}</span></summary>
           <ul className="pl-3">
             {groups.map((g) => {
               const def = GROUPS[g];
@@ -68,7 +69,7 @@ export function SkyBrowser({ sky, followed, onInsert }: { sky: any | null; follo
                             disabled={!onInsert}
                             onClick={() => onInsert?.(`field('${name}')`)}
                             title={`Insert field('${name}')`}
-                            className="flex w-full gap-2 text-left hover:bg-panel-2"
+                            className="flex w-full gap-2 text-left hover:bg-fg hover:text-bg"
                           >
                             <span>{name}</span>
                             <span className="text-fg-muted">{f.unit}</span>

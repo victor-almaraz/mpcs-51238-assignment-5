@@ -14,13 +14,14 @@ import { useHydrated } from './use-hydrated';
 import { CircleX, TriangleAlert } from 'lucide-react';
 import { Icon } from './icons';
 import { useFreshness, useTraceRecords, type PieceSession, type Problem, type SessionState } from './hooks';
+import { button } from '@/src/ui/styles';
 
 export type BottomTab = 'console' | 'problems' | 'ir' | 'trace';
 const TABS: { id: BottomTab; label: string }[] = [
   { id: 'console', label: 'Console' }, { id: 'problems', label: 'Problems' }, { id: 'ir', label: 'IR' }, { id: 'trace', label: 'Trace' },
 ];
 const SUBTABS = ['Sources', 'Events', 'Voices', 'Modulation', 'Effects'] as const;
-const btn = 'rounded-sm border border-line px-2 py-0.5 hover:bg-panel-2 disabled:opacity-50';
+const btn = button('secondary', 'sm');
 
 export function BottomPanel({ tab, onTab, session, state, client, problems, ir, onGoto, timeZone, dev = false, replaySpeed = 100 }: {
   tab: BottomTab; onTab: (t: BottomTab) => void; session: PieceSession | null; state: SessionState; client: any | null;
@@ -58,7 +59,7 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
             <div className="flex flex-wrap items-center gap-3">
               <div role="tablist" aria-label="Console panels" className="flex gap-1 text-xs">
                 {[...SUBTABS, ...(dev ? (['Synthetic'] as const) : [])].map((s) => (
-                  <button key={s} type="button" role="tab" aria-selected={sub === s} onClick={() => setSub(s)} className={`px-1.5 ${sub === s ? 'bg-panel-2 text-fg' : 'text-fg-muted hover:text-fg'}`}>{s}</button>
+                  <button key={s} type="button" role="tab" aria-selected={sub === s} onClick={() => setSub(s)} className={`px-1.5 ${sub === s ? 'bg-fg text-bg' : 'hover:bg-fg hover:text-bg'}`}>{s}</button>
                 ))}
               </div>
               <ConsoleControls paused={paused} onPause={setPaused} />
@@ -105,7 +106,7 @@ function SyntheticPanel({ session }: { session: PieceSession | null }) {
     <div className="flex flex-col gap-2 font-mono text-xs">
       <p className="text-fg-muted">Fabricated events change only this tab&apos;s store and never write to the database.</p>
       <div className="flex flex-wrap items-center gap-2">
-        <select className="bg-panel-2" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Group">{groups.map((g) => <option key={g}>{g}</option>)}</select>
+        <select className="border border-line bg-bg" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Group">{groups.map((g) => <option key={g}>{g}</option>)}</select>
         <input className="w-28 border border-line bg-bg px-1" value={key} onChange={(e) => setKey(e.target.value)} aria-label="Object key" />
         <input className="min-w-48 flex-1 border border-line bg-bg px-1" value={fields} onChange={(e) => setFields(e.target.value)} aria-label="Fields JSON" />
         <button type="button" className={btn} onClick={() => run(() => syn().enter(group, key, parsed()))}>Enter</button>
@@ -113,10 +114,10 @@ function SyntheticPanel({ session }: { session: PieceSession | null }) {
         <button type="button" className={btn} onClick={() => run(() => syn().exit(`${group}:${key}`))}>Exit</button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <select className="bg-panel-2" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source">
+        <select className="border border-line bg-bg" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source">
           {[...new Set(groups.map((g) => GROUPS[g].source))].map((s) => <option key={s}>{s}</option>)}
         </select>
-        <select className="bg-panel-2" value={fstate} onChange={(e) => setFstate(e.target.value)} aria-label="Freshness">
+        <select className="border border-line bg-bg" value={fstate} onChange={(e) => setFstate(e.target.value)} aria-label="Freshness">
           {['fresh', 'stale', 'down', 'loading'].map((s) => <option key={s}>{s}</option>)}
         </select>
         <button type="button" className={btn} onClick={() => run(() => syn().freshness(source, fstate))}>Set Freshness</button>

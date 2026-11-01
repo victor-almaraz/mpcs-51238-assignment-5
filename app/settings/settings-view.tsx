@@ -5,15 +5,16 @@
 // warnings are shown. Valid changes save to user_settings 1 s after the last edit.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { UserProfile } from '@clerk/nextjs';
 import { getPath, parseSettingsJson, searchSettings, setPath, settingsJson, type SettingDef } from '@/src/ui/settings-view.js';
 import { validateSettings } from '@/src/lib/settings.js';
 import { Attribution } from '@/src/ui/attribution';
 import { useSettings, type SettingsWarning } from '@/src/ui/app-providers';
+import { button, container, heading } from '@/src/ui/styles';
+import { SiteHeader } from '@/src/ui/site-header';
 
 const SAVE_DELAY_MS = 1000;
-const btn = 'rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2';
+const btn = button('secondary', 'sm');
 
 export function SettingsView() {
   const { settings, warnings: loadWarnings, loaded, error: loadError, save } = useSettings();
@@ -76,18 +77,14 @@ export function SettingsView() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex items-center gap-4 border-b border-line px-4 py-2 text-sm">
-        <Link href="/" className="hover:underline">Sphärenmusik</Link>
-        <nav aria-label="Site" className="flex gap-4">
-          <Link href="/projects" className="hover:underline">Projects</Link>
-          <Link href="/learn" className="hover:underline">Guide</Link>
-        </nav>
-        <span className="ml-auto text-xs text-fg-muted" role="status">
-          {!loaded ? 'Loading…' : status === 'saved' ? 'Saved' : status === 'saving' ? 'Saving…' : status === 'unsaved' ? 'Unsaved changes' : 'Save failed'}
-        </span>
-      </header>
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
-        <h1 className="mb-4 text-xl font-semibold">Settings</h1>
+      <SiteHeader />
+      <main className={`${container.page} flex-1`}>
+        <div className="mb-6 flex items-baseline justify-between gap-4">
+          <h1 className={heading.page}>Settings</h1>
+          <span className="text-xs" role="status">
+            {!loaded ? 'Loading…' : status === 'saved' ? 'Saved' : status === 'saving' ? 'Saving…' : status === 'unsaved' ? 'Unsaved changes' : 'Save failed'}
+          </span>
+        </div>
         {(loadError || saveError) && <p role="alert" className="mb-4 text-xs text-error">{saveError ?? loadError}</p>}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
@@ -95,8 +92,8 @@ export function SettingsView() {
             disabled={view === 'json'} className="min-w-64 flex-1 border border-line bg-panel px-2 py-1 text-sm disabled:opacity-50"
           />
           <div role="group" aria-label="View" className="flex">
-            <button type="button" className={`${btn} ${view === 'list' ? 'bg-panel-2' : ''}`} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
-            <button type="button" className={`${btn} ${view === 'json' ? 'bg-panel-2' : ''}`} aria-pressed={view === 'json'} onClick={() => setView('json')}>settings.json</button>
+            <button type="button" className={`${btn} ${view === 'list' ? 'bg-fg text-bg' : ''}`} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
+            <button type="button" className={`${btn} ${view === 'json' ? 'bg-fg text-bg' : ''}`} aria-pressed={view === 'json'} onClick={() => setView('json')}>settings.json</button>
           </div>
         </div>
         {warnings.length > 0 && (
@@ -105,7 +102,7 @@ export function SettingsView() {
           </ul>
         )}
         {!loaded ? (
-          <div aria-busy="true">{[0, 1, 2, 3].map((i) => <div key={i} className="mb-3 h-8 animate-pulse bg-panel-2" />)}</div>
+          <div aria-busy="true">{[0, 1, 2, 3].map((i) => <div key={i} className="mb-3 h-8 border border-dashed border-line" />)}</div>
         ) : view === 'list' ? (
           <div className="flex flex-col gap-6">
             {groups.length === 0 && <p className="text-sm text-fg-muted">No setting matches “{query}”.</p>}

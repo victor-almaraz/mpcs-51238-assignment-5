@@ -29,42 +29,47 @@ function draw(canvas: HTMLCanvasElement, sats: ReturnType<typeof satrecs>, date:
   ctx.fillStyle = panel;
   ctx.fillRect(0, 0, w, h);
 
-  // Night side: a smooth ramp across the terminator, so it never flashes.
+  // Night side: hatched (doc/ui.md, Design system), clipped to the cells the Sun is below.
   const sun = subsolarPoint(date);
-  ctx.fillStyle = '#000';
   const cw = (w / 360) * CELL_DEG;
   const ch = (h / 180) * CELL_DEG;
+  ctx.save();
+  ctx.beginPath();
   for (let lat = 90 - CELL_DEG / 2; lat > -90; lat -= CELL_DEG) {
     for (let lon = -180 + CELL_DEG / 2; lon < 180; lon += CELL_DEG) {
-      const c = sunCos(lat, lon, sun);
-      const a = Math.min(Math.max(-c * 4 + 0.15, 0), 1) * 0.4;
-      if (a <= 0) continue;
-      ctx.globalAlpha = a;
+      if (sunCos(lat, lon, sun) >= 0) continue;
       const p = toMap(lat + CELL_DEG / 2, lon - CELL_DEG / 2, w, h);
-      ctx.fillRect(p.x, p.y, cw + 0.5, ch + 0.5);
+      ctx.rect(p.x, p.y, cw + 0.5, ch + 0.5);
     }
   }
-  ctx.globalAlpha = 1;
+  ctx.clip();
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 0.75;
+  ctx.beginPath();
+  for (let x = -h; x < w; x += 6) { ctx.moveTo(x, h); ctx.lineTo(x + h, 0); }
+  ctx.stroke();
+  ctx.restore();
 
   ctx.strokeStyle = line;
   ctx.lineWidth = 1;
+  ctx.setLineDash([1, 3]);
   ctx.beginPath();
   for (let lon = -180; lon <= 180; lon += 30) { const x = toMap(0, lon, w, h).x; ctx.moveTo(x, 0); ctx.lineTo(x, h); }
   for (let lat = -60; lat <= 60; lat += 30) { const y = toMap(lat, 0, w, h).y; ctx.moveTo(0, y); ctx.lineTo(w, y); }
   ctx.stroke();
+  ctx.setLineDash([3, 3]);
 
   for (const s of sats) {
     ctx.strokeStyle = accent;
-    ctx.globalAlpha = 0.35;
     for (const run of splitAtAntimeridian(trail(s.satrec, date))) {
       ctx.beginPath();
       run.forEach((p, i) => { const m = toMap(p.lat, p.lon, w, h); if (i) ctx.lineTo(m.x, m.y); else ctx.moveTo(m.x, m.y); });
       ctx.stroke();
     }
-    ctx.globalAlpha = 1;
     const p = subPoint(s.satrec, date);
     if (!p) continue;
     const m = toMap(p.lat, p.lon, w, h);
+    ctx.setLineDash([]);
     ctx.fillStyle = accent;
     ctx.beginPath();
     ctx.arc(m.x, m.y, s.id === ISS_ID ? 3.5 : 2, 0, Math.PI * 2);

@@ -60,11 +60,12 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
             '&': { height: '100%', fontSize: `${size}px`, backgroundColor: 'var(--panel)', color: 'var(--fg)' },
             '.cm-scroller': { fontFamily: 'var(--font-mono)' },
             '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--fg-muted)', borderRight: '1px solid var(--line)' },
-            '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--panel-2)' },
+            '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'transparent' },
+            '.cm-activeLineGutter': { color: 'var(--fg)', fontWeight: '700' },
             '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)' },
             '.cm-cursor': { borderLeftColor: 'var(--fg)' },
             '.cm-content': { caretColor: 'var(--fg)' },
-            '.cm-tooltip': { backgroundColor: 'var(--panel-2)', border: '1px solid var(--line)', color: 'var(--fg)' },
+            '.cm-tooltip': { backgroundColor: 'var(--bg)', border: '1px solid var(--line)', color: 'var(--fg)' },
             '.cm-lintRange-warning': { backgroundImage: 'none', textDecoration: 'underline wavy var(--warn)' },
             '.cm-lintRange-error': { backgroundImage: 'none', textDecoration: 'underline wavy var(--error)' },
           }, { dark: mode === 'dark' }),
@@ -186,7 +187,7 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
       <div ref={host} className="h-full min-h-0" />
       {status === 'loading' && (
         <div className="absolute inset-0 space-y-2 p-3" aria-label="Loading editor">
-          {[60, 40, 75, 30].map((w) => <div key={w} className="h-3 animate-pulse bg-panel-2" style={{ width: `${w}%` }} />)}
+          {[60, 40, 75, 30].map((w) => <div key={w} className="h-3 border border-dashed border-line" style={{ width: `${w}%` }} />)}
         </div>
       )}
       {status === 'error' && <p role="alert" className="p-3 font-mono text-xs text-error">The editor failed to load. Reload the page to retry.</p>}

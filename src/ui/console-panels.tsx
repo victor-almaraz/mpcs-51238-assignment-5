@@ -14,10 +14,11 @@ import { formatHHMM, freshnessItem, relativeTime } from '@/src/ui/status.js';
 import { useInterval, type Freshness, type PieceSession, type TraceRecord } from './hooks';
 import { CircleX, TriangleAlert } from 'lucide-react';
 import { FRESHNESS_ICON, Icon } from './icons';
+import { button } from '@/src/ui/styles';
 
 const STATE_CLASS: Record<string, string> = { loading: 'text-fg-muted', fresh: 'text-ok', stale: 'text-warn', down: 'text-error' };
 const LEVEL_CLASS: Record<string, string> = { info: '', warn: 'text-warn', error: 'text-error' };
-const btn = 'rounded-sm border border-line px-2 py-0.5 hover:bg-panel-2 disabled:opacity-50';
+const btn = button('secondary', 'sm');
 
 export function downloadTrace() {
   const blob = new Blob([toJsonl()], { type: 'application/x-ndjson' });
@@ -113,7 +114,7 @@ export function SourcesPanel({ client, freshness, timeZone = 'UTC' }: { client: 
         </thead>
         <tbody>
           {loading && rows.length === 0 && [0, 1, 2].map((i) => (
-            <tr key={i}><td colSpan={6} className="py-1"><div className="h-3 w-2/3 animate-pulse bg-panel-2" /></td></tr>
+            <tr key={i}><td colSpan={6} className="py-1"><div className="h-3 w-2/3 border border-dashed border-line" /></td></tr>
           ))}
           {!loading && rows.length === 0 && <tr><td colSpan={6} className="py-1 text-fg-muted">No sources have reported yet.</td></tr>}
           {rows.map((r) => {
@@ -177,10 +178,10 @@ export function EventsPanel({ records, followed, groups, timeZone = 'UTC', pause
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 font-mono text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <label>Source <select className="bg-panel-2" value={source} onChange={(e) => setSource(e.target.value)}>
+        <label>Source <select className="border border-line bg-bg" value={source} onChange={(e) => setSource(e.target.value)}>
           <option value="">all</option>{sources.map((s) => <option key={s}>{s}</option>)}
         </select></label>
-        <label>Group <select className="bg-panel-2" value={group} onChange={(e) => setGroup(e.target.value)}>
+        <label>Group <select className="border border-line bg-bg" value={group} onChange={(e) => setGroup(e.target.value)}>
           <option value="">all</option>{groups.map((g) => <option key={g}>{g}</option>)}
         </select></label>
         <label className="flex items-center gap-1"><input type="checkbox" checked={followedOnly} onChange={(e) => setFollowedOnly(e.target.checked)} /> Followed groups only</label>
@@ -199,7 +200,7 @@ export function EventsPanel({ records, followed, groups, timeZone = 'UTC', pause
               type="button"
               key={`${r.traceId}-${d.objectId}-${i}`}
               onClick={() => onSelect?.(r.traceId)}
-              className={`block w-full truncate text-left hover:bg-panel-2 ${selected === r.traceId ? 'bg-panel-2' : ''}`}
+              className={`block w-full truncate text-left hover:bg-fg hover:text-bg ${selected === r.traceId ? 'bg-panel-2' : ''}`}
               title={fieldDiff(d.diff).map((x) => `${x.field}: ${formatValue(x.before)} → ${formatValue(x.after)}`).join('\n')}
             >
               <span className="text-fg-muted">{clockTime(r.t, timeZone)}</span>{' '}
@@ -228,7 +229,7 @@ export function TracePanel({ records, selected, onSelect, timeZone = 'UTC' }: { 
       type="button"
       key={`${r.traceId}-${i}`}
       onClick={() => onSelect(r.traceId)}
-      className={`block w-full truncate text-left hover:bg-panel-2 ${sel ? 'bg-panel-2' : ''} ${LEVEL_CLASS[r.level] ?? ''}`}
+      className={`block w-full truncate text-left hover:bg-fg hover:text-bg ${sel ? 'bg-panel-2' : ''} ${LEVEL_CLASS[r.level] ?? ''}`}
     >
       <span className="text-fg-muted">{clockTime(r.t, timeZone)}</span> {r.stage.padEnd(8)} {r.component} {r.event}
       {recordBadge(r) && <span className="text-warn"> {recordBadge(r)}</span>}{' '}
@@ -298,7 +299,7 @@ export function VoicesPanel({ session }: { session: PieceSession | null }) {
       <tbody>
         {voices.length === 0 && <tr><td colSpan={4} className="text-fg-muted">No sounding voices.</td></tr>}
         {voices.map((v) => (
-          <tr key={v.source} className={`cursor-pointer border-t border-line hover:bg-panel-2 ${selected === v.objectId ? 'bg-panel-2' : ''}`} onClick={() => select(v.objectId)} aria-selected={selected === v.objectId}>
+          <tr key={v.source} className={`cursor-pointer border-t border-line hover:bg-fg hover:text-bg ${selected === v.objectId ? 'bg-panel-2' : ''}`} onClick={() => select(v.objectId)} aria-selected={selected === v.objectId}>
             <td>{instName(v.inst)}</td>
             <td>{String(v.fields?.name ?? v.objectId)}</td>
             <td>{boundFields(v.binding).map((f) => `${f}=${formatValue(v.fields?.[f])}`).join(' ') || '—'}</td>

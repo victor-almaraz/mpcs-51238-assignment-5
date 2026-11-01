@@ -1,6 +1,7 @@
 'use client';
 
 import { STATE_LABEL, summarize } from '@/src/landing/live.js';
+import { SourceGlyph } from '@/src/ui/glyphs';
 import { FRESHNESS_ICON, Icon } from '@/src/ui/icons';
 import { useSnapshot } from './live-snapshot';
 
@@ -25,8 +26,9 @@ export function LiveStrip() {
         const since = st === 'stale' || st === 'down' ? `${STATE_LABEL[st]} since ${hhmm(it.freshness.lastSuccess)} UTC` : STATE_LABEL[st];
         return (
           <li key={it.source} title={`${it.source}: ${since}`} className="flex min-w-0 flex-col gap-1 bg-panel px-4 py-3">
-            <span className="flex items-center gap-1.5 text-xs text-fg-muted">
-              <Icon as={FRESHNESS_ICON[st]} size={12} className={STATE_CLASS[st]} />{it.label}
+            <span className="flex items-center gap-1.5 text-xs">
+              <SourceGlyph id={it.source} size={14} />{it.label}
+              <Icon as={FRESHNESS_ICON[st]} size={12} className={`ml-auto ${STATE_CLASS[st]}`} />
             </span>
             <span className="tabular truncate font-mono text-sm">{st === 'loading' ? '…' : it.value}</span>
             <span className="sr-only">({since})</span>

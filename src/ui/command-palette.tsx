@@ -98,7 +98,7 @@ export function CommandPalette({ open, root, onClose, isMac }: { open: boolean; 
               aria-selected={i === active}
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(item)}
-              className={`flex cursor-pointer items-baseline gap-3 px-3 py-1 ${i === active ? 'bg-panel-2' : ''}`}
+              className={`flex cursor-pointer items-baseline gap-3 px-3 py-1 ${i === active ? 'bg-fg text-bg' : ''}`}
             >
               <span className="flex-1">{item.title}</span>
               {item.detail && <span className="text-xs text-fg-muted">{item.detail}</span>}

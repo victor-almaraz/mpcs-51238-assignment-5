@@ -32,11 +32,15 @@ import { createProject, listProjects } from './project-actions';
 import { useHydrated } from './use-hydrated';
 import { CircleQuestionMark, Command, Files, LogIn, Maximize, Orbit, Search, Settings, type LucideIcon } from 'lucide-react';
 import { Icon } from './icons';
+import { button } from '@/src/ui/styles';
+import { Brand } from './brand';
 
 export type Template = { slug: string; name: string; source: string; ir: unknown };
 
 type Props = {
   mode: 'project' | 'try';
+  /** Breadcrumb parent in the toolbar (doc/ui.md, Design system, Toolbar). */
+  parent?: { href: string; label: string } | null;
   project?: { id: string; name: string };
   initialSource: string;
   initialIr?: unknown;
@@ -47,7 +51,7 @@ type Props = {
 
 type Side = 'explorer' | 'search' | 'sky';
 
-const btn = 'inline-flex items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50';
+const btn = button('secondary', 'sm');
 
 /** Last objects of each followed group, for the validator's `unknown_field` warning. */
 function snapshotOf(sky: any): Record<string, { fields: Record<string, unknown> }[]> {
@@ -60,7 +64,8 @@ function snapshotOf(sky: any): Record<string, { fields: Record<string, unknown> 
   return out;
 }
 
-export function Workbench({ mode, project, initialSource, initialIr = null, signedIn, templates = [], title }: Props) {
+export function Workbench({ mode, project, initialSource, initialIr = null, signedIn, templates = [], title, parent: parentProp }: Props) {
+  const parent = parentProp ?? (mode === 'project' ? { href: '/projects', label: 'Projects' } : null);
   const router = useRouter();
   const search = useSearchParams();
   const dev = search.get('dev') === '1';
@@ -285,11 +290,12 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
   ];
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex min-w-0 items-center gap-3 border-b border-line bg-panel px-3 py-1 text-xs [&>a]:shrink-0 [&>a]:whitespace-nowrap [&>button]:shrink-0 [&>button]:whitespace-nowrap">
-        <Link href={signedIn ? '/projects' : '/'} className="hover:underline">Sphärenmusik</Link>
-        <span className="text-fg-muted">/</span>
-        <h1 className="min-w-0 truncate">{mode === 'try' ? `Try: ${name}` : name}</h1>
+    <div data-palette="color" className="flex h-screen flex-col overflow-hidden">
+      <header className="flex h-9 min-w-0 shrink-0 items-center gap-2 border-b border-line px-3 text-xs">
+        <Brand size="sm" />
+        <span aria-hidden="true">/</span>
+        {parent && <><Link href={parent.href} className="shrink-0 whitespace-nowrap hover:underline">{parent.label}</Link><span aria-hidden="true">/</span></>}
+        <h1 className="min-w-0 truncate font-medium">{mode === 'try' ? `Try: ${name}` : name}</h1>
         <span className="flex-1" />
         {mode === 'try' && (signedIn
           ? <button type="button" className={btn} onClick={saveAsProject} disabled={savingAs || !client}>{savingAs ? 'Saving…' : 'Save as Project'}</button>
@@ -308,7 +314,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
             };
             return (
               <button key={a.id} type="button" title={a.label} aria-label={a.label} aria-pressed={active} onClick={onClick}
-                className={`flex h-8 w-8 items-center justify-center rounded-sm ${active ? 'bg-panel-2 text-accent' : 'text-fg-muted hover:text-fg'}`}><Icon as={a.glyph} size={16} /></button>
+                className={`flex h-8 w-8 items-center justify-center rounded-sm ${active ? 'bg-fg text-bg' : 'hover:bg-fg hover:text-bg'}`}><Icon as={a.glyph} size={16} /></button>
             );
           })}
         </nav>
@@ -320,7 +326,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
                 ? <button type="button" className="mb-1 block w-full truncate text-left hover:underline" title="Rename" onClick={() => setNameDraft(name)}>{name}</button>
                 : <input autoFocus className="mb-1 w-full border border-line bg-bg px-1" value={nameDraft} aria-label="Project name"
                     onChange={(e) => setNameDraft(e.target.value)} onBlur={rename} onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') setNameDraft(null); }} />)}
-              <button type="button" className="block w-full bg-panel-2 px-1 text-left" onClick={() => editor.current?.focus()}>piece.ts</button>
+              <button type="button" className="block w-full bg-fg px-1 text-left text-bg" onClick={() => editor.current?.focus()}>piece.ts</button>
               <div className="mt-3 mb-1 text-fg-muted">Sky</div>
               <SkyBrowser sky={session?.sky ?? null} followed={state.followed} onInsert={(t) => editor.current?.insert(t)} />
             </div>
@@ -396,7 +402,7 @@ function SourceSearch({ source, onGoto }: { source: string; onGoto: (line: numbe
       <ul>
         {q && hits.length === 0 && <li className="text-fg-muted">No matches</li>}
         {hits.map((h) => (
-          <li key={h.line}><button type="button" className="block w-full truncate text-left hover:bg-panel-2" onClick={() => onGoto(h.line)}><span className="text-fg-muted">{h.line}</span> {h.text.trim()}</button></li>
+          <li key={h.line}><button type="button" className="block w-full truncate text-left hover:bg-fg hover:text-bg" onClick={() => onGoto(h.line)}><span className="text-fg-muted">{h.line}</span> {h.text.trim()}</button></li>
         ))}
       </ul>
     </div>

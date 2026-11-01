@@ -11,11 +11,12 @@ import type { PieceSession, SessionState } from './hooks';
 import { useDialogFocus } from './use-dialog-focus';
 import { OctagonX, Play, RotateCcw, Square, X } from 'lucide-react';
 import { Icon } from './icons';
+import { button } from '@/src/ui/styles';
 
 /** Start notice dismissal lasts for the session (tab) and is never stored. */
 let startNoticeDismissed = false;
 
-const btn = 'inline-flex items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2 disabled:opacity-50';
+const btn = button('secondary', 'sm');
 
 export function useStartNotice(onStart: () => void) {
   const [open, setOpen] = useState(false);

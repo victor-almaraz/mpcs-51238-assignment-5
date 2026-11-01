@@ -5,6 +5,7 @@
 
 import { useState } from 'react';
 import { REPLAY_SPEEDS } from '@/src/sky/replay.js';
+import { button } from '@/src/ui/styles';
 
 export const REPLAY_WINDOWS = [
   { label: 'Last hour', ms: 3600e3 },
@@ -13,7 +14,7 @@ export const REPLAY_WINDOWS = [
   { label: 'Last 7 days', ms: 7 * 86400e3 - 60e3 },
 ];
 
-const btn = 'rounded-sm border border-line px-2 py-0.5 hover:bg-panel-2 disabled:opacity-50';
+const btn = button('secondary', 'sm');
 
 export function ReplayControls({ session, mode, replay, defaultSpeed = 100, disabled = false }: {
   session: any | null; mode: string; replay: { speed: number; from: number; to: number; ended: boolean } | null; defaultSpeed?: number; disabled?: boolean;
@@ -39,10 +40,10 @@ export function ReplayControls({ session, mode, replay, defaultSpeed = 100, disa
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs" role="group" aria-label="Replay">
-      <label>Replay <select className="bg-panel-2" value={windowMs} onChange={(e) => setWindowMs(Number(e.target.value))} disabled={disabled || busy}>
+      <label>Replay <select className="border border-line bg-bg" value={windowMs} onChange={(e) => setWindowMs(Number(e.target.value))} disabled={disabled || busy}>
         {REPLAY_WINDOWS.map((w) => <option key={w.ms} value={w.ms}>{w.label}</option>)}
       </select></label>
-      <label>at <select className="bg-panel-2" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} disabled={disabled || busy}>
+      <label>at <select className="border border-line bg-bg" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} disabled={disabled || busy}>
         {REPLAY_SPEEDS.map((s: number) => <option key={s} value={s}>{s}×</option>)}
       </select></label>
       <button type="button" className={btn} onClick={start} disabled={disabled || busy || !session}>Replay</button>

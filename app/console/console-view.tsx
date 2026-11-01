@@ -13,6 +13,9 @@ import { useSettings, useSupabase } from '@/src/ui/app-providers';
 import { ConsoleControls, EventsPanel, SourcesPanel, TracePanel } from '@/src/ui/console-panels';
 import { useFreshness, useTraceRecords, type TraceRecord } from '@/src/ui/hooks';
 import { StatusBar } from '@/src/ui/status-bar';
+import { button, panelLabel, textLink } from '@/src/ui/styles';
+import { SiteHeader } from '@/src/ui/site-header';
+import { SourceGlyph } from '@/src/ui/glyphs';
 
 const HISTORY_ROWS = 200;
 const EXPENSIVE = new Set(['celestrak.cosmos-2251-debris']);
@@ -61,34 +64,28 @@ export function ConsoleView() {
   const events = useMemo(() => mergeEvents(history, records), [history, records]);
   const toggle = (g: string) => setGroups((gs) => (gs.includes(g) ? gs.filter((x) => x !== g) : [...gs, g].sort()));
   const tabs: { id: Tab; label: string }[] = [{ id: 'sources', label: 'Sources' }, { id: 'events', label: 'Events' }, { id: 'trace', label: 'Trace' }];
-  const btn = 'rounded-sm border border-line px-2 py-0.5 text-xs hover:bg-panel-2';
+  const btn = button('secondary', 'sm');
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line px-4 py-2 text-sm">
-        <Link href="/" className="hover:underline">Sphärenmusik</Link>
-        <h1 className="text-fg-muted">Console</h1>
-        <nav aria-label="Site" className="ml-auto flex gap-4">
-          <Link href="/listen" className="hover:underline">Listen</Link>
-          <Link href="/learn" className="hover:underline">Guide</Link>
-          <Link href="/projects" className="hover:underline">Projects</Link>
-        </nav>
-      </header>
+      <SiteHeader />
+      <h1 className="sr-only">Console</h1>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <aside aria-label="Followed groups" className="max-h-48 w-full shrink-0 overflow-y-auto border-b border-line bg-panel p-3 font-mono text-xs md:max-h-none md:w-60 md:border-b-0 md:border-r">
-          <div className="mb-2 text-fg-muted">Live Groups</div>
-          <ul className="flex flex-col gap-1">
+        <aside aria-label="Followed groups" className="max-h-48 w-full shrink-0 overflow-y-auto border-b border-line p-4 text-xs md:max-h-none md:w-60 md:border-b-0 md:border-r">
+          <div className={panelLabel}>Live Groups</div>
+          <ul className="flex flex-col gap-1 font-mono">
             {all.map((g: string) => (
               <li key={g}>
-                <label className="flex items-center gap-1.5">
+                <label className="flex items-center gap-2">
                   <input type="checkbox" checked={groups.includes(g)} onChange={() => toggle(g)} />
-                  <span>{g}</span>
+                  <SourceGlyph id={g} size={14} />
+                  <span className="min-w-0 break-all">{g}</span>
                 </label>
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-fg-muted">Debris groups start unticked: each object changes about 12 times a day.</p>
-          <p className="mt-3"><Link className="underline" href="/learn/sky-data">Sky data in the guide</Link></p>
+          <p className="mt-4">Debris groups start unticked: each object changes about 12 times a day.</p>
+          <p className="mt-3"><Link className={textLink} href="/learn/sky-data">Sky data in the guide</Link></p>
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center gap-3 border-b border-line px-3 py-1">

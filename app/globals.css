@@ -1,47 +1,64 @@
 @import "tailwindcss";
 
-/* Design tokens (doc/ui.md, Style). Chosen in OKLCH: cool blue-grey neutrals (hue 262), an
-   analogous periwinkle accent for interaction, and status and syntax hues held at one lightness per
-   theme so none shouts. Every text token keeps 4.5:1 or more on bg, panel and panel-2.
-   Dark is the default theme; [data-theme="dark"] re-applies it inside a light page (the preview
-   and run mode, drawn on black). */
+/* Design tokens (doc/ui.md, Style and Design system). Black and white only: panels share the page
+   colour and are separated by 1 px lines; hover and selection invert. Colour appears only in code
+   (the syntax hues) and in the editor (status hues, inside [data-palette="color"]), in bright
+   terminal hues. Outside the editor the status tokens are the text colour, and states are told
+   apart by icon shape and label. Every text token keeps 4.5:1 or more on every surface. Dark is the
+   default theme; [data-theme="dark"] re-applies it inside a light page (the preview and run mode). */
 :root, [data-theme="dark"] {
-  --bg: #13161c;
-  --panel: #181c22;
-  --panel-2: #21252d;
-  --line: #32373f;
-  --fg: #e2e5ea;
-  --fg-muted: #a5abb5;
-  --accent: #9db6f5;
-  --ok: #77d0a2;
-  --warn: #eabc6e;
-  --error: #ee8582;
-  --syn-keyword: #d0aeea;
-  --syn-string: #a0d4a0;
-  --syn-number: #f0b788;
-  --syn-function: #8cc4f4;
-  --syn-type: #86d8d7;
+  --bg: #000000;
+  --panel: #000000;
+  --panel-2: #000000;
+  --line: #ffffff;
+  --fg: #ffffff;
+  --fg-muted: #ffffff;
+  --accent: #ffffff;
+  --ok: #ffffff;
+  --warn: #ffffff;
+  --error: #ffffff;
+  --syn-keyword: #ff5fff;
+  --syn-string: #5fff5f;
+  --syn-number: #ffff5f;
+  --syn-function: #5fffff;
+  --syn-type: #87afff;
   color-scheme: dark;
   accent-color: var(--accent);
 }
 :root[data-theme="light"] {
-  --bg: #f5f7f9;
-  --panel: #fdfdff;
-  --panel-2: #eaedf2;
-  --line: #d5d9e0;
-  --fg: #1f242d;
-  --fg-muted: #555b66;
-  --accent: #3f5bb8;
-  --ok: #0b764d;
-  --warn: #975c16;
-  --error: #b63132;
-  --syn-keyword: #773f9b;
-  --syn-string: #286f2f;
-  --syn-number: #964d09;
-  --syn-function: #175d9b;
-  --syn-type: #006c70;
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #ffffff;
+  --line: #000000;
+  --fg: #000000;
+  --fg-muted: #000000;
+  --accent: #000000;
+  --ok: #000000;
+  --warn: #000000;
+  --error: #000000;
+  --syn-keyword: #a300a3;
+  --syn-string: #007a00;
+  --syn-number: #806600;
+  --syn-function: #00707a;
+  --syn-type: #0037da;
   color-scheme: light;
   accent-color: var(--accent);
+}
+/* The editor (doc/ui.md, Design system, Colour), including its dark preview. */
+[data-palette="color"], [data-palette="color"] [data-theme="dark"] {
+  --ok: #5fff5f;
+  --warn: #ffff5f;
+  --error: #ff5f5f;
+}
+:root[data-theme="light"] [data-palette="color"] {
+  --ok: #007a00;
+  --warn: #806600;
+  --error: #c4001a;
+}
+:root[data-theme="light"] [data-palette="color"] [data-theme="dark"] {
+  --ok: #5fff5f;
+  --warn: #ffff5f;
+  --error: #ff5f5f;
 }
 
 /* inline: utilities read the tokens where they are used, so a [data-theme] scope takes effect. */
@@ -72,33 +89,42 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); f
 .syn-type { color: var(--syn-type); }
 .syn-comment { color: var(--fg-muted); font-style: italic; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+::selection { background: var(--fg); color: var(--bg); }
+
+/* Graduated rule (doc/ui.md, Design system): a line with ticks every 8 px, longer every 40 px. */
+:root {
+  --graduated:
+    linear-gradient(var(--line), var(--line)) 0 0 / 100% 1px no-repeat,
+    repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 40px) 0 1px / 100% 10px no-repeat,
+    repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 8px) 0 1px / 100% 4px no-repeat;
+}
+.rule-graduated { height: 11px; background: var(--graduated); }
 
 /* Guide prose (doc/guide.md) */
-.prose-guide { line-height: 1.6; max-width: 46rem; }
-.prose-guide h1 { font-size: 1.6rem; font-weight: 600; margin: 0 0 1rem; }
-.prose-guide h2 { font-size: 1.2rem; font-weight: 600; margin: 2rem 0 0.75rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--line); }
-.prose-guide h3 { font-size: 1.05rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
-.prose-guide p, .prose-guide ul, .prose-guide ol, .prose-guide table, .prose-guide pre { margin: 0 0 1rem; }
+.prose-guide { line-height: 1.65; }
+.prose-guide h1 { font-size: 1.875rem; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 1.5rem; }
+.prose-guide h2 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; margin: 3rem 0 1rem; padding-top: 1.5rem; background: var(--graduated); scroll-margin-top: 4rem; }
+.prose-guide h3 { font-size: 1.0625rem; font-weight: 600; margin: 2rem 0 0.75rem; scroll-margin-top: 4rem; }
+.prose-guide p, .prose-guide ul, .prose-guide ol, .prose-guide table, .prose-guide pre { margin: 0 0 1.25rem; }
 .prose-guide ul { list-style: disc; padding-left: 1.5rem; }
 .prose-guide ol { list-style: decimal; padding-left: 1.5rem; }
-.prose-guide a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.prose-guide code { font-family: var(--font-mono); font-size: 0.9em; background: var(--panel-2); padding: 0 0.25rem; border-radius: 2px; }
-.prose-guide pre { font-family: var(--font-mono); background: var(--panel); border: 1px solid var(--line); padding: 0.75rem 1rem; overflow-x: auto; border-radius: 4px; }
-.prose-guide pre code { background: none; padding: 0; }
+.prose-guide li + li { margin-top: 0.25rem; }
+.prose-guide a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.prose-guide code { font-family: var(--font-mono); font-size: 0.875em; }
+.prose-guide pre { font-family: var(--font-mono); font-size: 0.875rem; line-height: 1.65; border: 1px solid var(--line); padding: 1rem 1.25rem; overflow-x: auto; border-radius: 4px; }
 .prose-guide table { border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
-.prose-guide th, .prose-guide td { border: 1px solid var(--line); padding: 0.3rem 0.6rem; text-align: left; vertical-align: top; }
-.prose-guide th { background: var(--panel-2); font-weight: 600; }
-.prose-guide tr:target { outline: 2px solid var(--accent); }
+.prose-guide th, .prose-guide td { border: 1px solid var(--line); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; }
+.prose-guide th { font-weight: 600; }
+.prose-guide tr:target { outline: 2px solid var(--accent); outline-offset: -2px; }
 .prose-guide .try-it { margin-top: -0.5rem; }
-.prose-guide .try-it a { display: inline-block; font-size: 0.85rem; text-decoration: none; color: var(--fg); border: 1px solid var(--line); padding: 0.15rem 0.6rem; border-radius: 4px; }
-.prose-guide .try-it a:hover { background: var(--panel-2); }
+.prose-guide .try-it a { display: inline-flex; align-items: center; height: 1.75rem; font-size: 0.8125rem; text-decoration: none; color: var(--fg); border: 1px solid var(--line); padding: 0 0.75rem; border-radius: 4px; }
+.prose-guide .try-it a:hover { background: var(--fg); color: var(--bg); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 /* Landing page (doc/ui.md, Landing) */
-.landing-hero { background: radial-gradient(60rem 30rem at 85% -10%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%); }
 .prose-landing { max-width: 42rem; font-size: 1.0625rem; line-height: 1.75; }
 .prose-landing > * + * { margin-top: 1.25rem; }
 .prose-landing em { font-style: italic; }
@@ -124,7 +150,7 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-sans); f
 .landing-quadrivium tbody td:first-child { padding-left: 0; color: var(--fg-muted); }
 .landing-quadrivium tbody td:first-child strong { display: block; color: var(--fg); }
 .landing-quadrivium tbody td:not(:first-child) { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
-.landing-quadrivium tbody td:last-child { background: color-mix(in srgb, var(--accent) 9%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.landing-quadrivium tbody td:last-child { border-width: 2px; }
 
 /* What Sphärenmusik does: the four kinds of motion as cards */
 .landing-cards ul { list-style: none; padding: 0; display: grid; gap: 1rem; max-width: 48rem; }

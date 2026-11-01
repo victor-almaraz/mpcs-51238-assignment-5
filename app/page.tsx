@@ -1,8 +1,8 @@
 import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { loadLanding } from '@/src/learn/landing.js';
 import { Attribution } from '@/src/ui/attribution';
+import { SiteHeader } from '@/src/ui/site-header';
 import { Actions } from './_landing/actions';
 import { LiveSnapshot } from './_landing/live-snapshot';
 import { LiveStrip } from './_landing/live-strip';
@@ -25,8 +25,9 @@ function Band({ s, n, tone = 'plain', children }: { s: Section; n: number; tone?
   return (
     <section aria-labelledby={s.id} className={tone === 'panel' ? 'border-y border-line bg-panel' : ''}>
       <div className="mx-auto grid w-full max-w-6xl gap-x-12 gap-y-6 px-4 py-16 sm:px-6 lg:grid-cols-[15rem_1fr] lg:py-24">
+        <div aria-hidden="true" className="rule-graduated lg:col-span-2" />
         <div className="lg:sticky lg:top-20 lg:self-start">
-          <p aria-hidden="true" className="tabular font-mono text-xs text-accent">{String(n).padStart(2, '0')}</p>
+          <p aria-hidden="true" className="tabular font-mono text-xs">{String(n).padStart(2, '0')}</p>
           <h2 id={s.id} className="mt-2 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">{s.heading}</h2>
         </div>
         <div className="min-w-0">{children}</div>
@@ -40,25 +41,10 @@ export default async function Landing() {
   const [{ sections }, { userId }] = await Promise.all([loadLanding(), auth()]);
   const signedIn = Boolean(userId);
   const [hero, spheres, quadrivium, app, how, honesty, reading] = sections;
-  const link = 'rounded-sm px-2 py-1 text-fg-muted hover:bg-panel-2 hover:text-fg';
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-10 border-b border-line bg-bg/85 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-2.5 text-sm sm:px-6">
-          <Link href="/" className="flex items-center gap-2 font-semibold">
-            <img src="/icon.svg" alt="" width={20} height={20} className="rounded-sm" />
-            Sphärenmusik
-          </Link>
-          <nav aria-label="Site" className="flex gap-1">
-            <Link href="/learn" className={link}>Guide</Link>
-            <Link href="/console" className={link}>Console</Link>
-            {signedIn
-              ? <Link href="/projects" className={link}>Projects</Link>
-              : <Link href="/sign-in" className={link}>Sign In</Link>}
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
       <main className="flex-1">
         <LiveSnapshot>
           <section aria-labelledby={hero.id} className="landing-hero">
@@ -71,7 +57,7 @@ export default async function Landing() {
                 </div>
                 <figure className="flex flex-col gap-2">
                   <OrbitMap />
-                  <figcaption className="text-xs text-fg-muted">Space stations now, with their last 45 minutes of ground track. The shaded half is night.</figcaption>
+                  <figcaption className="text-xs text-fg-muted">Space stations now, with their last 45 minutes of ground track. The hatched half is night.</figcaption>
                 </figure>
               </div>
               <div className="mt-12"><LiveStrip /></div>

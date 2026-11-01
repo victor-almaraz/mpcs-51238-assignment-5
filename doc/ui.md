@@ -6,12 +6,11 @@ Routes, screens and their states, IDE layout patterns, the status bar, command p
 ## Style
 - Minimal and IDE-derived: flat panels, 1 px dividers, no shadows, no rounded corners above 4 px.
 - Type: system monospace for code, data, the console and the status bar; system sans-serif for chrome.
-- Colour: tokens in `app/globals.css`, chosen in OKLCH so lightness and chroma are controlled per role.
-  - Neutrals (`bg`, `panel`, `panel-2`, `line`, `fg`, `fg-muted`): one cool blue-grey hue (262°) at low chroma. Dark text is never pure white and the dark background is never pure black.
-  - `accent`, a periwinkle analogous to the neutrals (268°), marks interaction only: the highlighted action, the selected tab and page, focus rings, links, check boxes and sliders.
-  - Status hues are held at one lightness per theme: `ok` (green, 160°) for live state (fresh, playing, followed), `warn` (amber) for stale data, warnings and the Synthetic and Replay labels, `error` (red) for down sources and errors. Each state also has a text label and a distinct icon shape, so colour is never the only signal.
-  - Syntax colours (`syn-keyword`, `syn-string`, `syn-number`, `syn-function`, `syn-type`) share one lightness and chroma per theme; comments use `fg-muted`, names and punctuation `fg`. One CodeMirror highlight style reads them in both themes.
-  - Contrast: every text token is at least 4.5:1 (WCAG AA) on `bg`, `panel` and `panel-2` in its theme, and on black in the preview; text on the accent button is at least 4.5:1.
+- Colour: black and white. Tokens live in `app/globals.css`.
+  - The dark theme is white on black; the light theme is black on white. There are no greys: `bg`, `panel` and `panel-2` are the page colour, and `line`, `fg`, `fg-muted` and `accent` are the text colour. Panels are separated by 1 px lines. Hierarchy comes from size, weight and position, not from tone.
+  - Hover and selection invert: the item takes the text colour as its fill and the page colour as its text, as a terminal highlights a row. The current page in a navigation is also marked with a 2 px bar or an inverted row. Disabled controls take a dashed border.
+  - Colour appears only in code and in the editor, in bright terminal hues. The syntax colours (`syn-keyword` magenta, `syn-string` green, `syn-number` yellow, `syn-function` cyan, `syn-type` blue) colour every code block. The status hues (`ok` green for live state, `warn` yellow for stale data, warnings and the Synthetic and Replay labels, `error` red for down sources and errors) apply inside `[data-palette="color"]`, which the editor sets on its root; elsewhere they are the text colour. Each state has a text label and a distinct icon shape, so colour is never the only signal.
+  - Contrast: every text token is at least 4.5:1 (WCAG AA) on the page in its theme; the light theme uses darker versions of the same hues. `tests/palette.test.js` checks this and that the neutrals are pure black and white.
 - Tokens are CSS variables in `app/globals.css` mapped through Tailwind v4 `@theme`.
 - Type: Inter (variable, SIL OFL 1.1) for interface text; JetBrains Mono (variable, SIL OFL 1.1) for code, identifiers (group keys, file names), console records and numeric readouts. Both are bundled from `@fontsource-variable/*`, so pages make no font requests to third parties. Icons: Lucide (`lucide-react`, ISC), 16 px with a 2 px stroke; every icon-only control has a text label for assistive technology and a tooltip.
 - Text follows the GNOME HIG writing rules: header capitalization (Title Case without small words) for buttons, tabs, menu and palette commands, dialog headings, section labels and table columns; sentence case for body text, descriptions, check box labels, tooltips and notices. Nothing is set in all capitals.
@@ -20,6 +19,57 @@ Routes, screens and their states, IDE layout patterns, the status bar, command p
 - Narrow windows: below 768 px the editor stacks editor, preview and bottom panel vertically and hides the side panel; the console stacks its group list above the panels; the guide stacks its page list above the page. No page scrolls sideways at 360 px.
 - Modal dialogs (the start notice, the command palette) keep Tab and Shift-Tab inside the dialog and return focus to the element that opened them when they close.
 - The preview and run mode always use the dark tokens (`data-theme="dark"` on their root), because the picture is drawn on black; text on them keeps WCAG AA contrast in either theme.
+
+## Design system
+The visual language comes from the geometry and symbols of the music of the spheres: concentric orbits around a centre, the ring graduated in degrees, planetary symbols, and the figures that frequency ratios draw. Every page builds from the parts below; no page defines its own header, brand, button or container. The palette is black and white (Style, Colour).
+
+### Brand
+- The mark: a centre, one orbit with one planet, and an outer ring graduated every 10° with longer ticks every 30° and 90°. It is drawn in `currentColor`, monochrome. `src/ui/brand.tsx` draws it; `app/icon.svg` is the same drawing on the dark `bg` for the favicon.
+- The mark and the wordmark `Sphärenmusik` (Inter, semibold) always appear together and always link to `/`. Below 24 px the mark drops the ring ticks.
+- Sizes: 24 px in the site header, 16 px in toolbars, 48 px above the sign-in and sign-up forms.
+
+### Glyphs
+One astronomical symbol per data family, drawn on Lucide's 16 px grid with a 1.5 px stroke (`src/ui/glyphs.tsx`). A glyph always means its family and is always paired with a text label.
+
+| Glyph | Symbol | Family | Sources |
+|---|---|---|---|
+| Earth | ⊕ | Orbits | `celestrak.*` |
+| Sun | ☉ | Space weather | `swpc.*` |
+| Comet | ☄ | Close approaches and candidates | `jpl.*` |
+| Ascending node | ☊ | Launches | `ll2.*` |
+
+Glyphs mark the live strip tiles, the console's group list and the sky browser.
+
+### Graduated rule
+A 1 px line with ticks every 8 px, longer every 40 px, from the degree ring. It opens each landing section and each `h2` section of the guide (`.rule-graduated` and `--graduated` in `app/globals.css`). It is not used as a general divider: plain 1 px `line` dividers separate panels.
+
+### Site header
+Every document page (`/`, `/learn`, `/learn/[slug]`, `/sign-in`, `/sign-up`, `/projects`, `/settings`, `/console`, error pages) opens with `SiteHeader` (`src/ui/site-header.tsx`):
+- Sticky, 48 px high, full window width, `px-4 sm:px-6`, a 1 px bottom divider, solid `bg`.
+- Left: the brand. Then the site navigation: Listen, Guide, Console. Right: the account area. Signed out, and while Clerk loads: Sign In (plain) and Sign Up (bordered). Signed in: Projects, Settings and the Clerk user button.
+- The current section is marked with `aria-current="page"`, the `accent` colour and a 2 px bar under the label.
+- Below 640 px the navigation moves to a second row under the brand and the account area.
+
+### Toolbar
+Tool views (the editor at `/projects/[id]` and `/try`, the run views at `/listen` and `/projects/[id]/run`) open with a 36 px toolbar instead: the 16 px brand, a slash, the parent (Projects or Guide) as a link, a slash, the view's title, then the view's controls on the right. Run mode keeps its auto-hiding behaviour; kiosk mode shows no toolbar.
+
+### Buttons and links
+Class strings live in `src/ui/styles.ts`; components do not write their own.
+
+| Kind | Use | Document pages (`md`) | Tool views (`sm`) |
+|---|---|---|---|
+| Primary | The view's one highlighted action | `accent` fill, `bg` text | same, smaller |
+| Secondary | Every other button | 1 px `line` border, `panel-2` on hover | same, smaller |
+| Ghost | Navigation items, toolbar links | no border, `panel-2` on hover | same, smaller |
+
+`md` is 32 px high with 12 px side padding and `text-sm`; `sm` is 22 px with 8 px padding and `text-xs`. Radius 4 px (`md`) and 2 px (`sm`). Links inside body text are `accent` and underlined; navigation links are never underlined.
+
+### Layout
+- Spacing follows a 4 px grid. Document pages use 16–24 px panel padding; dense tool panes use 8–12 px.
+- Containers: `page` (centred, at most 72 rem, `px-4 sm:px-6`, 40 px top padding) for the projects list, settings and error pages; `reading` (at most 46 rem) for guide articles and landing prose; `form` (at most 28 rem, centred) for sign-in and sign-up.
+- Side panels are 240 px wide with 16 px padding. A panel's section label is `text-xs`, medium weight, `fg-muted`, 8 px above its content.
+- Page titles (`h1`) are `text-2xl` (`text-3xl` from 640 px), semibold, tight tracking, 24 px above the content. Section headings (`h2`) are `text-xl`.
+- The attribution footer spans the window under document pages: `px-4 sm:px-6`, 12 px vertical padding, `text-xs`, `fg-muted`.
 
 ## Routes
 | Route | Access | Screen |
@@ -43,17 +93,17 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 
 | Section | Heading | Content | Visual |
 |---|---|---|---|
-| Hero | `# Sphärenmusik` | What the name means; the inspiration (music of the spheres, the quadrivium); one sentence on what the piece does | Live orbit map: `celestrak.stations` propagated in the page with `satellite.js` every 2 s and drawn on a 2D canvas in the `map` projection's equirectangular geometry, with a graticule, the night side shaded from the subsolar point, and 45-minute ground-track trails; the ISS is labelled. Elements come from the live strip's snapshot. Drawn once per snapshot with reduced motion |
+| Hero | `# Sphärenmusik` | What the name means; the inspiration (music of the spheres, the quadrivium); one sentence on what the piece does | Live orbit map: `celestrak.stations` propagated in the page with `satellite.js` every 2 s and drawn on a 2D canvas in the `map` projection's equirectangular geometry, with a dotted graticule, the night side hatched from the subsolar point, and dashed 45-minute ground-track trails; the ISS is labelled. Elements come from the live strip's snapshot. Drawn once per snapshot with reduced motion |
 | Actions | | Listen Now (`/listen`, the one highlighted action), Start Composing (`/sign-in`; Open Projects when signed in), Learn the Piece Script (`/learn`) | Buttons |
 | Live strip | | Kp, solar wind speed, stations in orbit, next launch name and time, each with its freshness icon and label | Four tiles under the hero: label, monospace value, freshness icon |
 | Spheres | The music of the spheres | Pythagorean ratios; Plato, Boethius and Kepler; the physics caveat | The four sources as a timeline (a list, one bold title per item); a string divided at 2:1, 3:2 and 4:3, drawn as SVG with a text alternative |
-| Quadrivium | Four sister sciences | Plato's "sister sciences", Nicomachus's division, Boethius's term, the seven liberal arts | Plato's sentence as a pull quote; the division as a real 2 × 2 table styled as a grid, with the "In relation or in motion" column (music and astronomy) tinted |
+| Quadrivium | Four sister sciences | Plato's "sister sciences", Nicomachus's division, Boethius's term, the seven liberal arts | Plato's sentence as a pull quote; the division as a real 2 × 2 table styled as a grid, with the "In relation or in motion" column (music and astronomy) set off by a 2 px border |
 | App | What Sphärenmusik does | The four kinds of live data and their sources; the ISS twenty octaves up | The four kinds of data as cards (a list, one bold title per item) |
 | How | How it works | Four-step pipeline and the five-line script from `first-piece` | Numbered steps in two columns above the code block, highlighted with the editor's syntax colours; actions repeated, with Your First Piece (`/learn/first-piece`) in place of Learn |
 | Honesty | What is real | Live data, composed mapping, no claim of sound in the sky | Set as a larger statement on a panel band |
 | Reading | Further reading | Primary sources and one sourcebook | List |
 
-- Layout: a sticky header with the app icon and name; a hero with a display-size heading, the lead paragraph, the actions and the orbit map, over a faint accent glow; then one band per section. On wide windows each section puts its heading in a narrow left column and its body on the right; below 1024 px they stack. Sections are separated by space, not rules. Headings come from the copy; the body renders without its heading so the page lays it out.
+- Layout: the site header; a hero with a display-size heading, the lead paragraph, the actions and the orbit map, over a faint accent glow; then one band per section. On wide windows each section puts its heading in a narrow left column and its body on the right; below 1024 px they stack. Sections are separated by space, not rules. Headings come from the copy; the body renders without its heading so the page lays it out.
 - The hero map does not use the WebGL renderer, so the landing page loads no shaders or Web Workers.
 - Polling, propagation and drawing pause while the tab is hidden.
 - The live strip reads `sky_objects` and `source_status` by REST through the publishable key on load and every 60 s; it opens no Realtime channel, so landing visitors use no Realtime messages. States: loading (`…` with "connecting"), fresh, stale and down as in States; a failed read shows "Live data unavailable" and keeps the rest of the page.
@@ -62,8 +112,8 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 - Signed-in visitors see the same page with Open Projects in place of Start Composing; there is no redirect.
 - States: the copy is static, so the page has no loading state apart from the live strip and the orbit view, which shows a static map until positions arrive.
 
-## Sign-in (`/sign-in`)
-- Single column: the name `Sphärenmusik`, Clerk `<SignIn />` (with a link to sign-up), a "Listen Without an Account" link to `/listen`, and a "Learn the Piece Script" link to `/learn`. When Clerk cannot load, a status message titled "Sign-In Unavailable" replaces the form and points to those links.
+## Sign-in (`/sign-in`) and sign-up (`/sign-up`)
+- The site header, then a `form` container: the 48 px mark, Clerk `<SignIn />` (or `<SignUp />`, each linking to the other), a "Listen Without an Account" link to `/listen`, and a "Learn the Piece Script" link to `/learn`. When Clerk cannot load, a status message titled "Sign-In Unavailable" replaces the form and points to those links.
 - Signed-in visitors are redirected to `/projects`.
 - States: loading (Clerk component placeholder), error (Clerk inline error).
 
