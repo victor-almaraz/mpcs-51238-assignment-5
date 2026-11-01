@@ -57,7 +57,7 @@ export default async function Landing() {
                 </div>
                 <figure className="flex flex-col gap-2">
                   <OrbitMap />
-                  <figcaption className="text-xs text-fg-muted">Space stations now, with their last 45 minutes of ground track. The hatched half is night.</figcaption>
+                  <figcaption className="text-xs text-fg-muted">Space stations now, with their last 45 minutes of ground track. The inverted half is night.</figcaption>
                 </figure>
               </div>
               <div className="mt-12"><LiveStrip /></div>

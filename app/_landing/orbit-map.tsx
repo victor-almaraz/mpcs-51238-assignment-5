@@ -1,16 +1,68 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { satrecs, splitAtAntimeridian, STEP_MS, subPoint, subsolarPoint, sunCos, toMap, trail } from '@/src/landing/orbits.js';
+import { satrecs, splitAtAntimeridian, STEP_MS, subPoint, subsolarPoint, terminator, toMap, trail } from '@/src/landing/orbits.js';
 import { useSnapshot } from './live-snapshot';
 
 const ISS_ID = 'celestrak.stations:25544';
-const CELL_DEG = 3;
 
 function cssVar(el: Element, name: string) {
   return getComputedStyle(el).getPropertyValue(name).trim() || '#888';
 }
 
+/** Night side as a polygon bounded by the terminator and the pole on its night side. */
+function nightPath(ctx: CanvasRenderingContext2D, sun: { lat: number; lon: number }, w: number, h: number) {
+  ctx.beginPath();
+  let pole = -90;
+  for (let lon = -180; lon <= 180; lon += 2) {
+    const t = terminator(lon, sun);
+    pole = t.nightPole;
+    const p = toMap(t.lat, lon, w, h);
+    if (lon === -180) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+  }
+  const a = toMap(pole, 180, w, h);
+  const b = toMap(pole, -180, w, h);
+  ctx.lineTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.closePath();
+}
+
+/** Graticule, ground tracks, positions and the ISS label in one ink colour. */
+function scene(ctx: CanvasRenderingContext2D, sats: ReturnType<typeof satrecs>, date: Date, w: number, h: number, ink: string, font: string) {
+  ctx.strokeStyle = ink;
+  ctx.fillStyle = ink;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([1, 3]);
+  ctx.beginPath();
+  for (let lon = -180; lon <= 180; lon += 30) { const x = toMap(0, lon, w, h).x; ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+  for (let lat = -60; lat <= 60; lat += 30) { const y = toMap(lat, 0, w, h).y; ctx.moveTo(0, y); ctx.lineTo(w, y); }
+  ctx.stroke();
+  for (const s of sats) {
+    ctx.setLineDash([3, 3]);
+    for (const run of splitAtAntimeridian(trail(s.satrec, date))) {
+      ctx.beginPath();
+      run.forEach((p, i) => { const m = toMap(p.lat, p.lon, w, h); if (i) ctx.lineTo(m.x, m.y); else ctx.moveTo(m.x, m.y); });
+      ctx.stroke();
+    }
+    const p = subPoint(s.satrec, date);
+    if (!p) continue;
+    const m = toMap(p.lat, p.lon, w, h);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, s.id === ISS_ID ? 3.5 : 2, 0, Math.PI * 2);
+    ctx.fill();
+    if (s.id === ISS_ID) {
+      ctx.font = font;
+      ctx.fillText('ISS', m.x + 6, m.y - 6);
+    }
+  }
+  ctx.setLineDash([]);
+}
+
+/**
+ * Day side in the page colour with the scene in the text colour; the night side inverted, filled
+ * with the text colour and the scene redrawn in the page colour (doc/ui.md, Landing).
+ */
 function draw(canvas: HTMLCanvasElement, sats: ReturnType<typeof satrecs>, date: Date) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -22,64 +74,19 @@ function draw(canvas: HTMLCanvasElement, sats: ReturnType<typeof satrecs>, date:
     canvas.height = Math.round(h * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const panel = cssVar(canvas, '--panel');
-  const line = cssVar(canvas, '--line');
-  const accent = cssVar(canvas, '--accent');
-  const fg = cssVar(canvas, '--fg');
-  ctx.fillStyle = panel;
+  const paper = cssVar(canvas, '--panel');
+  const ink = cssVar(canvas, '--fg');
+  const font = `11px ${cssVar(canvas, '--font-mono')}`;
+  ctx.fillStyle = paper;
   ctx.fillRect(0, 0, w, h);
-
-  // Night side: hatched (doc/ui.md, Design system), clipped to the cells the Sun is below.
-  const sun = subsolarPoint(date);
-  const cw = (w / 360) * CELL_DEG;
-  const ch = (h / 180) * CELL_DEG;
+  scene(ctx, sats, date, w, h, ink, font);
   ctx.save();
-  ctx.beginPath();
-  for (let lat = 90 - CELL_DEG / 2; lat > -90; lat -= CELL_DEG) {
-    for (let lon = -180 + CELL_DEG / 2; lon < 180; lon += CELL_DEG) {
-      if (sunCos(lat, lon, sun) >= 0) continue;
-      const p = toMap(lat + CELL_DEG / 2, lon - CELL_DEG / 2, w, h);
-      ctx.rect(p.x, p.y, cw + 0.5, ch + 0.5);
-    }
-  }
+  nightPath(ctx, subsolarPoint(date), w, h);
   ctx.clip();
-  ctx.strokeStyle = line;
-  ctx.lineWidth = 0.75;
-  ctx.beginPath();
-  for (let x = -h; x < w; x += 6) { ctx.moveTo(x, h); ctx.lineTo(x + h, 0); }
-  ctx.stroke();
+  ctx.fillStyle = ink;
+  ctx.fillRect(0, 0, w, h);
+  scene(ctx, sats, date, w, h, paper, font);
   ctx.restore();
-
-  ctx.strokeStyle = line;
-  ctx.lineWidth = 1;
-  ctx.setLineDash([1, 3]);
-  ctx.beginPath();
-  for (let lon = -180; lon <= 180; lon += 30) { const x = toMap(0, lon, w, h).x; ctx.moveTo(x, 0); ctx.lineTo(x, h); }
-  for (let lat = -60; lat <= 60; lat += 30) { const y = toMap(lat, 0, w, h).y; ctx.moveTo(0, y); ctx.lineTo(w, y); }
-  ctx.stroke();
-  ctx.setLineDash([3, 3]);
-
-  for (const s of sats) {
-    ctx.strokeStyle = accent;
-    for (const run of splitAtAntimeridian(trail(s.satrec, date))) {
-      ctx.beginPath();
-      run.forEach((p, i) => { const m = toMap(p.lat, p.lon, w, h); if (i) ctx.lineTo(m.x, m.y); else ctx.moveTo(m.x, m.y); });
-      ctx.stroke();
-    }
-    const p = subPoint(s.satrec, date);
-    if (!p) continue;
-    const m = toMap(p.lat, p.lon, w, h);
-    ctx.setLineDash([]);
-    ctx.fillStyle = accent;
-    ctx.beginPath();
-    ctx.arc(m.x, m.y, s.id === ISS_ID ? 3.5 : 2, 0, Math.PI * 2);
-    ctx.fill();
-    if (s.id === ISS_ID) {
-      ctx.fillStyle = fg;
-      ctx.font = `11px ${cssVar(canvas, '--font-mono')}`;
-      ctx.fillText('ISS', m.x + 6, m.y - 6);
-    }
-  }
 }
 
 /** Space stations on an equirectangular map, updated every 2 s (doc/ui.md, Landing). */
@@ -113,7 +120,7 @@ export function OrbitMap() {
   }, [sats, reduced]);
 
   const label = sats.length
-    ? `Map of Earth with the current positions and recent ground tracks of ${sats.length} space station objects, including the ISS. The shaded area is the night side.`
+    ? `Map of Earth with the current positions and recent ground tracks of ${sats.length} space station objects, including the ISS. The inverted area is the night side.`
     : 'Map of Earth. Station positions appear when live data arrives.';
   return <canvas ref={canvasRef} role="img" aria-label={label} className="block aspect-[2/1] w-full rounded-md border border-line" />;
 }

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { loadGuide } from '../src/learn/guide.js';
 import { LANDING_FILE, loadLanding, parseLanding } from '../src/learn/landing.js';
 import { summarize } from '../src/landing/live.js';
-import { satrecs, splitAtAntimeridian, subPoint, subsolarPoint, sunCos } from '../src/landing/orbits.js';
+import { satrecs, splitAtAntimeridian, subPoint, subsolarPoint, sunCos, terminator } from '../src/landing/orbits.js';
 
 const markdown = readFileSync(LANDING_FILE, 'utf8');
 const landing = parseLanding(markdown);
@@ -84,6 +84,17 @@ test('ground track: ISS stays within its inclination; subsolar latitude at the s
   assert.ok(Math.abs(sun.lon) < 1.5, `sun lon ${sun.lon}`);
   assert.ok(sunCos(sun.lat, sun.lon, sun) > 0.999);
   assert.deepEqual(splitAtAntimeridian([{ lat: 0, lon: 170 }, { lat: 0, lon: 179 }, { lat: 0, lon: -179 }]).map((r) => r.length), [2, 1]);
+});
+
+test('terminator: the Sun is on the horizon on the curve and below it toward the night pole', () => {
+  for (const sun of [subsolarPoint(new Date('2026-06-21T12:00:00Z')), subsolarPoint(new Date('2026-12-21T03:00:00Z')), { lat: 0.5, lon: 40 }]) {
+    for (let lon = -180; lon <= 180; lon += 15) {
+      const t = terminator(lon, sun);
+      assert.ok(Math.abs(sunCos(t.lat, lon, sun)) < 0.01, `on the curve at ${lon}`);
+      const inside = t.lat + (t.nightPole - t.lat) / 2;
+      assert.ok(sunCos(inside, lon, sun) < 0, `night side at ${lon}`);
+    }
+  }
 });
 
 test('objects with invalid elements are omitted', () => {

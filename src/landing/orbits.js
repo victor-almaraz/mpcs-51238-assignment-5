@@ -70,6 +70,15 @@ export function sunCos(lat, lon, sun) {
     + Math.cos(lat * DEG) * Math.cos(sun.lat * DEG) * Math.cos((lon - sun.lon) * DEG);
 }
 
+/**
+ * Latitude of the terminator (solar altitude 0) at a longitude, and the pole on the night side of
+ * it. A declination within 0.1° of the equator is treated as 0.1° so the curve stays finite.
+ */
+export function terminator(lon, sun) {
+  const decl = Math.sign(sun.lat || 1) * Math.max(Math.abs(sun.lat), 0.1);
+  return { lat: Math.atan(-Math.cos((lon - sun.lon) * DEG) / Math.tan(decl * DEG)) / DEG, nightPole: decl > 0 ? -90 : 90 };
+}
+
 /** Equirectangular map position in pixels. */
 export function toMap(lat, lon, w, h) {
   return { x: ((lon + 180) / 360) * w, y: ((90 - lat) / 180) * h };
