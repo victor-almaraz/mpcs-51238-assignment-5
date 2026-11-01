@@ -11,7 +11,7 @@ const ACTED = new Set(['fired', 'voiceOn', 'voiceOff']);
  */
 
 /** @param {TraceRecord} r */
-export const isChange = (r) => r.stage === 'CHANGE' && ['enter', 'update', 'exit'].includes(r.data?.kind ?? r.event);
+const isChange = (r) => r.stage === 'CHANGE' && ['enter', 'update', 'exit'].includes(r.data?.kind ?? r.event);
 
 /**
  * Trace ids whose change made a binding act (a trigger fired or a voice started or stopped).

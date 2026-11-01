@@ -34,7 +34,7 @@ import { createProject, listProjects } from './project-actions';
 import { useHydrated } from './use-hydrated';
 import { CircleQuestionMark, Command, Files, LogIn, Maximize, Orbit, PanelBottom, PanelLeft, PanelRight, Search, Settings, type LucideIcon } from 'lucide-react';
 import { Icon } from './icons';
-import { button } from '@/src/ui/styles';
+import { button, inputSm } from '@/src/ui/styles';
 import { Brand } from './brand';
 
 export type Template = { slug: string; name: string; source: string; ir: unknown };
@@ -195,6 +195,14 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
     return build(sourceRef.current);
   }, [autosave, build]);
 
+  // Run Fullscreen (toolbar link and palette): the run page loads the stored IR, so the pending
+  // edit is saved first; a failed save still opens the run page with the last saved IR.
+  const runFullscreen = useCallback(async () => {
+    if (!project) return;
+    try { await saveNow(); } catch { /* the save state shows the error */ }
+    router.push(`/projects/${project.id}/run`);
+  }, [project, saveNow, router]);
+
   const runtimeProblems = state.runtimeProblems;
   const problems = useMemo(() => [...buildProblems, ...(runtimeProblems ?? []), ...typeProblems], [buildProblems, runtimeProblems, typeProblems]);
   const canRun = !!ir && !blocking(buildProblems) && state.ready;
@@ -269,9 +277,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
         case 'download-trace': downloadTrace(); return;
         case 'open-settings': window.open('/settings', '_blank', 'noopener'); return;
         case 'open-guide': window.open('/learn', '_blank', 'noopener'); return;
-        case 'run-fullscreen':
-          if (project) Promise.resolve(saveNow()).finally(() => router.push(`/projects/${project.id}/run`));
-          return;
+        case 'run-fullscreen': runFullscreen(); return;
         case 'new-project': return newProjectPage();
         case 'open-project': return {
           placeholder: 'Open project',
@@ -289,7 +295,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
         };
       }
     },
-  }), [mode, signedIn, canRun, requestRun, session, saveNow, project, router, client, newProjectPage, setPart, setPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [mode, signedIn, canRun, requestRun, session, saveNow, runFullscreen, router, client, newProjectPage, setPart, setPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rename = async () => {
     const next = (nameDraft ?? '').trim();
@@ -333,7 +339,12 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
         {mode === 'try' && (signedIn
           ? <button type="button" className={btn} onClick={saveAsProject} disabled={savingAs || !client}>{savingAs ? 'Saving…' : 'Save as Project'}</button>
           : <Link className={btn} href={`/sign-in?redirect_url=${encodeURIComponent(hydrated ? window.location.pathname + window.location.search : '/try')}`}><Icon as={LogIn} size={12} />Sign In to Save</Link>)}
-        {mode === 'project' && project && <Link className={btn} href={`/projects/${project.id}/run`} onClick={() => { saveNow(); }}><Icon as={Maximize} size={12} />Run Fullscreen</Link>}
+        {mode === 'project' && project && <Link className={btn} href={`/projects/${project.id}/run`} onClick={(e) => {
+          // A plain click waits for the save; a modified click (new tab or window) keeps the browser's behaviour.
+          if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { saveNow(); return; }
+          e.preventDefault();
+          runFullscreen();
+        }}><Icon as={Maximize} size={12} />Run Fullscreen</Link>}
         <div role="group" aria-label="Layout" className="flex shrink-0 items-center gap-0.5">
           {LAYOUT_TOGGLES.map((t) => (
             <button key={t.part} type="button" aria-pressed={layout[t.part]} aria-label={`Show ${t.label}`}
@@ -368,7 +379,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
               <div className="mb-1 text-fg-muted">Explorer</div>
               {mode === 'project' && (nameDraft === null
                 ? <button type="button" className="mb-1 block w-full truncate text-left hover:underline" title="Rename" onClick={() => setNameDraft(name)}>{name}</button>
-                : <input autoFocus className="mb-1 w-full border border-line bg-bg px-1" value={nameDraft} aria-label="Project name"
+                : <input autoFocus className={`${inputSm} mb-1 w-full`} value={nameDraft} aria-label="Project name"
                     onChange={(e) => setNameDraft(e.target.value)} onBlur={rename} onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') setNameDraft(null); }} />)}
               <button type="button" className="block w-full bg-fg px-1 text-left text-bg" onClick={() => editor.current?.focus()}>piece.ts</button>
               <div className="mt-3 mb-1 text-fg-muted">Sky</div>
@@ -410,7 +421,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
           </div>
           {panelOpen && (
             <div className="h-[34%] min-h-32">
-              <BottomPanel tab={tab} onTab={setTab} session={session} state={state} client={client} problems={problems} ir={ir}
+              <BottomPanel tab={tab} onTab={setTab} session={session} state={state} client={client} freshness={freshness} problems={problems} ir={ir}
                 onGoto={(l) => editor.current?.goto(l)} timeZone={tz} dev={dev} replaySpeed={settings.data.replaySpeed} />
             </div>
           )}
@@ -446,7 +457,7 @@ function SourceSearch({ source, onGoto }: { source: string; onGoto: (line: numbe
   return (
     <div className="font-mono text-xs">
       <div className="mb-1 text-fg-muted">Search</div>
-      <input className="mb-2 w-full border border-line bg-bg px-1" placeholder="Search piece.ts" aria-label="Search piece.ts" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className={`${inputSm} mb-2 w-full`} placeholder="Search piece.ts" aria-label="Search piece.ts" value={q} onChange={(e) => setQ(e.target.value)} />
       <ul>
         {q && hits.length === 0 && <li className="text-fg-muted">No matches</li>}
         {hits.map((h) => (

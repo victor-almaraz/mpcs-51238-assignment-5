@@ -19,11 +19,9 @@ type Props = {
   onReady?: (api: EditorApi) => void;
   fontSize?: number;
   theme?: 'dark' | 'light';
-  typecheck?: boolean;
-  label?: string;
 };
 
-export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProblems, onReady, fontSize = 14, theme = 'dark', typecheck = true, label = 'piece.ts' }: Props) {
+export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProblems, onReady, fontSize = 14, theme = 'dark' }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
   const problemsRef = useRef<Problem[]>(buildProblems);
@@ -32,7 +30,7 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
   const forceLint = useRef<(() => void) | null>(null);
   const reconfigure = useRef<((fontSize: number, theme: string) => void) | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [workerState, setWorkerState] = useState<'off' | 'loading' | 'ready' | 'failed'>(typecheck ? 'loading' : 'off');
+  const [workerState, setWorkerState] = useState<'loading' | 'ready' | 'failed'>('loading');
   onChangeRef.current = onChange;
   onTypeRef.current = onTypeProblems;
 
@@ -77,25 +75,23 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
         let tsExt: any[] = [];
         let tsReady = false;
         let tsAutocomplete: any = null;
-        if (typecheck) {
-          try {
-            const [{ connectTypecheck }, cmts] = await Promise.all([import('@/src/dsl/typecheck-client.js'), import('@valtown/codemirror-ts')]);
-            worker = new Worker(new URL('../dsl/typecheck-worker.ts', import.meta.url), { type: 'module' });
-            tsClient = connectTypecheck(worker as any);
-            worker.onerror = () => { if (!disposed) setWorkerState('failed'); };
-            tsClient.onProblems((p: Problem[]) => onTypeRef.current?.(p));
-            tsAutocomplete = cmts.tsAutocompleteWorker();
-            tsExt = [cmts.tsFacetWorker.of({ worker: tsClient, path: '/piece.ts' }), cmts.tsSyncWorker(), cmts.tsHoverWorker()];
-            tsClient.initialize().then(() => {
-              tsReady = true;
-              if (!disposed) setWorkerState('ready');
-              const v = viewRef.current;
-              if (v) tsClient.updateFile({ path: '/piece.ts', code: v.state.doc.toString() });
-              forceLint.current?.();
-            }, () => { if (!disposed) setWorkerState('failed'); });
-          } catch {
-            setWorkerState('failed');
-          }
+        try {
+          const [{ connectTypecheck }, cmts] = await Promise.all([import('@/src/dsl/typecheck-client.js'), import('@valtown/codemirror-ts')]);
+          worker = new Worker(new URL('../dsl/typecheck-worker.ts', import.meta.url), { type: 'module' });
+          tsClient = connectTypecheck(worker as any);
+          worker.onerror = () => { if (!disposed) setWorkerState('failed'); };
+          tsClient.onProblems((p: Problem[]) => onTypeRef.current?.(p));
+          tsAutocomplete = cmts.tsAutocompleteWorker();
+          tsExt = [cmts.tsFacetWorker.of({ worker: tsClient, path: '/piece.ts' }), cmts.tsSyncWorker(), cmts.tsHoverWorker()];
+          tsClient.initialize().then(() => {
+            tsReady = true;
+            if (!disposed) setWorkerState('ready');
+            const v = viewRef.current;
+            if (v) tsClient.updateFile({ path: '/piece.ts', code: v.state.doc.toString() });
+            forceLint.current?.();
+          }, () => { if (!disposed) setWorkerState('failed'); });
+        } catch {
+          setWorkerState('failed');
         }
 
         const fallback = (ctx: any) => {
@@ -144,7 +140,7 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
             ...tsExt,
             Prec.high(keymap.of([{ key: 'Tab', run: ac.acceptCompletion }])),
             EditorView.updateListener.of((u: any) => { if (u.docChanged) onChangeRef.current(u.state.doc.toString()); }),
-            EditorView.contentAttributes.of({ 'aria-label': label }),
+            EditorView.contentAttributes.of({ 'aria-label': 'piece.ts' }),
           ],
         });
         const view = new EditorView({ state, parent: host.current });

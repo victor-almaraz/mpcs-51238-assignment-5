@@ -13,8 +13,8 @@ import { ReplayControls } from './replay-controls';
 import { useHydrated } from './use-hydrated';
 import { CircleX, TriangleAlert } from 'lucide-react';
 import { Icon } from './icons';
-import { useFreshness, useTraceRecords, type PieceSession, type Problem, type SessionState } from './hooks';
-import { button } from '@/src/ui/styles';
+import { useTraceRecords, type Freshness, type PieceSession, type Problem, type SessionState } from './hooks';
+import { button, inputSm, tab as tabClass } from '@/src/ui/styles';
 
 export type BottomTab = 'console' | 'problems' | 'ir' | 'trace';
 const TABS: { id: BottomTab; label: string }[] = [
@@ -23,15 +23,16 @@ const TABS: { id: BottomTab; label: string }[] = [
 const SUBTABS = ['Sources', 'Events', 'Voices', 'Modulation', 'Effects'] as const;
 const btn = button('secondary', 'sm');
 
-export function BottomPanel({ tab, onTab, session, state, client, problems, ir, onGoto, timeZone, dev = false, replaySpeed = 100 }: {
+export function BottomPanel({ tab, onTab, session, state, client, freshness, problems, ir, onGoto, timeZone, dev = false, replaySpeed = 100 }: {
   tab: BottomTab; onTab: (t: BottomTab) => void; session: PieceSession | null; state: SessionState; client: any | null;
+  /** The editor's freshness, so the page polls the sky store once. */
+  freshness: Freshness[];
   problems: Problem[]; ir: any | null; onGoto?: (line: number) => void; timeZone: string; dev?: boolean; replaySpeed?: number;
 }) {
   const [paused, setPaused] = useState(false);
   const [sub, setSub] = useState<(typeof SUBTABS)[number] | 'Synthetic'>('Events');
   const [selected, setSelected] = useState<string | null>(null);
   const records = useTraceRecords(paused);
-  const freshness = useFreshness(session?.sky ?? null);
   const hydrated = useHydrated();
   const errors = problems.filter((p) => p.severity === 'error').length;
   const warnings = problems.length - errors;
@@ -44,7 +45,7 @@ export function BottomPanel({ tab, onTab, session, state, client, problems, ir, 
           <button
             key={t.id} type="button" role="tab" aria-selected={tab === t.id} aria-controls={`panel-${t.id}`} id={`tab-${t.id}`}
             onClick={() => onTab(t.id)}
-            className={`px-2 py-1 ${tab === t.id ? 'border-b border-accent text-fg' : 'text-fg-muted hover:text-fg'}`}
+            className={tabClass(tab === t.id)}
           >
             {t.label}{t.id === 'problems' && problems.length ? <span className="ml-1 inline-flex items-center gap-1 align-middle">
               {errors ? <span className="inline-flex items-center gap-0.5 text-error"><Icon as={CircleX} size={12} />{errors}<span className="sr-only"> errors</span></span> : null}
@@ -106,18 +107,18 @@ function SyntheticPanel({ session }: { session: PieceSession | null }) {
     <div className="flex flex-col gap-2 font-mono text-xs">
       <p className="text-fg-muted">Fabricated events change only this tab&apos;s store and never write to the database.</p>
       <div className="flex flex-wrap items-center gap-2">
-        <select className="border border-line bg-bg" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Group">{groups.map((g) => <option key={g}>{g}</option>)}</select>
-        <input className="w-28 border border-line bg-bg px-1" value={key} onChange={(e) => setKey(e.target.value)} aria-label="Object key" />
-        <input className="min-w-48 flex-1 border border-line bg-bg px-1" value={fields} onChange={(e) => setFields(e.target.value)} aria-label="Fields JSON" />
+        <select className={inputSm} value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Group">{groups.map((g) => <option key={g}>{g}</option>)}</select>
+        <input className={`${inputSm} w-28`} value={key} onChange={(e) => setKey(e.target.value)} aria-label="Object key" />
+        <input className={`${inputSm} min-w-48 flex-1`} value={fields} onChange={(e) => setFields(e.target.value)} aria-label="Fields JSON" />
         <button type="button" className={btn} onClick={() => run(() => syn().enter(group, key, parsed()))}>Enter</button>
         <button type="button" className={btn} onClick={() => run(() => syn().update(`${group}:${key}`, parsed()))}>Update</button>
         <button type="button" className={btn} onClick={() => run(() => syn().exit(`${group}:${key}`))}>Exit</button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <select className="border border-line bg-bg" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source">
+        <select className={inputSm} value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source">
           {[...new Set(groups.map((g) => GROUPS[g].source))].map((s) => <option key={s}>{s}</option>)}
         </select>
-        <select className="border border-line bg-bg" value={fstate} onChange={(e) => setFstate(e.target.value)} aria-label="Freshness">
+        <select className={inputSm} value={fstate} onChange={(e) => setFstate(e.target.value)} aria-label="Freshness">
           {['fresh', 'stale', 'down', 'loading'].map((s) => <option key={s}>{s}</option>)}
         </select>
         <button type="button" className={btn} onClick={() => run(() => syn().freshness(source, fstate))}>Set Freshness</button>

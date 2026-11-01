@@ -13,7 +13,7 @@ import { useSettings, useSupabase } from '@/src/ui/app-providers';
 import { ConsoleControls, EventsPanel, SourcesPanel, TracePanel } from '@/src/ui/console-panels';
 import { useFreshness, useTraceRecords, type TraceRecord } from '@/src/ui/hooks';
 import { StatusBar } from '@/src/ui/status-bar';
-import { button, panelLabel, textLink } from '@/src/ui/styles';
+import { button, panelLabel, tab as tabClass, textLink } from '@/src/ui/styles';
 import { SiteHeader } from '@/src/ui/site-header';
 import { SourceGlyph } from '@/src/ui/glyphs';
 
@@ -47,7 +47,13 @@ export function ConsoleView() {
 
   useEffect(() => {
     if (!sky) return;
-    sky.follow(groups).catch((err: Error) => setSkyError(err.message));
+    // Only the latest follow reports; a later success clears an earlier failure.
+    let current = true;
+    sky.follow(groups).then(
+      () => { if (current) setSkyError(null); },
+      (err: Error) => { if (current) setSkyError(err.message); },
+    );
+    return () => { current = false; };
   }, [sky, groups]);
 
   const loadHistory = async () => {
@@ -92,7 +98,7 @@ export function ConsoleView() {
             <div role="tablist" aria-label="Console panels" className="flex gap-1 text-xs">
               {tabs.map((t) => (
                 <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-                  className={`px-2 py-1 ${tab === t.id ? 'border-b border-accent' : 'text-fg-muted hover:text-fg'}`}>{t.label}</button>
+                  className={tabClass(tab === t.id)}>{t.label}</button>
               ))}
             </div>
             <ConsoleControls paused={paused} onPause={setPaused} />

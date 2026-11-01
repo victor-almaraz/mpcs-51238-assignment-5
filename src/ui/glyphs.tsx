@@ -1,14 +1,10 @@
 /** One astronomical symbol per data family (doc/ui.md, Design system, Glyphs). */
-export type Family = 'orbits' | 'weather' | 'approaches' | 'launches';
+type Family = 'orbits' | 'weather' | 'approaches' | 'launches';
 
 const PREFIX: Record<string, Family> = { celestrak: 'orbits', swpc: 'weather', jpl: 'approaches', ll2: 'launches' };
 
-export const FAMILY_LABEL: Record<Family, string> = {
-  orbits: 'Orbits', weather: 'Space weather', approaches: 'Close approaches', launches: 'Launches',
-};
-
 /** Family of a source or group id such as `celestrak.stations`, or null. */
-export function familyOf(id: string): Family | null {
+function familyOf(id: string): Family | null {
   return PREFIX[id.split('.')[0]] ?? null;
 }
 

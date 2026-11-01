@@ -17,6 +17,12 @@ export const button = (kind: Kind = 'secondary', size: Size = 'md') => `${BASE} 
 /** Text input on document pages: the height of an `md` button. */
 export const input = 'h-8 rounded-md border border-line bg-bg px-3 text-sm placeholder:text-fg-muted disabled:border-dashed';
 
+/** Text input or select in tool views: the height of an `sm` button. */
+export const inputSm = 'h-[22px] rounded-sm border border-line bg-bg px-1 text-xs placeholder:text-fg-muted disabled:border-dashed';
+
+/** Tab in a tab list: the selected tab carries a 2 px accent bar under its label. */
+export const tab = (selected: boolean) => `border-b-2 px-2 py-1 ${selected ? 'border-accent' : 'border-transparent hover:border-line'}`;
+
 /** Segmented control: one bordered group, 1 px dividers, the selected option inverted. */
 export const segmented = {
   group: 'inline-flex h-8 shrink-0 overflow-hidden rounded-md border border-line text-sm',

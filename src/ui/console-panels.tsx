@@ -14,7 +14,7 @@ import { formatHHMM, freshnessItem, relativeTime } from '@/src/ui/status.js';
 import { useInterval, type Freshness, type PieceSession, type TraceRecord } from './hooks';
 import { CircleX, TriangleAlert } from 'lucide-react';
 import { FRESHNESS_ICON, Icon } from './icons';
-import { button } from '@/src/ui/styles';
+import { button, inputSm } from '@/src/ui/styles';
 
 const STATE_CLASS: Record<string, string> = { loading: 'text-fg-muted', fresh: 'text-ok', stale: 'text-warn', down: 'text-error' };
 const LEVEL_CLASS: Record<string, string> = { info: '', warn: 'text-warn', error: 'text-error' };
@@ -69,6 +69,8 @@ export function SourcesPanel({ client, freshness, timeZone = 'UTC' }: { client: 
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [sample, setSample] = useState<{ source: string; text: string } | null>(null);
+  // The source whose sample was asked for last; an earlier response that arrives later is ignored.
+  const wanted = useRef<string | null>(null);
 
   const load = async () => {
     if (!client) { setLoading(false); setError('The database is unavailable'); return; }
@@ -86,11 +88,13 @@ export function SourcesPanel({ client, freshness, timeZone = 'UTC' }: { client: 
   const rows = useMemo(() => sourceRows(freshness, runs), [freshness, runs]);
 
   const expand = async (source: string) => {
-    if (open === source) { setOpen(null); return; }
+    if (open === source) { wanted.current = null; setOpen(null); return; }
+    wanted.current = source;
     setOpen(source);
     setSample({ source, text: 'Loading…' });
-    if (!client) return;
+    if (!client) { setSample({ source, text: 'The database is unavailable.' }); return; }
     const { data, error: e } = await client.from('source_samples').select('fetched_at,http_status,body').eq('source_id', source).maybeSingle();
+    if (wanted.current !== source) return;
     if (e) setSample({ source, text: `The sample could not be read: ${e.message}` });
     else if (!data) setSample({ source, text: 'No sample stored for this source.' });
     else {
@@ -178,10 +182,10 @@ export function EventsPanel({ records, followed, groups, timeZone = 'UTC', pause
   return (
     <div className="flex h-full min-h-0 flex-col gap-1 font-mono text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <label>Source <select className="border border-line bg-bg" value={source} onChange={(e) => setSource(e.target.value)}>
+        <label>Source <select className={inputSm} value={source} onChange={(e) => setSource(e.target.value)}>
           <option value="">all</option>{sources.map((s) => <option key={s}>{s}</option>)}
         </select></label>
-        <label>Group <select className="border border-line bg-bg" value={group} onChange={(e) => setGroup(e.target.value)}>
+        <label>Group <select className={inputSm} value={group} onChange={(e) => setGroup(e.target.value)}>
           <option value="">all</option>{groups.map((g) => <option key={g}>{g}</option>)}
         </select></label>
         <label className="flex items-center gap-1"><input type="checkbox" checked={followedOnly} onChange={(e) => setFollowedOnly(e.target.checked)} /> Followed groups only</label>

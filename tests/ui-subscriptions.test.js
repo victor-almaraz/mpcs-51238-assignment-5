@@ -47,3 +47,39 @@ test('syncSubscriptions reports a failed write', async () => {
   const c = fakeClient([], { failOn: 'insert' });
   await assert.rejects(syncSubscriptions(c, 'p1', ['swpc.kp']), /adding subscriptions failed: denied/);
 });
+
+/** Client for createProject: the `projects` insert returns id p1; `project_subscriptions` uses fakeClient. */
+function projectClient({ failSubs = false } = {}) {
+  const calls = [];
+  const subs = fakeClient([], { failOn: failSubs ? 'insert' : null });
+  const from = (table) => {
+    if (table !== 'projects') return subs.from(table);
+    const filters = [];
+    const b = {
+      insert(v) { calls.push(['insert', v]); return b; },
+      select() { return b; },
+      single: () => Promise.resolve({ data: { id: 'p1' }, error: null }),
+      delete() { calls.push(['delete', filters]); return b; },
+      eq(k, v) { filters.push([k, v]); return b; },
+      then(res, rej) { return Promise.resolve({ error: null }).then(res, rej); },
+    };
+    return b;
+  };
+  return { from, calls, subs: subs.calls };
+}
+
+test('createProject inserts the row and its subscriptions', async () => {
+  const { createProject } = await import('../src/ui/project-actions.ts');
+  const c = projectClient();
+  const id = await createProject(c, { name: 'A', source: 's', ir: { groups: ['swpc.kp'] } });
+  assert.equal(id, 'p1');
+  assert.deepEqual(c.calls.map((x) => x[0]), ['insert']);
+  assert.deepEqual(c.subs.map((x) => x[0]), ['select', 'insert']);
+});
+
+test('createProject deletes the new row when its subscriptions cannot be written', async () => {
+  const { createProject } = await import('../src/ui/project-actions.ts');
+  const c = projectClient({ failSubs: true });
+  await assert.rejects(createProject(c, { name: 'A', source: 's', ir: { groups: ['swpc.kp'] } }), /could not be created: adding subscriptions failed: denied/);
+  assert.deepEqual(c.calls, [['insert', { name: 'A', source: 's', ir: { groups: ['swpc.kp'] }, local_only: false }], ['delete', [['id', 'p1']]]]);
+});

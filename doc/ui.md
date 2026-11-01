@@ -64,7 +64,7 @@ Class strings live in `src/ui/styles.ts`; components do not write their own.
 
 `md` is 32 px high with 12 px side padding and `text-sm`; `sm` is 22 px with 8 px padding and `text-xs`. Radius 4 px (`md`) and 2 px (`sm`).
 
-A segmented control (a choice of two or three views, such as List and settings.json) is one bordered group at the height of the controls beside it, with 1 px dividers between options; the selected option is inverted (`segmented` in `src/ui/styles.ts`). Text inputs on document pages are 32 px high, the height of `md` buttons.
+A segmented control (a choice of two or three views, such as List and settings.json) is one bordered group at the height of the controls beside it, with 1 px dividers between options; the selected option is inverted (`segmented` in `src/ui/styles.ts`). Text inputs on document pages are 32 px high, the height of `md` buttons (`input`); text inputs and selects in tool views are 22 px high, the height of `sm` buttons (`inputSm`). A tab list (the bottom panel, the console) marks the selected tab with a 2 px `accent` bar under its label (`tab`).
 
 Tables on document pages: every cell has 12 px horizontal and 10 px vertical padding (none at the outer edges), content centred vertically, one text size per column; the action column is right-aligned and uses `sm` buttons (`table` in `src/ui/styles.ts`).
 
@@ -112,7 +112,7 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 - Layout: the site header; a hero with a display-size heading, the lead paragraph, the actions and the orbit map, over a faint accent glow; then one band per section. On wide windows each section puts its heading in a narrow left column and its body on the right; below 1024 px they stack. Sections are separated by space, not rules. Headings come from the copy; the body renders without its heading so the page lays it out.
 - The hero map does not use the WebGL renderer, so the landing page loads no shaders or Web Workers.
 - Polling, propagation and drawing pause while the tab is hidden.
-- The live strip reads `sky_objects` and `source_status` by REST through the publishable key on load and every 60 s; it opens no Realtime channel, so landing visitors use no Realtime messages. States: loading (`…` with "connecting"), fresh, stale and down as in States; a failed read shows "Live data unavailable" and keeps the rest of the page.
+- The live strip reads `sky_objects` and `source_status` by REST through the publishable key on load and every 60 s; it opens no Realtime channel, so landing visitors use no Realtime messages. States: loading (`…` with "connecting"), fresh, stale and down as in States; a failed read shows "Live data unavailable" and keeps the rest of the page. Rows that fail validation are dropped and traced as `REALTIME` / `landing` / `invalid_row` (`warn`).
 - The landing page starts no audio and creates no `AudioContext`. Sound starts only on `/listen` after a click.
 - Visual safety applies (`visuals.md`): the orbit view has no flashes, honors reduced motion and pauses when the tab is hidden.
 - Signed-in visitors see the same page with Open Projects in place of Start Composing; there is no redirect.
@@ -126,7 +126,7 @@ Explains the idea behind the piece and leads to listening, composing and learnin
 ## Projects (`/projects`)
 - Table with columns name, groups followed, last edited, last run. Row actions: Open, Run, Duplicate, Delete.
 - Last edited is `projects.updated_at`; every save sets it. `projects` has no last-run column, so last run is recorded per browser in `localStorage` (`sphaerenmusik.lastRun.<id>`) when Run starts the project, and reads `—` on other devices.
-- "New Project" offers Blank and each starter project as a template.
+- "New Project" offers Blank and each starter project as a template. Creating a project inserts the row and then its `project_subscriptions`; when the subscriptions cannot be written, the new row is deleted and the error is shown, so a retry reuses the same name.
 - On first sign-in the list contains the starter projects (Starter projects).
 - Delete sets `deleted_at` and removes the row from the table with a toast "Project deleted" and an Undo button for 10 s. The `prune-projects` job deletes rows a day after `deleted_at`.
 - States: loading (skeleton rows), empty ("No Projects" with New Project and the starter templates), error (message and Retry).
@@ -202,7 +202,7 @@ Behavior:
 ## Settings (`/settings`)
 - A searchable list grouped by category, with a toggle to an editable `settings.json` view. Both views edit the same object, validated on every change.
 - Account uses Clerk `<UserProfile />`.
-- Changes save to `user_settings.settings` 1 s after the last valid edit. The `settings.json` view keeps unparsable text local and shows the parse error until the text parses.
+- Changes save to `user_settings.settings` 1 s after the last valid edit; a change still waiting when the visitor leaves the page is saved at once. The `settings.json` view keeps unparsable text local and shows the parse error until the text parses.
 - `editor.keymap: "vim"` needs `@replit/codemirror-vim`, which is not installed; until it is, the editor uses the default keymap and the settings view says so.
 
 ## States
