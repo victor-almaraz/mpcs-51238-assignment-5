@@ -142,6 +142,9 @@ The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group
 | `shaderError` | `error` | A layer shader fails to compile | `{ "layer": "l3", "log": "..." }` |
 | `contextLost` | `error` | The WebGL context is lost | `{}` |
 | `propagationFailed` | `warn` | Propagation of an object fails, once per object and element set | `{ "objectId": "...", "code": 1, "message": "..." }` |
+| `frameError` | `error` | A frame throws. Each distinct message is traced once; while it repeats, a record with `repeats`, the count since the previous record, follows at most once per second | `{ "message": "..." }` or `{ "message": "...", "repeats": n }` |
+| `workerError` | `error` | The SGP4 worker fails to load or throws | `{ "message": "..." }` |
+| `invalidObserver` | `warn` | The SGP4 worker receives an observer without finite `lat` and `lon`; the previous observer stays | `{ "observer": ... }` |
 
 Stage `VISUAL`; component `layer.<id>`, `renderer` or `sgp4`.
 
@@ -173,7 +176,7 @@ The orbit propagator serves both the renderer and the binding runtime. It runs w
 | `paths(key)` | The latest paths of one request |
 | `orbitValue(objectId, quantity, timeScale)` | Latest value, or `null` |
 | `onSample(fn)` | Calls `fn` after each sample; returns an unsubscribe function |
-| `dispose()` | Terminates the worker |
+| `dispose()` | Terminates the worker and cancels a pending send; afterwards no call starts a worker |
 
 A position record has 8 floats: ECI `x`, `y`, `z` (km), geodetic latitude and longitude (rad), altitude (km), and azimuth and elevation from the observer (rad).
 
@@ -208,7 +211,7 @@ Guard algorithm (`src/visual/flash-guard.js`):
    - A canvas resize copies the last output into the new targets, so the limit continues across a resize.
 5. Each intervention emits a `SAFETY` trace record with event `flashLimit` (component `flash-guard`, level `warn`, `data` `{ "measured": "output" | "scene", "kind": "general" | "red", "cells": n, "window": [x, y] }`); its end emits `flashLimitEnd` at level `info` with `data` `{ "measured": … }`. The output and the scene each emit their own records.
 
-The flash limit is `visual.maxFlashesPerSecond` (0–3); 0 intervenes on any single transition over the flash area. A fractional limit rounds down to whole transitions: 2.4 allows 4 transitions (2 flashes).
+The flash limit is `visual.maxFlashesPerSecond` (0–3); 0 intervenes on any single transition over the flash area. A fractional limit rounds down to whole transitions: 2.4 allows 4 transitions (2 flashes). A limit above 3 acts as 3 and a negative limit as 0; a limit that is not a finite number throws `RangeError` in `createFlashGuard`, `setMaxFlashes` and the renderer's `setSettings`, which then changes nothing.
 
 Photosensitivity warning: the guard averages each of its 64×48 cells and cannot rule out every pattern that affects people with photosensitive epilepsy, such as fine stripes or rapid movement. Before the first Run in a session, the start notice (`audio/audio-safety.md`, Safety UI) and the installation-mode "Begin Listening" button read: "Photosensitivity warning: this piece shows moving and changing light. Flashing is limited to three per second, but some patterns can still affect people with photosensitive epilepsy. If you are sensitive to light, watch with care and stop if you feel unwell."
 

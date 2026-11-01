@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import { json2satrec, propagate, gstime, eciToGeodetic } from 'satellite.js';
 import { toOmm } from '../src/sky/omm.js';
 import { createPropagationCore, STRIDE, LEAD_MS, orbitKey, simTime } from '../src/visual/propagation-core.js';
+import { createOrbit, propagateAt } from '../src/sky/orbit.js';
+import { DEFAULT_OBSERVER } from '../src/lib/settings.js';
 
 const STATIONS = JSON.parse(readFileSync(new URL('./fixtures/visual/stations-objects.json', import.meta.url), 'utf8'));
 const ISS = STATIONS.find((o) => o.id === 'celestrak.stations:25544');
@@ -46,6 +48,53 @@ test('positions match satellite.js for every station, including six-digit catalo
   c.handle({ type: 'tick' });
   assert.equal(samples()[1].ids, undefined);
   assert.equal(samples()[1].idsVersion, s.idsVersion);
+});
+
+test('position records and orbit samples share one propagation: elevation agrees', () => {
+  const { c, samples } = core();
+  const observer = { lat: 10, lon: 20 };
+  c.handle({ type: 'clock', clock: { simMs: T0, wallMs: T0, speed: 1, t0SimMs: T0 } });
+  c.handle({ type: 'observer', observer });
+  c.handle(objects([ISS]));
+  c.handle({ type: 'tick' });
+  const s = samples()[0];
+  const sample = createOrbit(ISS.fields).sample(s.simMs, observer);
+  assert.ok(sample.ok);
+  assert.ok(Math.abs(s.positions[7] / (Math.PI / 2) - /** @type {number} */ (sample.values.elevation)) < 1e-5);
+  const st = propagateAt(createOrbit(ISS.fields).satrec, s.simMs);
+  assert.ok(st.ok);
+  assert.ok(Math.abs(s.positions[0] - st.eci.x) < 0.01);
+});
+
+test('an invalid observer keeps the previous one and is traced once per message', () => {
+  const { c, posts, samples } = core();
+  c.handle({ type: 'clock', clock: { simMs: T0, wallMs: T0, speed: 1, t0SimMs: T0 } });
+  c.handle(objects([ISS]));
+  c.handle({ type: 'observer', observer: { lat: 10, lon: 20 } });
+  c.handle({ type: 'tick' });
+  const before = samples().at(-1).positions[7];
+  c.handle({ type: 'observer', observer: { lat: 'north', lon: 20 } });
+  c.handle({ type: 'tick' });
+  assert.equal(samples().at(-1).positions[7], before, 'the previous observer stays');
+  const traces = posts.filter((p) => p.msg.type === 'trace').map((p) => p.msg.record);
+  assert.equal(traces.length, 1);
+  assert.equal(traces[0].stage, 'VISUAL');
+  assert.equal(traces[0].component, 'sgp4');
+  assert.equal(traces[0].event, 'invalidObserver');
+  assert.equal(traces[0].level, 'warn');
+  assert.deepEqual(traces[0].data, { observer: { lat: 'north', lon: 20 } });
+  c.handle({ type: 'observer' });
+  assert.deepEqual(posts.filter((p) => p.msg.type === 'trace').at(-1).msg.record.data, { observer: null });
+});
+
+test('the default observer comes from settings', () => {
+  const { c, samples } = core();
+  c.handle({ type: 'clock', clock: { simMs: T0, wallMs: T0, speed: 1, t0SimMs: T0 } });
+  c.handle(objects([ISS]));
+  c.handle({ type: 'tick' });
+  const sample = createOrbit(ISS.fields).sample(samples()[0].simMs, DEFAULT_OBSERVER);
+  assert.ok(sample.ok);
+  assert.ok(Math.abs(samples()[0].positions[7] / (Math.PI / 2) - /** @type {number} */ (sample.values.elevation)) < 1e-5);
 });
 
 test('a failed object is omitted and traced once per element set', () => {

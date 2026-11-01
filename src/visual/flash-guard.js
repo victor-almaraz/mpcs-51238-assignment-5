@@ -38,11 +38,16 @@ export function limitStep(dtSec) {
 }
 
 /**
- * Transition count per cell at which the cell flashes too often.
+ * Transition count per cell at which the cell flashes too often. Limits
+ * outside 0–3 are clamped into it, so the result is never looser than 3.
  * @param {number} maxFlashesPerSecond
+ * @throws {RangeError} when the limit is not a finite number
  */
 export function transitionThreshold(maxFlashesPerSecond) {
-  const n = Number.isFinite(maxFlashesPerSecond) ? Math.min(MAX_FLASHES_PER_SECOND, Math.max(0, maxFlashesPerSecond)) : MAX_FLASHES_PER_SECOND;
+  if (typeof maxFlashesPerSecond !== 'number' || !Number.isFinite(maxFlashesPerSecond)) {
+    throw new RangeError(`maxFlashesPerSecond must be a finite number, got ${String(maxFlashesPerSecond)}`);
+  }
+  const n = Math.min(MAX_FLASHES_PER_SECOND, Math.max(0, maxFlashesPerSecond));
   return Math.max(1, Math.floor(2 * n));
 }
 
@@ -91,10 +96,6 @@ class TransitionLog {
     }
     this.count[c] = n;
     return n;
-  }
-  clear() {
-    this.head.fill(0);
-    this.count.fill(0);
   }
 }
 
@@ -174,15 +175,8 @@ export function createFlashGuard({ width = GRID_W, height = GRID_H, maxFlashesPe
     get threshold() { return threshold; },
     window: { width: winW, height: winH, areaCells },
 
-    /** @param {number} n flashes per second, clamped to 0–3 */
+    /** @param {number} n flashes per second, clamped to 0–3 @throws {RangeError} when not finite */
     setMaxFlashes(n) { threshold = transitionThreshold(n); },
-
-    reset() {
-      primed = false;
-      general.clear();
-      red.clear();
-      limiting = false;
-    },
 
     /**
      * Processes one frame.

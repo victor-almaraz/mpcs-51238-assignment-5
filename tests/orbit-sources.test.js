@@ -5,7 +5,7 @@ import {
   degreesToRadians, ecfToLookAngles, eciToEcf, eciToGeodetic, gstime, json2satrec, propagate,
 } from 'satellite.js';
 import {
-  EARTH_RADIUS_KM, ORBIT_QUANTITIES, createOrbit, isSunlit, orbitValue, periodMinutes, scaledTime,
+  EARTH_RADIUS_KM, ORBIT_QUANTITIES, createOrbit, isSunlit, lookAngles, orbitValue, periodMinutes, propagateAt, scaledTime,
 } from '../src/sky/orbit.js';
 import { createReplay } from '../src/sky/replay.js';
 import { createFakeClock } from './fakes/fake-clock.js';
@@ -184,4 +184,34 @@ test('propagation failure returns the satrec error code', () => {
   const d = decayed.sample(TIMES[0] + 30 * 86400000);
   assert.equal(d.ok, false);
   assert.ok(d.error > 0);
+});
+
+test('propagateAt is the SGP4 step of sample: same position, geodetic point and look angles as satellite.js', () => {
+  const orb = createOrbit(ISS.fields);
+  for (const ms of TIMES) {
+    const st = propagateAt(orb.satrec, ms);
+    assert.ok(st.ok);
+    const date = new Date(ms);
+    const ref = propagate(json2satrec(OMM), date);
+    const gmst = gstime(date);
+    assert.ok(Math.abs(st.eci.x - ref.position.x) < 1e-6);
+    assert.ok(Math.abs(st.gmst - gmst) < 1e-12);
+    const geo = eciToGeodetic(ref.position, gmst);
+    assert.ok(Math.abs(st.geodetic.latitude - geo.latitude) < 1e-9);
+    const look = ecfToLookAngles({ latitude: degreesToRadians(CHICAGO.lat), longitude: degreesToRadians(CHICAGO.lon), height: 0 }, eciToEcf(ref.position, gmst));
+    const mine = lookAngles(CHICAGO, st.eci, st.gmst);
+    assert.ok(Math.abs(mine.elevation - look.elevation) < 1e-9);
+    assert.ok(Math.abs(mine.azimuth - look.azimuth) < 1e-9);
+    const sample = orb.sample(ms, CHICAGO);
+    assert.ok(sample.ok);
+    assert.deepEqual(sample.eci, st.eci);
+  }
+});
+
+test('propagateAt reports failure instead of throwing', () => {
+  const decayed = createOrbit({ ...ISS.fields, eccentricity: 1.5 });
+  const st = propagateAt(decayed.satrec, TIMES[0]);
+  assert.equal(st.ok, false);
+  assert.equal(typeof (/** @type {any} */ (st)).error, 'number');
+  assert.deepEqual(propagateAt({ ...decayed.satrec, jdsatepoch: NaN }, TIMES[0]).ok, false);
 });

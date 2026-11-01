@@ -79,6 +79,10 @@ test('invalid synthetic input fails early', async () => {
   assert.throws(() => syn.update('jpl.scout:Z', {}), /not held/);
   assert.throws(() => syn.exit('jpl.scout:Z'), /not held/);
   assert.throws(() => syn.enter('jpl.scout', 'X', { v: NaN }), /finite/);
+  assert.throws(() => syn.enter('jpl.scout', 'X', { v: NaN }), /field v has invalid value NaN/, 'the live-row message, with NaN named');
+  assert.throws(() => syn.enter('jpl.scout', 'X', /** @type {any} */ ([1])), /synthetic fields is not an object/);
+  assert.throws(() => syn.update('jpl.scout:A', { v: { nested: 1 } }), TypeError);
+  assert.throws(() => syn.update('nocolon', { v: 1 }), /unknown group/);
   assert.throws(() => syn.freshness('swpc.wind', 'sleepy'), /state/);
   assert.throws(() => createSynthetic({}), /live sky store/);
 });

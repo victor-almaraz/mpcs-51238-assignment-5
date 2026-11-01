@@ -124,3 +124,60 @@ test('the propagator forwards samples, paths and trace records', () => {
   assert.equal(errors.length, 1, 'a rejected record is reported, not thrown');
   throwing.dispose();
 });
+
+test('dispose cancels a pending flush, so no worker starts afterwards', () => {
+  const timers = new Map();
+  let nextId = 0;
+  const cleared = [];
+  let created = 0;
+  const p = createPropagator({
+    createWorker: () => { created++; return fakeWorker(); },
+    setTimer: (fn) => { timers.set(++nextId, fn); return nextId; },
+    clearTimer: (h) => { cleared.push(h); timers.delete(h); },
+  });
+  const obj = { id: 'celestrak.stations:25544', group: 'celestrak.stations', fields: {} };
+  const sky = fakeSky([obj]);
+  p.setGroups(['celestrak.stations']);
+  p.follow(sky);
+  assert.equal(timers.size, 1, 'a flush is pending');
+  const [[id, pending]] = [...timers];
+  p.dispose();
+  assert.deepEqual(cleared, [id], 'the pending timer is cleared');
+  pending(); // a timer that fires anyway does nothing
+  p.setGroups(['celestrak.stations']);
+  p.follow(sky);
+  sky.emit({ type: 'update', obj, traceId: 't' });
+  for (const fn of timers.values()) fn();
+  assert.equal(created, 0, 'no worker is created after dispose');
+  assert.equal(sky.count(), 0, 'follow after dispose subscribes nothing');
+});
+
+test('a synchronous timer still lets later events flush', () => {
+  const w = fakeWorker();
+  const p = createPropagator({ createWorker: () => w, setTimer: (fn) => { fn(); return undefined; } });
+  const obj = { id: 'celestrak.stations:25544', group: 'celestrak.stations', fields: {} };
+  const sky = fakeSky([obj]);
+  p.setGroups(['celestrak.stations']);
+  p.follow(sky);
+  sky.emit({ type: 'update', obj, traceId: 't2' });
+  assert.equal(w.sent.filter((m) => m.type === 'objects').at(-1).objects[0].traceId, 't2');
+  p.dispose();
+});
+
+test('a worker error is traced as VISUAL / workerError', () => {
+  const w = fakeWorker();
+  const traced = [];
+  const p = createPropagator({ createWorker: () => w, setTimer: (fn) => fn(), trace: (r) => traced.push(r), now: () => 0 });
+  p.setGroups(['celestrak.stations']);
+  p.follow(fakeSky([{ id: 'celestrak.stations:25544', group: 'celestrak.stations', fields: {} }]));
+  assert.equal(typeof w.onerror, 'function');
+  w.onerror({ message: 'failed to load module' });
+  assert.equal(traced.length, 1);
+  assert.equal(traced[0].stage, 'VISUAL');
+  assert.equal(traced[0].component, 'sgp4');
+  assert.equal(traced[0].event, 'workerError');
+  assert.equal(traced[0].level, 'error');
+  assert.deepEqual(traced[0].data, { message: 'failed to load module' });
+  assert.match(traced[0].traceId, /^sgp4-/);
+  p.dispose();
+});

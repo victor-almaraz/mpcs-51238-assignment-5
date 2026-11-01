@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSprites, buildSegments, objectScreenPosition, maxProp, SPRITE_STRIDE, SEGMENT_STRIDE, OCCLUDED_ALPHA } from '../src/visual/scene.js';
+import { buildSprites, buildSegments, objectScreenPosition, maxProp, trailRequest, linesRequest, SURFACE_FIELDS, SPRITE_STRIDE, SEGMENT_STRIDE, OCCLUDED_ALPHA } from '../src/visual/scene.js';
+import { GROUPS, isGroup } from '../src/sky/groups.js';
 import { normalizeLayer, PropResolver } from '../src/visual/layer-state.js';
 import { orbitalCamera } from '../src/visual/projection.js';
 import { STRIDE } from '../src/visual/propagation-core.js';
@@ -92,4 +93,17 @@ test('maxProp rounds the largest value up, so path requests change rarely', () =
   const vals = { a: 125, b: 30 };
   assert.equal(maxProp([{ id: 'a' }, { id: 'b' }], (id) => ({ trail: vals[id] }), 'trail', 60), 180);
   assert.equal(maxProp([], () => ({}), 'trail', 60), 0);
+});
+
+test('path requests: trails cover the longest trail plus a margin in 60 steps; lines span half before and after', () => {
+  assert.deepEqual(trailRequest('trail:l0', 'celestrak.stations', 180), { key: 'trail:l0', group: 'celestrak.stations', fromSec: -185, toSec: 0, stepSec: 3 });
+  assert.equal(trailRequest('k', 'g', 30).stepSec, 1, 'at least 1 s per step');
+  assert.deepEqual(linesRequest('lines:l1', 'celestrak.stations', 90), { key: 'lines:l1', group: 'celestrak.stations', fromSec: -2700, toSec: 2700, stepSec: 60 });
+});
+
+test('surface positions name fields that the group registry defines as numbers', () => {
+  for (const [group, f] of Object.entries(SURFACE_FIELDS)) {
+    assert.ok(isGroup(group), group);
+    for (const name of [f.lat, f.lon]) assert.equal(GROUPS[group].fields[name]?.type, 'number', `${group}.${name}`);
+  }
 });

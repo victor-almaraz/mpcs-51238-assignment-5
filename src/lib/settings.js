@@ -1,14 +1,18 @@
 // User settings schema and validation (doc/ui.md, Settings schema).
 // Safety values can only be made stricter than the defaults allow.
 
+import { MAX_FLASHES_PER_SECOND } from '../visual/flash-guard.js';
+
+export { MAX_FLASHES_PER_SECOND };
 export const ENGINE_MAX_MASTER_DB = 0;
-export const MAX_FLASHES_PER_SECOND = 3;
+/** Observer used until settings load: the University of Chicago, degrees. */
+export const DEFAULT_OBSERVER = Object.freeze({ lat: 41.79, lon: -87.6 });
 
 export const DEFAULT_SETTINGS = Object.freeze({
   audio: { masterDb: -12, maxMasterDb: 0 },
-  visual: { reducedMotion: 'system', maxFlashesPerSecond: 3, previewScale: 0.5 },
+  visual: { reducedMotion: 'system', maxFlashesPerSecond: MAX_FLASHES_PER_SECOND, previewScale: 0.5 },
   editor: { fontSize: 14, theme: 'dark', keymap: 'default' },
-  data: { replaySpeed: 100, consoleBuffer: 2000, timeZone: 'UTC', observer: { lat: 41.79, lon: -87.6 } },
+  data: { replaySpeed: 100, consoleBuffer: 2000, timeZone: 'UTC', observer: { ...DEFAULT_OBSERVER } },
 });
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);

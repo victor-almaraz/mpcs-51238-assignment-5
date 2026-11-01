@@ -44,7 +44,7 @@ Render the guide's Markdown pages and make every example runnable in one click.
 `/learn` and `/try` are public routes in `proxy.ts` (`auth.md`).
 
 ## Rendering
-- Pages render at build time with `generateStaticParams` over `content/learn/`. Markdown is parsed with `remark`, `remark-gfm` and `remark-frontmatter`, and converted with `remark-rehype` and `rehype-slug` (heading anchors).
+- Pages render at build time with `generateStaticParams` over `content/learn/`. Markdown is parsed with `remark`, `remark-gfm` and `remark-frontmatter`, and converted with `remark-rehype` and `rehype-slug` (heading anchors). `readPageSource` returns null only for an unknown slug or a missing file (`ENOENT`), which renders the 404 page; any other read error fails the build.
 - Layout: the site header (`ui.md`, Design system), then three columns: the page list in `order` (a 240 px side panel, sticky, scrolling on its own), the page in a `reading` column centred in the remaining width, and the page's headings in a right-hand outline (224 px, sticky, from 1280 px). Below 768 px the page list becomes a Guide Pages disclosure above the page.
 - Code blocks use the editor's monospace font and theme. Each runnable example shows a **Try It** button that opens `/try?src=<slug>/<n>`.
 

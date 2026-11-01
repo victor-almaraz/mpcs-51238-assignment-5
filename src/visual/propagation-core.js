@@ -3,8 +3,8 @@
  * The worker shim (sgp4-worker.js) feeds messages and ticks; this module has
  * no Worker or DOM dependencies, so node:test can drive it.
  */
-import { propagate, gstime, eciToGeodetic, eciToEcf, ecfToLookAngles } from 'satellite.js';
-import { createOrbit, scaledTime, ORBIT_QUANTITIES } from '../sky/orbit.js';
+import { createOrbit, lookAngles, propagateAt, scaledTime, ORBIT_QUANTITIES } from '../sky/orbit.js';
+import { DEFAULT_OBSERVER } from '../lib/settings.js';
 
 /** Floats per position record: x, y, z (km), lat, lon (rad), alt (km), az, el (rad). */
 export const STRIDE = 8;
@@ -14,7 +14,6 @@ export const PATH_INTERVAL_MS = 5000;
 /** Upper bound of samples per path; `lines.span` is at most 200 min at 1 min steps. */
 export const MAX_PATH_STEPS = 240;
 
-const DEG = Math.PI / 180;
 const ERROR_MESSAGES = {
   1: 'mean eccentricity out of range',
   2: 'mean motion below zero',
@@ -66,8 +65,7 @@ export function createPropagationCore({ post, now = Date.now }) {
   let orbitSpecs = [];
   let orbitVersion = 0;
   let sentOrbitVersion = -1;
-  let observerDeg = { lat: 41.79, lon: -87.6 };
-  let observer = { latitude: observerDeg.lat * DEG, longitude: observerDeg.lon * DEG, height: 0 };
+  let observerDeg = { lat: DEFAULT_OBSERVER.lat, lon: DEFAULT_OBSERVER.lon };
   const t = now();
   /** @type {Clock} */
   let clock = { simMs: t, wallMs: t, speed: 1, t0SimMs: t };
@@ -134,17 +132,14 @@ export function createPropagationCore({ post, now = Date.now }) {
    */
   function stateAt(entry, ms, out, offset) {
     if (!entry.satrec) { fail(entry, null); fillNaN(out, offset); return false; }
-    let pv = null;
-    try { pv = propagate(entry.satrec, new Date(ms)); } catch { pv = null; }
-    const p = pv && pv.position;
-    if (!p || typeof p !== 'object' || !Number.isFinite(p.x)) {
+    const st = propagateAt(entry.satrec, ms);
+    if (!st.ok) {
       fail(entry, entry.satrec.error ?? null);
       fillNaN(out, offset);
       return false;
     }
-    const gmst = gstime(new Date(ms));
-    const geo = eciToGeodetic(p, gmst);
-    const look = ecfToLookAngles(observer, eciToEcf(p, gmst));
+    const { eci: p, geodetic: geo } = st;
+    const look = lookAngles(observerDeg, p, st.gmst);
     out[offset] = p.x; out[offset + 1] = p.y; out[offset + 2] = p.z;
     out[offset + 3] = geo.latitude; out[offset + 4] = geo.longitude; out[offset + 5] = geo.height;
     out[offset + 6] = look.azimuth; out[offset + 7] = look.elevation;
@@ -225,7 +220,8 @@ export function createPropagationCore({ post, now = Date.now }) {
         const lat = Number(msg.observer?.lat), lon = Number(msg.observer?.lon);
         if (Number.isFinite(lat) && Number.isFinite(lon)) {
           observerDeg = { lat, lon };
-          observer = { latitude: lat * DEG, longitude: lon * DEG, height: 0 };
+        } else {
+          post({ type: 'trace', record: { stage: 'VISUAL', component: 'sgp4', event: 'invalidObserver', level: 'warn', data: { observer: describe(msg.observer) } } });
         }
         lastPathsAt = -Infinity;
         break;
@@ -250,6 +246,11 @@ export function createPropagationCore({ post, now = Date.now }) {
 function validPath(r) {
   return r && typeof r.key === 'string' && typeof r.group === 'string'
     && [r.fromSec, r.toSec, r.stepSec].every(Number.isFinite) && r.toSec >= r.fromSec && r.stepSec > 0;
+}
+
+/** A JSON-safe copy of an invalid value, for its trace record. @param {unknown} v */
+function describe(v) {
+  try { return JSON.parse(JSON.stringify(v ?? null)); } catch { return String(v); }
 }
 
 /** @param {Float32Array} out @param {number} offset */

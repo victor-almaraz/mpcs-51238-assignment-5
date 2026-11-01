@@ -21,12 +21,14 @@ clear();
 setCapacity(n);                // 500–5000 (settings `data.consoleBuffer`); drops the oldest records beyond n
 toJsonl();                     // buffer as JSON Lines
 newTraceId(prefix = '');       // prefix + UUID, for example `syn-…`
+safeTrace(fn, label);          // wraps a trace function so it never throws; a rejected record goes to console.error with `label`
 
 createTraceBus({ capacity, now });   // separate bus with the same methods; tests use it
 ```
 - `trace` throws `TypeError` for a record without a non-empty `traceId`, `component` or `event`, with an unknown `stage` or `level`, or with a `data` value that is not a plain object. `level` defaults to `info` and `data` to `{}`.
 - Stage order for `chain` is the order of the `stage` list below.
 - A subscriber that throws is removed from the bus and does not affect other subscribers.
+- Producers that must not stop on a rejected record (the sky store, the renderer, the propagator) call `trace` through `safeTrace`.
 - `src/trace/jsonl.js` exports `toJsonl(records)`, `parseJsonl(text)` (validates each line and names the line number on error) and `eventsFromTrace(records)`, which rebuilds the `SkyEvent` sequence from `CHANGE` records for trace-replay tests.
 
 ## Trace record

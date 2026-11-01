@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { loadGuide } from '../src/learn/guide.js';
+import { loadGuide, readPageSource } from '../src/learn/guide.js';
 import { LANDING_FILE, loadLanding, parseLanding } from '../src/learn/landing.js';
-import { summarize } from '../src/landing/live.js';
+import { fetchSnapshot, summarize } from '../src/landing/live.js';
 import { satrecs, splitAtAntimeridian, subPoint, subsolarPoint, sunCos, terminator } from '../src/landing/orbits.js';
 
 const markdown = readFileSync(LANDING_FILE, 'utf8');
@@ -108,4 +110,45 @@ test('the How it works code is highlighted with the editor classes and keeps its
   assert.match(code, /<span class="syn-function">additive<\/span>/);
   const text = code.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'").replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
   assert.equal(text.trimEnd(), how.code[0]);
+});
+
+/** A supabase-js stand-in that answers the strip's two reads. */
+function snapshotClient(skyRows, statusRows) {
+  const result = (data) => {
+    const q = { in: () => q, is: () => q, then: (ok, fail) => Promise.resolve({ data, error: null }).then(ok, fail) };
+    return q;
+  };
+  return { from: (table) => ({ select: () => result(table === 'sky_objects' ? skyRows : statusRows) }) };
+}
+
+test('the live strip drops invalid rows and traces each one', async () => {
+  const good = { id: 'swpc.kp:now', source: 'swpc.kp', group_key: 'swpc.kp', fields: { kp: 2 }, trace_id: 't1', updated_at: '2026-10-30T02:59:00Z', removed_at: null };
+  const bad = { ...good, id: 'swpc.kp:bad', fields: { kp: 'x', v: [1] } };
+  const status = { source_id: 'swpc.kp', interval_sec: 60, last_attempt_at: null, last_success_at: null, last_ok: null, halted: false };
+  const records = [];
+  const snap = await fetchSnapshot(snapshotClient([good, bad], [status, { source_id: '' }]), { trace: (r) => records.push(r) });
+  assert.deepEqual(snap.objects.map((o) => o.id), ['swpc.kp:now']);
+  assert.equal(snap.statuses.length, 1);
+  assert.deepEqual(records.map((r) => [r.stage, r.component, r.event, r.level, r.data.table]), [
+    ['REALTIME', 'landing', 'invalid_row', 'warn', 'sky_objects'],
+    ['REALTIME', 'landing', 'invalid_row', 'warn', 'source_status'],
+  ]);
+  assert.match(records[0].data.error, /field v/);
+});
+
+test('readPageSource: null for a bad slug or a missing page; other read errors are thrown', () => {
+  assert.equal(readPageSource('../etc'), null);
+  assert.equal(readPageSource('no-such-page'), null);
+  const dir = mkdtempSync(join(tmpdir(), 'learn-'));
+  const cwd = process.cwd();
+  try {
+    mkdirSync(join(dir, 'content', 'learn', 'folder.md'), { recursive: true });
+    writeFileSync(join(dir, 'content', 'learn', 'page.md'), '# x');
+    process.chdir(dir);
+    assert.equal(readPageSource('page'), '# x');
+    assert.throws(() => readPageSource('folder'), /EISDIR/);
+  } finally {
+    process.chdir(cwd);
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

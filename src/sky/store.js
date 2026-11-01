@@ -3,7 +3,7 @@
 import { trace as busTrace } from '../trace/bus.js';
 import { createCore, makeObject } from './core.js';
 import { EVALUATE_MS, STATUS_POLL_MS, evaluateFreshness } from './freshness.js';
-import { GROUPS, groupKeys, isGroup, sourceOf } from './groups.js';
+import { GROUPS, groupKeys, groupOf, isGroup, sourceOf } from './groups.js';
 import { parseSkyRow, parseStatusRow } from './validate.js';
 
 export const PAGE_SIZE = 1000;
@@ -432,8 +432,8 @@ export function createSky({ client, now = Date.now, timers = globalTimers(), doc
       if (!h) throw new RangeError(`synthetic exit: object ${s.id} is not held`);
       e = core.remove(s.id, s.traceId, flags);
     } else {
-      const group = s.id.slice(0, s.id.indexOf(':'));
-      if (!isGroup(group)) throw new RangeError(`synthetic ${s.op}: unknown group in ${s.id}`);
+      const group = groupOf(s.id);
+      if (group === null || !isGroup(group)) throw new RangeError(`synthetic ${s.op}: unknown group in ${s.id}`);
       if (s.op === 'update' && !h) throw new RangeError(`synthetic update: object ${s.id} is not held`);
       if (s.op === 'enter' && h) throw new RangeError(`synthetic enter: object ${s.id} is already held`);
       const fields = s.op === 'update' ? { ...h?.obj.fields, ...s.fields } : { ...s.fields };

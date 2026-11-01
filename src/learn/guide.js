@@ -18,9 +18,21 @@ const SLUG = /^[a-z0-9-]+$/;
 /** True for a code block with the info string `ts piece`. */
 export const isRunnable = (node) => node.type === 'code' && node.lang === 'ts' && /(^|\s)piece(\s|$)/.test(node.meta ?? '');
 
-function plainText(node) {
+/** Text of a Markdown node and its children, with inline code as plain text. */
+export function plainText(node) {
   if (node.type === 'text' || node.type === 'inlineCode') return node.value;
   return (node.children ?? []).map(plainText).join('');
+}
+
+/**
+ * Markdown syntax tree and YAML front matter; `meta` is null without front matter.
+ * @param {string} markdown
+ * @returns {{ tree: any, meta: Record<string, unknown> | null }}
+ */
+export function parseWithFrontMatter(markdown) {
+  const tree = remark().use(remarkFrontmatter).use(remarkGfm).parse(markdown);
+  const yamlNode = tree.children.find((n) => n.type === 'yaml');
+  return { tree, meta: yamlNode ? parseYaml(yamlNode.value) ?? {} : null };
 }
 
 /**
@@ -28,10 +40,8 @@ function plainText(node) {
  * @returns {{ slug, title, order, tree, headings: {depth, text, id}[], examples: {source, heading}[] }}
  */
 export function parsePage(slug, markdown) {
-  const tree = remark().use(remarkFrontmatter).use(remarkGfm).parse(markdown);
-  const yamlNode = tree.children.find((n) => n.type === 'yaml');
-  if (!yamlNode) throw new Error(`content/learn/${slug}.md: missing front matter`);
-  const meta = parseYaml(yamlNode.value) ?? {};
+  const { tree, meta } = parseWithFrontMatter(markdown);
+  if (!meta) throw new Error(`content/learn/${slug}.md: missing front matter`);
   if (typeof meta.title !== 'string' || meta.title === '') throw new Error(`content/learn/${slug}.md: front matter needs title`);
   if (!Number.isInteger(meta.order)) throw new Error(`content/learn/${slug}.md: front matter needs integer order`);
   const headings = [];
@@ -131,11 +141,17 @@ export function renderPage(page, markdown) {
   return renderMarkdown(markdown, { slug: page.slug, codeAnchors: page.slug === 'troubleshooting' });
 }
 
+/**
+ * Markdown source of one page, or null when the slug is invalid or the file does not exist.
+ * Any other read error is thrown.
+ * @param {string} slug
+ */
 export function readPageSource(slug) {
   if (!SLUG.test(slug)) return null;
   try {
     return readFileSync(join(process.cwd(), 'content', 'learn', `${slug}.md`), 'utf8');
-  } catch {
-    return null;
+  } catch (err) {
+    if (/** @type {any} */ (err)?.code === 'ENOENT') return null;
+    throw err;
   }
 }

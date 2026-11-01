@@ -70,7 +70,7 @@ const sky = createSky({ client, now, timers, doc, trace, uuid });
 - A payload with `removed_at` set emits `exit` for a held object and is ignored otherwise. A payload without `removed_at` emits `update` for a held object and `enter` otherwise, so a payload that clears `removed_at` emits `enter`.
 - A payload whose `trace_id` equals the held object's, or whose `updated_at` is older than the held object's, is a duplicate and is ignored. `DELETE` payloads emit `exit` only for a held object.
 - The trace id of a live event is the row's `trace_id` column, which arrives in the Realtime payload.
-- Every Realtime payload and REST row is validated: `id`, `source` and `group_key` are non-empty strings, `fields` is a flat object of finite numbers, strings, booleans and `null`, `trace_id` is a string, `updated_at` is an ISO 8601 time, and `removed_at` is `null` or an ISO 8601 time. An invalid payload is dropped and traced as `REALTIME` / `invalid_payload` at level `error`.
+- Every Realtime payload and REST row is validated: `id`, `source` and `group_key` are non-empty strings, `fields` is a flat object of finite numbers, strings, booleans and `null`, `trace_id` is a string, `updated_at` is an ISO 8601 time, and `removed_at` is `null` or an ISO 8601 time. An invalid payload is dropped and traced as `REALTIME` / `invalid_payload` at level `error`; an invalid REST row is dropped and traced as `REALTIME` / `invalid_row`. The landing page's live strip (`src/landing/live.js`) validates its REST snapshot the same way and traces each dropped row as `REALTIME` / `invalid_row` (component `landing`, level `warn`, `data` `{ table, error }`).
 - Each applied live change produces a `CHANGE` record (`{ objectId, group, source, kind, diff: { before, after }, initial? }`) and, for Realtime payloads, a `REALTIME` record (`{ table: 'sky_objects', latencyMs }`, from `commit_timestamp`), both with the event's trace id.
 - On `CHANNEL_ERROR`, `TIMED_OUT` or an unrequested `CLOSED`, the store removes the channel, calls `client.realtime.setAuth()` and calls `follow` again after 1 s, 2 s, 4 s, … up to 30 s. A `SUBSCRIBED` status resets the delay.
 - The followed set of a running project is its `project_subscriptions.group_key` values.
@@ -137,12 +137,14 @@ syn.clear();                     // removes overrides and calls follow again
 | `fields` | Every field the normalizer writes, with `type` (`number`, `string`, `boolean`) and `unit` (`""` when unitless) |
 
 ## Orbit sources
-`src/sky/orbit.js` computes the VLFO quantities of `piece-dsl.md` (Orbits) with `satellite.js` 6. The SGP4 worker and tests call it; it has no other dependencies.
+`src/sky/orbit.js` computes the VLFO quantities of `piece-dsl.md` (Orbits) with `satellite.js` 6. The SGP4 worker, the landing map and tests call it; it has no other dependencies. `propagateAt` is the one SGP4 step that `sample`, the worker's position records and the landing map's ground tracks share.
 ```js
 const orb = createOrbit(fields);           // json2satrec(toOmm(fields)); throws OmmError on missing elements
 orb.periodMin;                             // 1440 / meanMotion
 orb.sample(ms, observer);                  // { ok: true, values, eci, geodetic } or { ok: false, error }
 orbitValue(orb, quantity, ms, observer);   // one quantity or null
+propagateAt(satrec, ms);                   // { ok: true, eci, velocity, gmst, geodetic (rad, km) } or { ok: false, error }
+lookAngles(observer, eci, gmst);           // { azimuth, elevation } in radians from observer { lat, lon } in degrees at height 0
 scaledTime(ms, t0, timeScale);             // t0 + (ms - t0) * timeScale
 ```
 | Quantity | Computation |
