@@ -4,7 +4,7 @@
 
 scale('E', 'phrygian');
 
-const bell = fm({ volume: -16, ratio: 3.5, index: 6, indexDecay: 2 });
+const bell = fm({ volume: -6, ratio: 3.5, index: 6, indexDecay: 2 });
 bell.fx(delay({ time: 700, feedback: 0.4, mix: 0.3 }));
 
 sky.group('jpl.scout').on('enter').trigger(bell, (o) => ({

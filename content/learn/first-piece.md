@@ -15,7 +15,7 @@ This page builds a piece in which every object in the space-stations group (the 
 Type the following script:
 
 ```ts piece
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 
 sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440),
@@ -52,7 +52,7 @@ Add `scale()` at the top and `.quantize()` after `octaveInto`:
 ```ts piece
 scale('D', 'lydian');
 
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 
 sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440).quantize(),
@@ -65,7 +65,7 @@ sky.group('celestrak.stations').voices(pad, {
 ```ts piece
 scale('D', 'lydian');
 
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 
 sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440).quantize(),

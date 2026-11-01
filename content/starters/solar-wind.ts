@@ -3,7 +3,7 @@
 
 scale('C', 'minor');
 
-const drone = subtractive({ volume: -14, waveform: 'sawtooth', attack: 2, release: 4, resonance: 6 });
+const drone = subtractive({ volume: -6, waveform: 'sawtooth', attack: 2, release: 4, resonance: 6 });
 drone.fx(delay({ time: 750, feedback: 0.45, mix: 0.25 }));
 
 sky.group('swpc.wind').voices(drone, { pitch: 36 });

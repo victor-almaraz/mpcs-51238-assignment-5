@@ -7,7 +7,7 @@ export function pitchOf(v) {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(Math.max(v, 0), 127) : null;
 }
 
-/** @param {unknown} v @returns {number} integer velocity 1–127, default 64 */
+/** @param {unknown} v @returns {number} integer velocity 1–127, default 100 */
 export function velocityOf(v) {
   if (typeof v !== 'number' || !Number.isFinite(v)) return LIMITS.defaultVelocity;
   return Math.min(Math.max(Math.round(v), 1), 127);

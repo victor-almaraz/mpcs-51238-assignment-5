@@ -59,7 +59,7 @@ For a `voices` binding:
 - A selected object whose `pitch` is `null` stays selected without sounding; an update with a non-null pitch starts it. A sounding voice whose pitch becomes `null` keeps its pitch.
 - Objects whose `select.by` value is not a finite number sort last. Ties sort by id.
 - Every `noteOff` for a sustained voice uses `max(ctx.currentTime, startTime + 0.005)`, because `noteOff` releases only voices that started before its time and `ctx.currentTime` does not advance within one task.
-- Velocity is rounded and clamped to 1–127 (default 64 when `null`), pitch to 0–127, pan to −1 to 1. `AUDIO` records carry the clamped value and the requested value (`pitchRequested`).
+- Velocity is rounded and clamped to 1–127 (default 100 when `null`), pitch to 0–127, pan to −1 to 1. `AUDIO` records carry the clamped value and the requested value (`pitchRequested`).
 - Voice options that reference other groups or `orbit` nodes are re-evaluated for every sounding voice on those events and on each orbit post.
 
 Caps: 16 voices per instrument, 4 for granular, 64 in total (`audio/audio-engine-core.md`). The validator enforces per-binding caps. When several bindings target one instrument, the engine's voice stealing applies and the trace records `stolen`.

@@ -19,7 +19,7 @@ A piece makes sound with **instruments**. Data reaches an instrument in three wa
 Every constructor accepts `volume` (dB, −60 to 0, default −6), `octave` (−3 to 3), `cents` (−100 to 100) and the parameters of its type. Values outside a parameter's range move to the nearest end of the range. The [Reference](reference) lists every parameter.
 
 ```ts
-const bell = fm({ volume: -16, ratio: 3.5, index: 6, indexDecay: 2 });
+const bell = fm({ volume: -6, ratio: 3.5, index: 6, indexDecay: 2 });
 ```
 
 A piece holds at most 16 instruments. An instrument plays at most 16 notes at once (granular: 4), and a piece at most 64.
@@ -32,7 +32,7 @@ A piece holds at most 16 instruments. An instrument plays at most 16 notes at on
 
 ```ts piece
 scale('A', 'minor');
-const pad = additive({ volume: -14, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 
 sky.group('celestrak.gps-ops').voices(pad, {
   pitch:    field('raan').map(0, 360, 45, 69).quantize(),
@@ -46,7 +46,7 @@ Instead of an options object, `voices` accepts a function that receives the grou
 
 ```ts piece
 scale('A', 'minor');
-const pad = additive({ volume: -14, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 
 sky.group('celestrak.gps-ops').voices(pad, (o) => ({
   pitch: o.raan.map(0, 360, 45, 69).quantize(),
@@ -78,7 +78,7 @@ The six closest approaches sound. When a closer object appears, the farthest of 
 
 ```ts piece
 scale('E', 'phrygian');
-const glass = fm({ volume: -16, ratio: 3.5, index: 6, indexDecay: 2 });
+const glass = fm({ volume: -6, ratio: 3.5, index: 6, indexDecay: 2 });
 
 sky.group('jpl.scout').on('enter').trigger(glass, {
   pitch: rand(72, 84).quantize(),

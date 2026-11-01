@@ -17,7 +17,7 @@ export const LIMITS = Object.freeze({
   minNoteSeconds: 0.005,
   /** Orbit-driven voice options are evaluated for at most this many objects per binding. */
   orbitObjectsPerBinding: 16,
-  defaultVelocity: 64,
+  defaultVelocity: 100,
   defaultDurationMs: 250,
   defaultMaxPerSecond: 2,
   defaultSmoothMs: 250,

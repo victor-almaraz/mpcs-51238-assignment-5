@@ -24,7 +24,7 @@ Options are parameter values (see the [Reference](reference)) and `bypass`.
 `inst.fx(...)` places effects after an instrument, in order. `master.fx(...)` places effects on the whole mix.
 
 ```ts piece
-const pad  = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad  = additive({ volume: -6, attack: 1.5, release: 4 });
 const echo = delay({ time: 500, feedback: 0.4, mix: 0.25 });
 const verb = reverb({ size: 0.85, decay: 6, mix: 0.3 });
 
@@ -98,7 +98,7 @@ A satellite's orbit is a wave: its latitude rises and falls once per orbit, it p
 `orbit(...)` reads the satellite a voice or layer is playing. `sky.orbit(objectId, quantity)` reads one named satellite anywhere in the script.
 
 ```ts piece
-const pad  = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad  = additive({ volume: -6, attack: 1.5, release: 4 });
 const tone = filter({ cutoff: 3000 });
 pad.fx(tone);
 

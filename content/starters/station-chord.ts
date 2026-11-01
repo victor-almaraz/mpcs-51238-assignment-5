@@ -3,7 +3,7 @@
 
 scale('D', 'lydian');
 
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 pad.fx(reverb({ size: 0.85, decay: 6, mix: 0.3 }));
 
 sky.group('celestrak.stations').voices(pad, {

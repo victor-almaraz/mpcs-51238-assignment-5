@@ -50,7 +50,7 @@ An orbit can be heard as a very slow oscillation. The International Space Statio
 4. Sphärenmusik plays and draws the result. The console shows the raw changes behind it.
 
 ```ts
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 
 sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440),

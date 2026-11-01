@@ -145,7 +145,7 @@ An expression `rate` must end in `.map(...)` or `.clamp(...)`; that step's outpu
 | `orbit(quantity, opts)` | Expression: a VLFO from the current object's orbital motion (Orbits) |
 | `sky.orbit(objectId, quantity, opts)` | Expression: a VLFO from one named object's orbital motion |
 
-Defaults: `velocity` 64, `pan` 0, `durationMs` 250, `maxPerSecond` 2. `pitch` is required. Constant pitches clamp to 0–127, velocities to 1–127 and pans to −1–1. A `top(...)` selection applies to voices, triggers (events of objects outside the selected set are ignored) and layers; `count`, `mean` and `spread` read the whole group.
+Defaults: `velocity` 100, `pan` 0, `durationMs` 250, `maxPerSecond` 2. `pitch` is required. Constant pitches clamp to 0–127, velocities to 1–127 and pans to −1–1. A `top(...)` selection applies to voices, triggers (events of objects outside the selected set are ignored) and layers; `count`, `mean` and `spread` read the whole group.
 
 ### Orbits
 Orbital motion is a very-low-frequency oscillator (VLFO): periodic, continuous and computed for every instant from the object's orbital elements. Orbit expressions apply to `celestrak.*` objects only.
@@ -339,11 +339,11 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
     { "id": "b0", "kind": "voices", "inst": "i0", "group": "celestrak.stations",
       "select": null,
       "pitch": { "op": "quantize", "args": [ { "op": "octaveInto", "args": [ { "op": "field", "args": ["meanMotion"] }, 110, 440 ] } ] },
-      "velocity": 64,
+      "velocity": 100,
       "pan": { "op": "map", "args": [ { "op": "field", "args": ["raan"] }, 0, 360, -0.8, 0.8, "lin" ] },
       "voiceMods": {} },
     { "id": "b1", "kind": "trigger", "inst": "i0", "group": "jpl.scout", "select": null, "event": "enter",
-      "when": null, "pitch": 76, "velocity": 64, "durationMs": 250, "maxPerSecond": 1 },
+      "when": null, "pitch": 76, "velocity": 100, "durationMs": 250, "maxPerSecond": 1 },
     { "id": "b2", "kind": "param", "inst": "i0", "param": "vibratoDepth",
       "expr": { "op": "map", "args": [ { "op": "swpc", "args": ["kp.kp"] }, 0, 9, 2, 40, "lin" ] },
       "smoothMs": 2000 }

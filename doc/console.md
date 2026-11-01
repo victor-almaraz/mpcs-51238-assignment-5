@@ -38,7 +38,7 @@ createTraceBus({ capacity, now });   // separate bus with the same methods; test
   "component": "bind.b1",
   "event": "noteOn",
   "level": "info",
-  "data": { "inst": "i3", "pitch": 79, "pitchRequested": 78.6, "velocity": 64, "source": "trig:b1" }
+  "data": { "inst": "i3", "pitch": 79, "pitchRequested": 78.6, "velocity": 100, "source": "trig:b1" }
 }
 ```
 | Field | Meaning |

@@ -86,10 +86,10 @@ test('trigger, voice and follow defaults', () => {
 sky.group('celestrak.stations').voices(a, { pitch: 60 }); a.index.follow(3);`);
   assert.deepEqual(ir.bindings[0], {
     id: 'b0', kind: 'trigger', inst: 'i0', group: 'jpl.scout', select: null, event: 'enter', when: null,
-    pitch: 127, velocity: 64, durationMs: 250, maxPerSecond: 2,
+    pitch: 127, velocity: 100, durationMs: 250, maxPerSecond: 2,
   });
   assert.deepEqual(ir.bindings[1], {
-    id: 'b1', kind: 'voices', inst: 'i0', group: 'celestrak.stations', select: null, pitch: 60, velocity: 64, pan: 0, voiceMods: {},
+    id: 'b1', kind: 'voices', inst: 'i0', group: 'celestrak.stations', select: null, pitch: 60, velocity: 100, pan: 0, voiceMods: {},
   });
   assert.deepEqual(ir.bindings[2], { id: 'b2', kind: 'param', inst: 'i0', param: 'index', expr: 3, smoothMs: 250 });
 });

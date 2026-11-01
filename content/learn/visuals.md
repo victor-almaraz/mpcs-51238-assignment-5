@@ -26,7 +26,7 @@ A piece draws its picture with a **view** and **layers**. Layer properties accep
 | `layer.aurora(props)` | A full-screen aurora band |
 
 ```ts piece
-const pad = additive({ volume: -12, attack: 1.5, release: 4 });
+const pad = additive({ volume: -6, attack: 1.5, release: 4 });
 sky.group('celestrak.stations').voices(pad, {
   pitch: field('meanMotion').octaveInto(110, 440),
 });

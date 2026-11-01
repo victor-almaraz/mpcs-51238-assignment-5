@@ -169,7 +169,7 @@ test('velocity is rounded and clamped; pitch clamped to 0–127 with the request
   sky.enter(cad('a', { p: 140, v: 300.4 }));
   sky.enter(cad('b', { p: 60, v: null }));
   sky.enter(cad('c', { p: 61, v: 12.6 }));
-  assert.deepEqual(inst.callsOf('noteOn').map((c) => [c[1], c[2]]), [[127, 127], [60, 64], [61, 13]]);
+  assert.deepEqual(inst.callsOf('noteOn').map((c) => [c[1], c[2]]), [[127, 127], [60, 100], [61, 13]]);
   const rec = trace.of({ event: 'noteOn' })[0];
   assert.equal(rec.stage, 'AUDIO');
   assert.equal(rec.component, 'bind.b0');

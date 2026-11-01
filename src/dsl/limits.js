@@ -52,7 +52,7 @@ export const DEFAULTS = Object.freeze({
   volumeDb: -6,
   octave: 0,
   cents: 0,
-  velocity: 64,
+  velocity: 100,
   pan: 0,
   durationMs: 250,
   maxPerSecond: 2,

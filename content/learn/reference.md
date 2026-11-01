@@ -130,7 +130,7 @@ Choice parameters (`waveform`, `source`) accept `follow` with an option index bu
 | `.voices(inst, { pitch, velocity, pan })` | One held note per object |
 | `.on(kind)` | Events: `'enter'`, `'update'`, `'exit'` |
 | `.when(expr)` | Events where `expr` is true |
-| `.trigger(inst, { pitch, velocity, durationMs, maxPerSecond })` | One note per event; defaults velocity 64, 250 ms, 2 per second |
+| `.trigger(inst, { pitch, velocity, durationMs, maxPerSecond })` | One note per event; defaults velocity 100, 250 ms, 2 per second |
 | `.count()`, `.mean(field)`, `.spread(field)` | Group statistics, as expressions |
 | `sky.swpc(path)` | A space-weather value |
 | `sky.value(objectId, field)` | One field of one object |

@@ -13,8 +13,8 @@ Stations hold a chord; GPS satellites add a slow, even layer underneath; geomagn
 ```ts piece
 scale('D', 'lydian');
 
-const stations = additive({ volume: -12, attack: 1.5, release: 4, vibratoDepth: 6 });
-const gps      = fm({ volume: -20, ratio: 2, index: 1.5, attack: 1, release: 3 });
+const stations = additive({ volume: -6, attack: 1.5, release: 4, vibratoDepth: 6 });
+const gps      = fm({ volume: -14, ratio: 2, index: 1.5, attack: 1, release: 3 });
 
 stations.fx(reverb({ size: 0.9, decay: 8, mix: 0.35 }));
 
@@ -44,7 +44,7 @@ One drone whose filter and echo follow the solar wind, minute by minute. This pi
 scale('C', 'minor');
 tempo(60);
 
-const drone = subtractive({ volume: -14, waveform: 'sawtooth', attack: 2, release: 4, resonance: 6 });
+const drone = subtractive({ volume: -6, waveform: 'sawtooth', attack: 2, release: 4, resonance: 6 });
 const echo  = delay({ sync: '1/2d', feedback: 0.5, mix: 0.3 });
 drone.fx(echo, reverb({ size: 0.7, decay: 5, mix: 0.25 }));
 
@@ -69,8 +69,8 @@ The closest asteroid approaches of the next 60 days swell in and out; each Scout
 ```ts piece
 scale('E', 'phrygian');
 
-const swell = subtractive({ volume: -16, waveform: 'triangle', attack: 2, release: 4, cutoff: 1200 });
-const glass = fm({ volume: -18, ratio: 3.5, index: 6, indexDecay: 2 });
+const swell = subtractive({ volume: -6, waveform: 'triangle', attack: 2, release: 4, cutoff: 1200 });
+const glass = fm({ volume: -8, ratio: 3.5, index: 6, indexDecay: 2 });
 glass.fx(delay({ time: 700, feedback: 0.45, mix: 0.35 }));
 
 sky.group('jpl.cad').top(6, 'distLD', 'asc').voices(swell, {
@@ -96,8 +96,8 @@ Each launch in the next ten sits as a quiet tone; a launch that lifts off plays 
 ```ts piece
 scale('G', 'mixolydian');
 
-const tones  = additive({ volume: -20, attack: 1, release: 3 });
-const string = pluck({ volume: -10, decay: 8, damping: 0.25 });
+const tones  = additive({ volume: -16, attack: 1, release: 3 });
+const string = pluck({ volume: -6, decay: 8, damping: 0.25 });
 string.fx(reverb({ size: 0.95, decay: 9, mix: 0.4 }));
 
 sky.group('ll2.upcoming').voices(tones, {
