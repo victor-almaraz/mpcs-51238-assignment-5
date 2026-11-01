@@ -114,7 +114,7 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 | `jpl.scout` | `lastRun` | `lastRun` | |
 
 ## Launch Library 2
-- Anonymous access allows 15 requests per hour per IP. HTTP 429 carries `Retry-After`; policy `retryAfter` waits that many seconds, or 3600 s when the header is absent.
+- Anonymous access allows 15 requests per hour per IP. HTTP 429 carries `Retry-After`; policy `retryAfter` waits that many seconds, or 3600 s when the header is absent, capped at the entry's `maxBackoffSec`. Supabase Edge Functions share outbound IPs with other projects, so other tenants' requests count against the same quota and 429s occur even at one request per 600 s.
 - `mode=normal` is required: `mode=list` omits `launch_service_provider` and `pad`. A `limit=10` response is about 90 KB.
 - `pad.latitude` and `pad.longitude` arrive as numbers.
 - `LL2_BASE` is `https://lldev.thespacedevs.com/2.3.0` in development (stale data, no rate limit) and `https://ll.thespacedevs.com/2.3.0` in production.
@@ -156,7 +156,7 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 | `normalizerArgs` | Static arguments passed to the normalizer |
 | `full` | `true` when each response lists the whole group; objects absent from it get `removed_at` |
 | `onNon200` | `halt`, `retryAfter` or `backoff` |
-| `maxBackoffSec` | Upper bound for `backoff` |
+| `maxBackoffSec` | Upper bound for the `backoff` delay and for the `retryAfter` wait (0: no cap) |
 | `enabled` | Disabled entries are never scheduled |
 
 ## Normalization

@@ -3,9 +3,14 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
+/** Writes one diagnostic as a JSON line to stderr. @param {Record<string, unknown>} record */
+export function diag(record) {
+  process.stderr.write(`${JSON.stringify(record)}\n`);
+}
+
 /** Writes one JSON-line error to stderr and exits. @param {string} event @param {string} message @param {number} [code] */
 export function fail(event, message, code = 1) {
-  process.stderr.write(`${JSON.stringify({ level: 'error', event, message })}\n`);
+  diag({ level: 'error', event, message });
   process.exit(code);
 }
 

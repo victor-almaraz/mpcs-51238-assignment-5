@@ -10,16 +10,16 @@
 
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diag, loadDefs } from './lib/defs.mjs';
-import { parseArgs, writeOrCheck } from './lib/cli.mjs';
+import { loadDefs } from './lib/defs.mjs';
+import { diag, parseArgs, writeOrCheck } from './lib/cli.mjs';
 import { buildStarters } from './lib/starters.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const argv = process.argv.slice(2);
-const { check } = parseArgs(argv, { check: 'boolean', defs: 'list' }, 'node scripts/build-starters.mjs [--defs <module>]... [--check]', 'build_starters');
+const args = parseArgs(process.argv.slice(2), { check: 'boolean', defs: 'list' }, 'node scripts/build-starters.mjs [--defs <module>]... [--check]', 'build_starters');
+const { check } = args;
 
 try {
-  const defs = await loadDefs(ROOT, argv);
+  const defs = await loadDefs(ROOT, args.defs);
   const { starters, errors } = buildStarters(ROOT, defs);
   for (const e of errors) diag({ level: 'error', event: 'build_starters', message: e });
   if (errors.length) {

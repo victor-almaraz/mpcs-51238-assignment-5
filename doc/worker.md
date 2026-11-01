@@ -11,7 +11,7 @@ On each invocation, fetch every due source, normalize the response, write only c
 - **Output:** rows in `sky_objects`, `changes`, `runs`, `source_status`, `source_samples`.
 - **Errors:**
   - Request without the correct `Authorization: Bearer <HARVEST_TOKEN>` header: HTTP 401, nothing runs.
-  - Invalid registry or missing secret: HTTP 500 with a message naming the problem; nothing runs.
+  - Invalid registry, missing secret, or a `SOURCES_ENABLED` pattern that matches no registry id: HTTP 500 with a message naming the problem; nothing runs.
   - Fetch or normalize error: that run fails; the other due sources still run.
   - Unhandled exception: the invocation ends; the next minute's invocation resumes from `source_status`.
 
@@ -51,10 +51,12 @@ Modules other than `index.ts` use only APIs that Node.js 24 and Deno share (`fet
 ## Pipeline
 1. `fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(timeoutMs) })`.
 2. On a non-200 status, apply the entry's failure policy and record a failed run.
-3. Strip trailing NUL bytes, which SWPC pads some files with and Postgres `text` cannot hold. Upsert this body, truncated to 64 KB, into `source_samples`.
+3. Strip trailing NUL bytes, which SWPC pads some files with and Postgres `text` cannot hold. Upsert this body, truncated to 65536 UTF-16 code units at a code-point boundary (never splitting a surrogate pair, which Postgres rejects), into `source_samples`.
 4. Normalize the same body to `SkyObject[]`. Two objects with the same id are a normalize error. A CelesTrak record whose required orbital elements (`NORAD_CAT_ID`, `EPOCH`, `MEAN_MOTION`, `ECCENTRICITY`, `INCLINATION`, `RA_OF_ASC_NODE`, `ARG_OF_PERICENTER`, `MEAN_ANOMALY`) are not finite numbers or valid timestamps is a normalize error, which halts the group; optional fields that do not parse become `null`. Compute `hash` for each object.
 5. Call RPC `upsert_sky_objects(p_source, p_group, p_rows, p_full)`. The RPC writes only rows whose hash differs, marks absent objects removed when `p_full` is true, inserts one `changes` row per changed object, and returns the changed ids.
 6. Upsert `source_status` (clearing `in_flight_at`), then insert one `runs` row. The status comes first, so a halt is saved even when the `runs` insert fails.
+
+A failed run's `runs.error` names the failing step: `HTTP <status>: ...`, `timeout: ...` or `network: ...` for step 1 or 2, `normalize: ...` for any error in step 4, including an unexpected exception in a normalizer, and `store: ...` for a database error in step 3 or 5.
 
 The conditional write runs in SQL because `supabase-js` `.upsert()` cannot express `ON CONFLICT ... DO UPDATE ... WHERE`.
 
@@ -62,7 +64,7 @@ The conditional write runs in SQL because `supabase-js` `.upsert()` cannot expre
 | Policy | Behavior |
 |---|---|
 | `halt` | Set `halted = true`, log `error` with event `halt`. No retry until a human clears the halt. |
-| `retryAfter` | Set `next_attempt_at` to now plus the `Retry-After` header value in seconds, or 3600 s when absent. |
+| `retryAfter` | Set `next_attempt_at` to now plus the `Retry-After` header value (delta-seconds, or an HTTP date converted to seconds from now), or 3600 s when absent or unparseable. When `maxBackoffSec` is greater than 0, the wait is at most `maxBackoffSec`. |
 | `backoff` | Set `next_attempt_at` to now plus `min(intervalSec × 2^failures, maxBackoffSec)`. `failures` resets to 0 on success. |
 
 A timeout or network error counts as a non-200 status. A normalize error or a database error during the run under policy `halt` also halts: the halt fails closed whenever the run's outcome is in doubt. A `halt` run that never records its result also halts, at the next claim (`database.md`, Claim RPC).
@@ -82,7 +84,7 @@ Edge Function secrets (Dashboard → Edge Functions → Secrets):
 | `HARVEST_TOKEN` | 32 random bytes, hex | yes; same value as Vault secret `harvest_token` |
 | `WORKER_CONTACT` | `name@uchicago.edu` | yes |
 | `LL2_BASE` | `https://ll.thespacedevs.com/2.3.0` | yes |
-| `SOURCES_ENABLED` | `swpc.*,celestrak.stations` | no; default enables every entry with `enabled: true` |
+| `SOURCES_ENABLED` | `swpc.*,celestrak.stations` | no; default enables every entry with `enabled: true`. Comma-separated ids; `*` matches any run of characters. Each pattern must match at least one registry id, or the configuration is invalid. |
 | `LOG_LEVEL` | `warn` | no; default `warn` |
 
 Supabase injects `SUPABASE_URL` and `SUPABASE_SECRET_KEYS` (a JSON object; the function uses its `default` entry). Names starting with `SUPABASE_` are reserved and cannot be set as custom secrets.
@@ -109,7 +111,7 @@ node --env-file=.env cli.js --once swpc.wind
 node --env-file=.env cli.js tick           # one tick over all due sources
 npm test                                   # node --test
 ```
-`cli.js` exits 0 when every run succeeded, 1 when a run failed (the JSON log lines on stderr name it) and 2 on a usage error; `cli.js help` prints the usage. `--once <id>` ignores the due check but honors `halted`, and `claim_source` still refuses a `halt` entry within its interval. Local runs write to the same project as the deployed function; a CelesTrak group fetched locally cannot be fetched again from the deployed function before the next GP update.
+`cli.js` exits 0 when every run succeeded, 1 when a run failed or a command could not run (the JSON log lines on stderr name it) and 2 on a usage error; `cli.js help` prints the usage. A `tick` exits 1 when a host lease cannot be claimed because of a database error. Any other error, such as an unreachable database, is written as one JSON line with event `cli` and exits 1. `--once <id>` ignores the due check but honors `halted`, and `claim_source` still refuses a `halt` entry within its interval. `--once` takes the host lease like a tick, so it never runs alongside another request to the same host; when another invocation holds the lease, it writes an error line naming the host and exits 1. Local runs write to the same project as the deployed function; a CelesTrak group fetched locally cannot be fetched again from the deployed function before the next GP update.
 
 ## Deployment
 1. Dashboard → Edge Functions → Deploy a new function → name `harvest`. Create one file per module in `supabase/functions/harvest/` with the same relative paths, and paste each file's contents.

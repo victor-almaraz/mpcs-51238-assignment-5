@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { normalizers } from '../../supabase/functions/harvest/normalizers/index.js';
-import { runSource, tick } from '../../supabase/functions/harvest/pipeline.js';
+import { runOnce, runSource, tick } from '../../supabase/functions/harvest/pipeline.js';
 import { loadRegistry } from '../../supabase/functions/harvest/registry.js';
+import { createStore, truncateSample } from '../../supabase/functions/harvest/store.js';
 import { clock, fakeFetch, fakeStore, fixture, silentLog } from './fakes.js';
 
 const sources = JSON.parse(readFileSync(new URL('../../supabase/functions/harvest/sources.json', import.meta.url), 'utf8'));
@@ -278,4 +279,129 @@ test('rows that are not objects and duplicate ids are normalize errors', async (
     assert.match(store.runs[0].error, /^normalize:/, body.slice(0, 20));
     assert.equal(store.status.get(e.id).halted, true);
   }
+});
+
+test('an unexpected exception in a normalizer is labelled normalize:, not store:', async () => {
+  const e = { ...entry('swpc.kp'), normalizer: 'testBoom' };
+  normalizers.testBoom = () => { throw new TypeError("Cannot read properties of undefined (reading 'kp')"); };
+  try {
+    const { store, deps } = setup({ [e.url]: [ok('swpc-kp-1.json')] });
+    assert.deepEqual(await runSource(e, undefined, deps), { ok: false, rowsChanged: 0 });
+    assert.equal(store.runs.at(-1).error, "normalize: Cannot read properties of undefined (reading 'kp')");
+    assert.ok(store.samples.has(e.id), 'the sample is saved before normalizing');
+  } finally {
+    delete normalizers.testBoom;
+  }
+});
+
+test('database errors while saving the sample or the objects are labelled store:', async () => {
+  const e = entry('swpc.kp');
+  const a = setup({ [e.url]: [ok('swpc-kp-1.json')] });
+  a.store.saveSample = async () => { throw new Error('upsert source_samples: boom'); };
+  a.store.upsertObjects = async () => { throw new Error('must not be called'); };
+  assert.deepEqual(await runSource(e, undefined, a.deps), { ok: false, rowsChanged: 0 });
+  assert.equal(a.store.runs.at(-1).error, 'store: upsert source_samples: boom');
+
+  const b = setup({ [e.url]: [ok('swpc-kp-1.json')] });
+  b.store.upsertObjects = async () => { throw new Error('upsert_sky_objects: boom'); };
+  assert.deepEqual(await runSource(e, undefined, b.deps), { ok: false, rowsChanged: 0 });
+  assert.equal(b.store.runs.at(-1).error, 'store: upsert_sky_objects: boom');
+});
+
+test('a host lease that cannot be claimed because of a database error counts as failed, not skipped', async () => {
+  const swpc = registry.filter((e) => e.host === 'services.swpc.noaa.gov');
+  const { store, log, fetch, deps } = setup({});
+  store.claimHost = async () => { throw new Error('claim_host: connection refused'); };
+  const { ran, skipped, failed } = await tick({ ...deps, registry: swpc });
+  assert.deepEqual([ran, skipped], [[], []]);
+  assert.deepEqual(failed.sort(), swpc.map((e) => e.id).sort());
+  assert.equal(fetch.calls.length, 0);
+  assert.ok(log.lines.some((l) => l.level === 'error' && l.event === 'tick_error' && /connection refused/.test(l.error)));
+});
+
+test('runOnce takes and releases the host lease, and reports a held lease as host_busy', async () => {
+  const e = entry('swpc.kp');
+  const { store, fetch, now, deps } = setup({ [e.url]: [ok('swpc-kp-1.json')] });
+  store.leases.set(e.host, { holder: 'other', expiresAt: now() + 60_000 });
+  assert.deepEqual(await runOnce(e, { ...deps, holder: 'cli' }), { result: 'host_busy', ok: false });
+  assert.equal(fetch.calls.length, 0);
+  assert.equal(store.leases.get(e.host).holder, 'other', 'the other lease is untouched');
+
+  store.leases.clear();
+  let leaseDuringFetch = null;
+  const spy = async (...args) => { leaseDuringFetch = store.leases.get(e.host)?.holder; return fetch(...args); };
+  assert.deepEqual(await runOnce(e, { ...deps, fetch: spy, holder: 'cli' }), { result: 'ran', ok: true });
+  assert.equal(leaseDuringFetch, 'cli');
+  assert.equal(store.leases.size, 0, 'the lease is released');
+  assert.equal(store.runs.length, 1);
+});
+
+test('runOnce refuses a halted entry without taking the lease or fetching', async () => {
+  const e = entry('celestrak.stations');
+  const { store, fetch, deps } = setup({ [e.url]: [ok('celestrak-stations-1.json')] });
+  store.status.set(e.id, { source_id: e.id, halted: true, failures: 1 });
+  let leased = false;
+  store.claimHost = async () => { leased = true; return true; };
+  assert.deepEqual(await runOnce(e, deps), { result: 'halted', ok: false });
+  assert.equal(leased, false);
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('Retry-After is capped at maxBackoffSec and accepts an HTTP date', async () => {
+  const e = entry('ll2.upcoming');
+  assert.equal(e.maxBackoffSec, 3600);
+  const a = setup({ [e.url]: [{ status: 429, body: '{}', headers: { 'Retry-After': '86400' } }] });
+  a.deps.registry = [e];
+  await tick(a.deps);
+  assert.equal(Date.parse(a.store.status.get(e.id).next_attempt_at) - a.now(), 3600_000);
+
+  // The fake clock starts at real time here, because fetchSource compares an HTTP date with Date.now().
+  const start = new Date(Math.ceil(Date.now() / 1000) * 1000).toISOString();
+  const date = new Date(Date.parse(start) + 600_000).toUTCString();
+  const b = setup({ [e.url]: [{ status: 429, body: '{}', headers: { 'Retry-After': date } }] }, start);
+  b.deps.registry = [e];
+  await tick(b.deps);
+  const wait = (Date.parse(b.store.status.get(e.id).next_attempt_at) - b.now()) / 1000;
+  assert.ok(wait >= 600 && wait <= 601, `wait ${wait}`);
+});
+
+test('a sample cut at 64 KB never ends in half a surrogate pair', async () => {
+  const e = entry('swpc.kp');
+  const body = `${'x'.repeat(65535)}\u{1F680}${fixture('swpc-kp-1.json')}`;
+  assert.equal(body.slice(0, 65536).isWellFormed(), false, 'a plain slice would split the pair');
+  const { store, deps } = setup({ [e.url]: [{ status: 200, body }] });
+  await runSource(e, undefined, deps);
+  const saved = store.samples.get(e.id).body;
+  assert.equal(saved.length, 65535);
+  assert.ok(saved.isWellFormed());
+});
+
+test('createStore saves the sample truncated at a code-point boundary', async () => {
+  let row;
+  const client = { from: () => ({ upsert: async (r) => { row = r; return { data: null, error: null }; } }) };
+  await createStore(client).saveSample('swpc.kp', '2026-10-30T03:00:00.000Z', 200, `${'x'.repeat(65535)}\u{1F680}`);
+  assert.equal(row.body.length, 65535);
+  assert.ok(row.body.isWellFormed());
+  assert.equal(truncateSample('ab\u{1F680}', 4), 'ab\u{1F680}');
+  assert.equal(truncateSample('ab\u{1F680}', 3), 'ab');
+  assert.equal(truncateSample('abc', 2), 'ab');
+});
+
+test('clearing a halt lets the next tick fetch again; an unknown id reports no row', async () => {
+  const e = entry('celestrak.stations');
+  const { store, fetch, now, deps } = setup({ [e.url]: [{ status: 403, body: fixture('celestrak-403.txt') }, ok('celestrak-stations-1.json')] });
+  deps.registry = [e];
+  await tick(deps);
+  assert.equal(store.status.get(e.id).halted, true);
+  now.advance(e.intervalSec);
+  await tick(deps);
+  assert.equal(fetch.calls.length, 1, 'halted: no fetch');
+  assert.equal(await store.clearHalt(e.id), true);
+  const st = store.status.get(e.id);
+  assert.deepEqual([st.halted, st.failures, st.next_attempt_at, st.in_flight_at], [false, 0, null, null]);
+  const { ran } = await tick(deps);
+  assert.deepEqual(ran, [e.id]);
+  assert.equal(fetch.calls.length, 2);
+  assert.equal(store.runs.at(-1).ok, true);
+  assert.equal(await store.clearHalt('celestrak.nope'), false);
 });

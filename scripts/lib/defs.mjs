@@ -9,14 +9,11 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { normalizeDefs } from '../../src/dsl/defs.js';
 
-/** @param {string} root @param {string[]} argv */
-export async function loadDefs(root, argv) {
+/** @param {string} root @param {string[]} defsFiles module paths from `--defs`, relative to `root` */
+export async function loadDefs(root, defsFiles) {
   /** @type {Record<string, any>} */
   const tables = {};
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] !== '--defs') continue;
-    const file = argv[++i];
-    if (!file) throw new Error('--defs needs a module path');
+  for (const file of defsFiles) {
     const mod = await import(pathToFileURL(resolve(root, file)).href);
     for (const k of ['PARAM_DEFS', 'TUNING_DEFS', 'EFFECT_REGISTRY', 'LAYER_DEFS', 'GROUPS']) {
       if (mod[k] !== undefined) tables[k] = mod[k];
@@ -43,9 +40,4 @@ export async function loadDefs(root, argv) {
     layerDefs: tables.LAYER_DEFS,
     groups: tables.GROUPS,
   });
-}
-
-/** Writes one diagnostic as a JSON line to stderr. @param {Record<string, unknown>} record */
-export function diag(record) {
-  process.stderr.write(`${JSON.stringify(record)}\n`);
 }

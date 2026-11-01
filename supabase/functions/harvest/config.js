@@ -2,7 +2,7 @@ import { isLogLevel } from './log.js';
 import { normalizers } from './normalizers/index.js';
 import { enabledMatcher, loadRegistry, RegistryError } from './registry.js';
 
-export const VERSION = '0.1.0';
+const VERSION = '0.1.0';
 
 /** Secret key: `SUPABASE_SECRET_KEY` (local) or the `default` entry of injected `SUPABASE_SECRET_KEYS`. */
 export function secretKeyFrom(env) {
@@ -33,12 +33,13 @@ export function buildConfig(env, sources) {
   }
   const logLevel = env.LOG_LEVEL || 'warn';
   if (!isLogLevel(logLevel)) throw new RegistryError(`LOG_LEVEL must be debug, info, warn or error, not ${logLevel}`);
+  const registry = loadRegistry(sources, { normalizers, vars: { LL2_BASE: env.LL2_BASE } });
   return {
     supabaseUrl: env.SUPABASE_URL,
     secretKey,
     logLevel,
     userAgent: `Sphaerenmusik/${VERSION} (${env.WORKER_CONTACT})`,
-    registry: loadRegistry(sources, { normalizers, vars: { LL2_BASE: env.LL2_BASE } }),
-    isEnabled: enabledMatcher(env.SOURCES_ENABLED),
+    registry,
+    isEnabled: enabledMatcher(env.SOURCES_ENABLED, registry.map((e) => e.id)),
   };
 }

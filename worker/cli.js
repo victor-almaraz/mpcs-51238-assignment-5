@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { buildConfig } from '../supabase/functions/harvest/config.js';
 import { createLogger } from '../supabase/functions/harvest/log.js';
-import { claimEntry, runSource, tick } from '../supabase/functions/harvest/pipeline.js';
+import { runOnce, tick } from '../supabase/functions/harvest/pipeline.js';
 import { createStore } from '../supabase/functions/harvest/store.js';
 
 const USAGE = 'usage: cli.js tick | --once <id> | clear-halt <id> | help';
@@ -31,22 +31,26 @@ try {
 } catch (err) {
   fail(err.message);
 }
-const log = createLogger({ level: config.logLevel });
-const client = createClient(config.supabaseUrl, config.secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
-const store = createStore(client);
-const deps = { registry: config.registry, isEnabled: config.isEnabled, store, fetch, userAgent: config.userAgent, log, now: Date.now };
-
-if (cmd === 'tick') {
-  const { failed } = await tick(deps);
-  if (failed.length) process.exit(1);
-} else if (cmd === '--once') {
-  const entry = config.registry.find((e) => e.id === id) ?? fail(`unknown source ${id}`);
-  const st = (await store.loadStatus()).get(id);
-  if (st?.halted) fail(`${id} is halted; run clear-halt ${id} first`);
-  if (!(await claimEntry(entry, st, deps))) fail(`${id} was not claimed: another run holds it, it is halted, or it is within its interval`);
-  const { ok } = await runSource(entry, st, deps);
-  if (!ok) process.exit(1);
-} else if (cmd === 'clear-halt') {
-  if (!config.registry.some((e) => e.id === id)) fail(`unknown source ${id}`);
-  if (!(await store.clearHalt(id))) fail(`${id} has no source_status row`);
+async function main() {
+  const log = createLogger({ level: config.logLevel });
+  const client = createClient(config.supabaseUrl, config.secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const store = createStore(client);
+  const deps = { registry: config.registry, isEnabled: config.isEnabled, store, fetch, userAgent: config.userAgent, log, now: Date.now };
+  if (cmd === 'tick') {
+    const { failed } = await tick(deps);
+    if (failed.length) process.exit(1);
+  } else if (cmd === '--once') {
+    const entry = config.registry.find((e) => e.id === id) ?? fail(`unknown source ${id}`);
+    const { result, ok } = await runOnce(entry, deps);
+    if (result === 'halted') fail(`${id} is halted; run clear-halt ${id} first`);
+    if (result === 'host_busy') fail(`${id} was not run: another invocation holds the lease for ${entry.host}; try again shortly`);
+    if (result === 'not_claimed') fail(`${id} was not claimed: another run holds it, it is halted, or it is within its interval`);
+    if (!ok) process.exit(1);
+  } else if (cmd === 'clear-halt') {
+    if (!config.registry.some((e) => e.id === id)) fail(`unknown source ${id}`);
+    if (!(await store.clearHalt(id))) fail(`${id} has no source_status row`);
+  }
 }
+
+// Any rejection (for example an unreachable database) goes through the JSON-line fail path.
+main().catch((err) => fail(String(err?.message ?? err)));
