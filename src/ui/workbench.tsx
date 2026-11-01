@@ -11,10 +11,12 @@ import { DEFS } from '@/src/dsl/load-defs.js';
 import { loadIr } from '@/src/dsl/migrations.js';
 import { sourceOf } from '@/src/sky/groups.js';
 import { createAutosave } from '@/src/ui/autosave.js';
-import { blocking } from '@/src/ui/ir-helpers.js';
+import { validateIr } from '@/src/dsl/validate.js';
+import { acceptBuild, blocking } from '@/src/ui/ir-helpers.js';
 import { COMMANDS, availableCommands } from '@/src/ui/palette.js';
 import { BLANK_SOURCE, createLastRunStore, nameError, uniqueName } from '@/src/ui/projects.js';
-import { SHORTCUTS, createDoublePress, shortcutFor } from '@/src/ui/shortcuts.js';
+import { DEFAULT_LAYOUT, loadLayout, saveLayout } from '@/src/ui/layout.js';
+import { SHORTCUTS, createDoublePress, formatShortcut, shortcutFor } from '@/src/ui/shortcuts.js';
 import { statusSources, type SaveState } from '@/src/ui/status.js';
 import { syncSubscriptions } from '@/src/ui/subscriptions.js';
 import { REPLAY_WINDOWS } from './replay-controls';
@@ -30,7 +32,7 @@ import { StatusBar } from './status-bar';
 import { Notices, Transport, useStartNotice } from './transport';
 import { createProject, listProjects } from './project-actions';
 import { useHydrated } from './use-hydrated';
-import { CircleQuestionMark, Command, Files, LogIn, Maximize, Orbit, Search, Settings, type LucideIcon } from 'lucide-react';
+import { CircleQuestionMark, Command, Files, LogIn, Maximize, Orbit, PanelBottom, PanelLeft, PanelRight, Search, Settings, type LucideIcon } from 'lucide-react';
 import { Icon } from './icons';
 import { button } from '@/src/ui/styles';
 import { Brand } from './brand';
@@ -50,6 +52,13 @@ type Props = {
 };
 
 type Side = 'explorer' | 'search' | 'sky';
+type Part = 'side' | 'preview' | 'panel';
+
+const LAYOUT_TOGGLES: { part: Part; label: string; glyph: LucideIcon; shortcut: string }[] = [
+  { part: 'side', label: 'Side Panel', glyph: PanelLeft, shortcut: 'Mod-b' },
+  { part: 'panel', label: 'Bottom Panel', glyph: PanelBottom, shortcut: 'Mod-j' },
+  { part: 'preview', label: 'Preview', glyph: PanelRight, shortcut: 'Mod-Alt-b' },
+];
 
 const btn = button('secondary', 'sm');
 
@@ -85,7 +94,16 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
   const [save, setSave] = useState<SaveState>(mode === 'try' ? 'scratch' : 'saved');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [tab, setTab] = useState<BottomTab>('console');
-  const [panelOpen, setPanelOpen] = useState(true);
+  // Layout (doc/ui.md, Editor, Layout): read after mount so the server render matches the first client render.
+  const [layout, setLayout] = useState<Record<Part, boolean>>({ ...DEFAULT_LAYOUT });
+  useEffect(() => { setLayout(loadLayout(window.localStorage)); }, []);
+  const setPart = useCallback((part: Part, v: boolean | ((open: boolean) => boolean)) => setLayout((l) => {
+    const next = { ...l, [part]: typeof v === 'function' ? v(l[part]) : v };
+    saveLayout(window.localStorage, next);
+    return next;
+  }), []);
+  const panelOpen = layout.panel;
+  const setPanelOpen = useCallback((v: boolean | ((open: boolean) => boolean)) => setPart('panel', v), [setPart]);
   const [side, setSide] = useState<Side>('explorer');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [name, setName] = useState(project?.name ?? title ?? 'piece');
@@ -98,9 +116,10 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
   /** Builds the current source; on success loads (and hot-reloads) the IR. */
   const build = useCallback(async (text: string) => {
     if (!session) return null;
-    const r = await session.sandbox.build(text, DEFS, { snapshot: snapshotOf(session.sky) });
+    const snapshot = snapshotOf(session.sky);
+    const r = acceptBuild(await session.sandbox.build(text, DEFS, { snapshot }), (built) => validateIr(built, DEFS, { snapshot }));
     setBuildProblems(r.problems);
-    if (r.ir && !blocking(r.problems)) {
+    if (r.ir) {
       setIr(r.ir);
       session.load(r.ir);
       return r.ir;
@@ -120,24 +139,31 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
     build(sourceRef.current);
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Autosave (project mode): source and IR 2 s after the last edit.
+  // Autosave (project mode): source and IR 2 s after the last edit. One per project: `build` and
+  // `client` change while the page loads, so they are read through refs, and a pending edit is
+  // never dropped with a replaced autosave.
+  const buildRef = useRef(build);
+  const clientRef = useRef(client);
+  useEffect(() => { buildRef.current = build; clientRef.current = client; }, [build, client]);
+  const projectId = project?.id ?? null;
   const autosave = useMemo(() => {
-    if (mode !== 'project' || !project) return null;
+    if (mode !== 'project' || !projectId) return null;
     return createAutosave<string>({
       isOnline: () => typeof navigator === 'undefined' || navigator.onLine,
       onChange: (s) => { setSave(s.state); setSaveError(s.error); },
       save: async (text) => {
+        const client = clientRef.current;
         if (!client) throw new Error('The database is unavailable');
-        const built = await build(text);
+        const built = await buildRef.current(text);
         const now = new Date().toISOString();
         const row: Record<string, unknown> = { source: text, updated_at: now };
         if (built) { row.ir = built; row.ir_version = built.irVersion ?? 1; row.local_only = !!built.localOnly; }
-        const { error } = await client.from('projects').update(row).eq('id', project.id);
+        const { error } = await client.from('projects').update(row).eq('id', projectId);
         if (error) throw new Error(error.message);
-        if (built) await syncSubscriptions(client, project.id, built.groups ?? []);
+        if (built) await syncSubscriptions(client, projectId, built.groups ?? []);
       },
     });
-  }, [mode, project, client, build]);
+  }, [mode, projectId]);
   useEffect(() => () => autosave?.dispose(), [autosave]);
   useEffect(() => {
     const on = () => autosave?.connectivity();
@@ -153,6 +179,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
 
   // Try mode rebuilds 2 s after the last edit without saving.
   const tryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (tryTimer.current) clearTimeout(tryTimer.current); }, []);
   const onChange = useCallback((text: string) => {
     sourceRef.current = text;
     setSource(text);
@@ -197,6 +224,8 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
         case 'save': saveNow(); break;
         case 'palette': setPaletteOpen(true); break;
         case 'togglePanel': setPanelOpen((o) => !o); break;
+        case 'toggleSide': setPart('side', (o) => !o); break;
+        case 'togglePreview': setPart('preview', (o) => !o); break;
         case 'focusEditor': editor.current?.focus(); break;
         case 'focusPreview': preview.current?.focus(); break;
         case 'reference': window.open('/learn/reference', '_blank', 'noopener'); break;
@@ -204,7 +233,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [isMac, canRun, requestRun, session, saveNow, paletteOpen, escape]);
+  }, [isMac, canRun, requestRun, session, saveNow, paletteOpen, escape, setPanelOpen, setPart]);
 
   const showTab = (t: BottomTab) => { setTab(t); setPanelOpen(true); };
 
@@ -233,6 +262,9 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
         case 'toggle-problems': showTab('problems'); return;
         case 'toggle-ir': showTab('ir'); return;
         case 'toggle-trace': showTab('trace'); return;
+        case 'toggle-side': setPart('side', (o) => !o); return;
+        case 'toggle-preview': setPart('preview', (o) => !o); return;
+        case 'toggle-bottom': setPanelOpen((o) => !o); return;
         case 'go-live': session?.goLive(); return;
         case 'download-trace': downloadTrace(); return;
         case 'open-settings': window.open('/settings', '_blank', 'noopener'); return;
@@ -257,7 +289,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
         };
       }
     },
-  }), [mode, signedIn, canRun, requestRun, session, saveNow, project, router, client, newProjectPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [mode, signedIn, canRun, requestRun, session, saveNow, project, router, client, newProjectPage, setPart, setPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rename = async () => {
     const next = (nameDraft ?? '').trim();
@@ -302,24 +334,35 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
           ? <button type="button" className={btn} onClick={saveAsProject} disabled={savingAs || !client}>{savingAs ? 'Saving…' : 'Save as Project'}</button>
           : <Link className={btn} href={`/sign-in?redirect_url=${encodeURIComponent(hydrated ? window.location.pathname + window.location.search : '/try')}`}><Icon as={LogIn} size={12} />Sign In to Save</Link>)}
         {mode === 'project' && project && <Link className={btn} href={`/projects/${project.id}/run`} onClick={() => { saveNow(); }}><Icon as={Maximize} size={12} />Run Fullscreen</Link>}
+        <div role="group" aria-label="Layout" className="flex shrink-0 items-center gap-0.5">
+          {LAYOUT_TOGGLES.map((t) => (
+            <button key={t.part} type="button" aria-pressed={layout[t.part]} aria-label={`Show ${t.label}`}
+              title={`${layout[t.part] ? 'Hide' : 'Show'} ${t.label} (${formatShortcut(t.shortcut, isMac)})`}
+              onClick={() => setPart(t.part, (o) => !o)}
+              className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-sm ${layout[t.part] ? 'bg-fg text-bg' : 'hover:bg-fg hover:text-bg'}`}>
+              <Icon as={t.glyph} size={14} />
+            </button>
+          ))}
+        </div>
         <button type="button" className={btn} onClick={() => setPaletteOpen(true)} title="Command palette (Mod-Shift-P, Mod-K)"><Icon as={Command} size={12} />Commands</button>
       </header>
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Activity bar" className="flex w-9 shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2">
+        <nav aria-label="Activity bar" className="flex w-11 shrink-0 flex-col items-center gap-1.5 border-r border-line py-1.5">
           {activity.map((a) => {
-            const active = side === a.id;
+            const active = layout.side && side === a.id;
             const onClick = () => {
               if (a.id === 'guide') window.open('/learn', '_blank', 'noopener');
               else if (a.id === 'settings') window.open('/settings', '_blank', 'noopener');
-              else setSide(a.id as Side);
+              else if (active) setPart('side', false);
+              else { setSide(a.id as Side); setPart('side', true); }
             };
             return (
               <button key={a.id} type="button" title={a.label} aria-label={a.label} aria-pressed={active} onClick={onClick}
-                className={`flex h-8 w-8 items-center justify-center rounded-sm ${active ? 'bg-fg text-bg' : 'hover:bg-fg hover:text-bg'}`}><Icon as={a.glyph} size={16} /></button>
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm ${active ? 'bg-fg text-bg' : 'hover:bg-fg hover:text-bg'}`}><Icon as={a.glyph} size={16} /></button>
             );
           })}
         </nav>
-        <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-line bg-panel p-2 md:block" aria-label={side}>
+        <aside className={`${layout.side ? 'md:block' : ''} hidden w-60 shrink-0 overflow-y-auto border-r border-line p-3`} aria-label={side}>
           {side === 'explorer' && (
             <div className="font-mono text-xs">
               <div className="mb-1 text-fg-muted">Explorer</div>
@@ -336,9 +379,15 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
           {side === 'search' && <SourceSearch source={source} onGoto={(l) => editor.current?.goto(l)} />}
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-1.5">
+            <Transport session={session} state={state} onRun={runNow} canRun={canRun} runHint={canRun ? null : 'Fix the errors in Problems to run'}
+              maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
+          </div>
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <main className="flex min-w-0 flex-1 flex-col" aria-label="Editor">
-              <div className="border-b border-line bg-panel px-3 py-0.5 font-mono text-xs text-fg-muted">piece.ts</div>
+              <div className="flex min-h-8 items-center border-b border-line px-3 py-1">
+                <span className="font-mono text-xs">piece.ts</span>
+              </div>
               <div className="min-h-0 flex-1">
                 <CodeEditor
                   initialValue={initialSource}
@@ -351,11 +400,9 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
                 />
               </div>
             </main>
-            <section aria-label="Preview" className="flex h-[45%] w-full flex-col border-t border-line md:h-auto md:w-[38%] md:min-w-64 md:border-t-0 md:border-l">
-              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-2 py-1">
-                <span className="text-xs text-fg-muted">Preview</span>
-                <Transport session={session} state={state} onRun={runNow} canRun={canRun} runHint={canRun ? null : 'Fix the errors in Problems to run'}
-                  maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
+            <section aria-label="Preview" hidden={!layout.preview} className="flex h-[45%] w-full flex-col border-t border-line md:h-auto md:w-[38%] md:min-w-64 md:border-t-0 md:border-l">
+              <div className="flex min-h-8 items-center border-b border-line px-3 py-1">
+                <span className="text-xs">Preview</span>
               </div>
               <Preview ref={preview} session={session} state={state} className="flex-1" />
               <div className="border-t border-line p-1"><Notices session={session} state={state} /></div>

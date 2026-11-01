@@ -109,4 +109,4 @@ debris.density.follow(sky.group('celestrak.cosmos-2251-debris').count().map(200,
 ## Levels and safety
 - Velocity sets each note's loudness; the engine keeps every voice below a fixed headroom.
 - A safety stage after the master output limits peaks, removes DC offset and lowers sustained loud output. No script setting bypasses it.
-- `Escape` twice stops all sound at once.
+- `Escape` twice stops all sound at once in the editor; in a running piece (Listen, Run Fullscreen) a single `Escape` does.

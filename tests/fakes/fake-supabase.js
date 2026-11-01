@@ -124,8 +124,14 @@ export function createFakeSupabase({ tables = {}, autoSubscribe = true } = {}) {
     from(table) {
       return new Query(table);
     },
-    /** @param {string} name */
+    /**
+     * Like realtime-js 2.x: a channel stays registered under its topic until its removal has been
+     * acknowledged, and channel() returns that registered channel, even while it is leaving.
+     * @param {string} name
+     */
     channel(name) {
+      const registered = channels.find((c) => c.name === name && !c.unregistered);
+      if (registered) return registered;
       const ch = new FakeChannel(name);
       channels.push(ch);
       return ch;
@@ -135,6 +141,8 @@ export function createFakeSupabase({ tables = {}, autoSubscribe = true } = {}) {
       if (ch.removed) return 'ok';
       ch.removed = true;
       ch.statusCb?.('CLOSED');
+      await Promise.resolve(); // the server's leave acknowledgement
+      ch.unregistered = true;
       return 'ok';
     },
     realtime: {

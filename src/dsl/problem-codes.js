@@ -24,7 +24,7 @@ export const PROBLEM_CODES = Object.freeze({
   granular_sample: { severity: 'error', userFacing: true, condition: "Granular `source: 'sample'`" },
   slot_reused: { severity: 'error', userFacing: true, condition: 'One effect slot in two chains' },
   slot_unplaced: { severity: 'error', userFacing: true, condition: 'An effect slot with `follow` or `mod` is in no chain' },
-  lfo_rate_range: { severity: 'error', userFacing: true, condition: 'An expression LFO rate does not end in `map` or `clamp`' },
+  lfo_rate_range: { severity: 'error', userFacing: true, condition: 'An expression LFO rate does not end in `map` or `clamp`, or its range is empty' },
   audio_outside_layer: { severity: 'error', userFacing: true, condition: 'An `audio.*` op outside layer properties' },
   fn_in_layer: { severity: 'error', userFacing: true, condition: '`fn` in a layer property' },
   expr_too_deep: { severity: 'error', userFacing: true, condition: 'Expression depth above 32' },

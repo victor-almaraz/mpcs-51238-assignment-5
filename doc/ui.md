@@ -62,7 +62,13 @@ Class strings live in `src/ui/styles.ts`; components do not write their own.
 | Secondary | Every other button | 1 px `line` border, `panel-2` on hover | same, smaller |
 | Ghost | Navigation items, toolbar links | no border, `panel-2` on hover | same, smaller |
 
-`md` is 32 px high with 12 px side padding and `text-sm`; `sm` is 22 px with 8 px padding and `text-xs`. Radius 4 px (`md`) and 2 px (`sm`). Links inside body text are `accent` and underlined; navigation links are never underlined.
+`md` is 32 px high with 12 px side padding and `text-sm`; `sm` is 22 px with 8 px padding and `text-xs`. Radius 4 px (`md`) and 2 px (`sm`).
+
+A segmented control (a choice of two or three views, such as List and settings.json) is one bordered group at the height of the controls beside it, with 1 px dividers between options; the selected option is inverted (`segmented` in `src/ui/styles.ts`). Text inputs on document pages are 32 px high, the height of `md` buttons.
+
+Tables on document pages: every cell has 12 px horizontal and 10 px vertical padding (none at the outer edges), content centred vertically, one text size per column; the action column is right-aligned and uses `sm` buttons (`table` in `src/ui/styles.ts`).
+
+The activity bar is 44 px wide; its 32 px items are centred with 6 px margins, the selected item inverted. Links inside body text are `accent` and underlined; navigation links are never underlined.
 
 ### Layout
 - Spacing follows a 4 px grid. Document pages use 16–24 px panel padding; dense tool panes use 8–12 px.
@@ -136,8 +142,11 @@ Every account receives simple example projects on its first visit to `/projects`
 
 ## Editor (`/projects/[id]`)
 ```
-┌──┬───────────────┬────────────────────────────┬─────────────────────┐
-│▣ │ EXPLORER      │ piece.ts                   │ PREVIEW    ▶ Run  ■ │
+┌─────────────────────────────────────────────────── [◧][⬓][◨] Commands ┐
+├──┬───────────────┬──────────────────────────────────────────────────┤
+│▣ │ EXPLORER      │ ▶ Run  ■ Stop  ⊗ Panic   Master ━━━●━━  ▮▮▯ dBFS │
+│  │               ├────────────────────────────┬─────────────────────┤
+│  │               │ piece.ts                   │ PREVIEW             │
 │⌕ │  piece.ts     │  1 scale('D', 'lydian');   │                     │
 │◉ │ SKY           │  2                         │                     │
 │⚙ │  ▸ celestrak  │  3 const stations = ...    │                     │
@@ -151,11 +160,12 @@ Every account receives simple example projects on its first visit to `/projects`
 ```
 | Region | Content |
 |---|---|
-| Activity bar | Explorer, Search, Sky, Guide, Settings |
+| Activity bar | Explorer, Search, Sky, Guide, Settings. Clicking the selected Explorer, Search or Sky item again hides the side panel |
 | Explorer | The project's `piece.ts` |
 | Sky browser | Groups by source, followed groups marked, live sample values of each field. Clicking a field inserts `field('<name>')` at the cursor. |
+| Transport strip | One row across the top of the editor and preview: Run, Stop, Panic, the master volume and the level meter |
 | Editor | CodeMirror 6, TypeScript mode, with completion, hover types and inline problems from the type-check worker |
-| Preview | Visual output at reduced resolution; transport Run and Stop |
+| Preview | Visual output at reduced resolution |
 | Bottom panel | Console, Problems, IR (read-only compiled JSON), Trace |
 | Status bar | Per-source freshness, audio state, voices in use out of 64, output level, save state |
 
@@ -165,7 +175,10 @@ Behavior:
 - A piece with handlers restarts its program on every successful save (`piece-dsl.md`, Hot reload). `handler_error` and `handler_timeout` problems from the running program appear in Problems next to the build problems and clear on the next Run or save.
 - Autosave writes `source` and `ir` to `projects` 2 s after the last edit. Save state: `Saved`, `Saving…`, `Unsaved changes`, `Offline`.
 - Hot reload never starts audio; only Run does.
-- The preview toolbar holds Run, Stop, Panic, the master volume and the level meter with its Limit badge (`audio/audio-safety.md`, Safety UI). The master volume starts at `audio.masterDb` and cannot exceed `audio.maxMasterDb`.
+- Stop, Panic and Restart Audio win over a Run that is still starting: when the start completes after one of them, the piece is stopped at once and the audio state stays `stopped` or `muted`. A Reset after a Panic therefore never brings back a piece that was starting.
+- Layout: the side panel (Explorer, Search or Sky), the preview and the bottom panel can each be hidden, so the editor can take the window. Three toggle buttons on the right of the toolbar (Lucide `PanelLeft`, `PanelRight`, `PanelBottom`, `aria-pressed`, the shortcut in the tooltip) show and change their state; the shortcuts and the palette commands below do the same. The layout is kept in `localStorage` under `sphaerenmusik.layout` and restored on the next visit. All three are shown by default. A failed build shows the bottom panel on Problems.
+- Hiding the preview keeps the piece running and its picture state; only the pane is hidden.
+- The transport strip spans the top of the editor and preview, and no layout toggle hides it, so Panic is always visible (`audio/audio-safety.md`, Safety UI). It holds Run, Stop, Panic, the master volume and the level meter with its Limit badge. The master volume starts at `audio.masterDb` and cannot exceed `audio.maxMasterDb`. The transport never moves between places: remounting it would reset the slider's shown value while the engine kept its level.
 - The sky store follows the groups of the last successful build; after a save they equal the project's `project_subscriptions`.
 - Save writes `local_only = true` when the IR has `localOnly` (`piece-dsl.md`, Escape hatch).
 
@@ -181,8 +194,8 @@ Behavior:
 ## Running (`/projects/[id]/run`)
 - The preview fills the window. The cursor and the chrome (title, transport, links) start hidden and appear on pointer movement, a tap or a key press; they hide again after 3 s without any. They stay while the pointer is over the chrome, while focus is inside it (keyboard use, the start notice) and while the start notice is open. While hidden and stopped, the preview reads "Move the pointer or press a key to show the controls"; while shown and stopped, "Press Run to start sound".
 - Overlays toggle independently: console (`C`), sounding voices (`N`), status bar (`S`).
-- `Escape` returns to the editor, which stops the piece. Panic stays available as a button in the chrome.
-- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin Listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect.
+- `Escape` is Panic in every run view (`/listen`, `/projects/[id]/run`, kiosk included), as `audio/audio-safety.md` (Safety UI) requires; the chrome also keeps the Panic button. `E` returns to the editor, which stops the piece, as does the Editor link in the chrome. The chrome's key hint reads "Esc panic · C console · N voices · S status", plus "· E editor" where there is an editor.
+- Installation mode (`?kiosk=1`): no cursor, no chrome, a single "Begin Listening" click starts audio (the button carries the volume and photosensitivity warnings), and the Realtime channel reconnects automatically with backoff. Kiosk mode ignores the hidden-tab disconnect. A Panic in kiosk mode holds until the page is reloaded: no Reset is reachable without the chrome.
 - Freshness is shown in the status bar and is also audible and visible through the project's reactions.
 - A piece whose stored IR has `program` is built from its `source` in the sandbox before it plays, since its handlers live only in the VM. A build error shows the error state with a link to the editor. Pieces without handlers play from the stored IR.
 
@@ -212,6 +225,7 @@ Opened with `Mod-Shift-P` or `Mod-K`. Typing filters commands by fuzzy match on 
 | New Project | Create from a template |
 | Open Project | Fuzzy search of the user's projects |
 | Toggle Console / Problems / IR / Trace | Show the bottom panel tab |
+| Toggle Side Panel / Preview / Bottom Panel | Show or hide that part of the layout |
 | Replay | Choose window and speed (1×, 10×, 100×, 1000×) |
 | Go Live | Leave replay |
 | Download Trace | Export JSONL |
@@ -227,6 +241,8 @@ Opened with `Mod-Shift-P` or `Mod-K`. Typing filters commands by fuzzy match on 
 | Panic | `Escape` twice within 500 ms |
 | Save | `Mod-S` |
 | Command palette | `Mod-Shift-P`, `Mod-K` |
+| Toggle side panel | `Mod-B` |
+| Toggle preview | `Mod-Alt-B` |
 | Toggle bottom panel | `Mod-J` |
 | Focus editor / preview | `Mod-1` / `Mod-2` |
 | Open the guide's reference page | `F1` |

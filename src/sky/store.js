@@ -82,6 +82,8 @@ export function createSky({ client, now = Date.now, timers = globalTimers(), doc
   let channel = null;
   /** @type {'idle' | 'subscribing' | 'subscribed' | 'error'} */
   let channelState = 'idle';
+  /** Makes each channel topic unique (doc/sky-contract.md, Realtime). */
+  let channelSeq = 0;
   /** @type {any[] | null} payloads received while a select is pending */
   let buffer = null;
   let backoffMs = BACKOFF_MIN_MS;
@@ -118,7 +120,7 @@ export function createSky({ client, now = Date.now, timers = globalTimers(), doc
     return new Promise((resolve) => {
       let settled = false;
       const ch = client
-        .channel(`sky:${groups.join(',')}`)
+        .channel(`sky:${groups.join(',')}:${++channelSeq}`)
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'sky_objects', filter: `group_key=in.(${groups.join(',')})` },

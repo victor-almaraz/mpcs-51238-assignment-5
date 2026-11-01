@@ -5,6 +5,7 @@ import { COMMANDS, availableCommands, filterCommands, fuzzyFilter, fuzzyScore } 
 test('the palette lists the commands of doc/ui.md', () => {
   const titles = COMMANDS.map((c) => c.title);
   for (const t of ['Run', 'Stop', 'Panic', 'New Project', 'Open Project', 'Toggle Console', 'Toggle Problems', 'Toggle IR', 'Toggle Trace',
+    'Toggle Side Panel', 'Toggle Preview', 'Toggle Bottom Panel',
     'Replay', 'Go Live', 'Download Trace', 'Open Settings', 'Open Guide', 'Run Fullscreen']) {
     assert.ok(titles.includes(t), t);
   }

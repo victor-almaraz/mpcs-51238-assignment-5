@@ -160,6 +160,18 @@ test('follow replaces the followed set; dropped groups lose their objects withou
   sky.close();
 });
 
+test('following the same groups again keeps live updates arriving', async () => {
+  const { fake, sky, events } = setup({ tables: { sky_objects: [scout('A', 1, { traceId: tid(1) })] } });
+  await sky.follow(['jpl.scout']);
+  await sky.follow(['jpl.scout']);
+  const ch = fake.live();
+  assert.ok(ch && !ch.removed, 'a fresh channel is subscribed');
+  assert.ok(ch.deliver(payload(scout('A', 7, { traceId: tid(7), updatedAt: '2026-10-29T12:01:00Z' }))));
+  assert.equal(sky.object('jpl.scout:A').fields.neoScore, 7);
+  assert.equal(changes(events).at(-1).type, 'update');
+  sky.close();
+});
+
 test('follow rejects unknown groups and non-arrays', async () => {
   const { sky } = setup();
   await assert.rejects(sky.follow(['celestrak.active']), /unknown group "celestrak.active"/);

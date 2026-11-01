@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createFakeSky, skyObj } from './fakes.js';
-import { audioDrivenProps, backgroundValue, blocking, computeLayerValues, orbitGroupsOf, orbitSourcesOf, skyDrivenProps, usesAudio } from '../src/ui/ir-helpers.js';
+import { acceptBuild, audioDrivenProps, backgroundValue, blocking, computeLayerValues, orbitGroupsOf, orbitSourcesOf, skyDrivenProps, usesAudio } from '../src/ui/ir-helpers.js';
+import { validateIr } from '../src/dsl/validate.js';
+import { DEFS } from '../src/dsl/load-defs.js';
 
 const starter = (slug) => JSON.parse(readFileSync(new URL(`../content/starters/${slug}.ir.json`, import.meta.url), 'utf8'));
 const node = (op, ...args) => ({ op, args });
@@ -63,4 +65,15 @@ test('audio-driven props are evaluated separately for frameValues', () => {
   const props = () => ({ size: 6 });
   assert.deepEqual(computeLayerValues(ir, sky, props), {});
   assert.deepEqual(computeLayerValues(ir, sky, props, audioDrivenProps), { l0: { size: { 'celestrak.stations:a': 6 } } });
+});
+
+test('acceptBuild re-validates on the page: a worker that reports no problems cannot pass an invalid IR', () => {
+  const good = starter('station-chord');
+  assert.deepEqual(acceptBuild({ ir: good, problems: [] }, (ir) => validateIr(ir, DEFS)), { ir: good, problems: [] });
+  const forged = { ...good, instruments: Array.from({ length: 40 }, (_, i) => ({ ...good.instruments[0], id: `i${i}` })) };
+  const r = acceptBuild({ ir: forged, problems: [] }, (ir) => validateIr(ir, DEFS));
+  assert.equal(r.ir, null);
+  assert.ok(blocking(r.problems), 'the page problems are shown');
+  const failed = { ir: null, problems: [{ code: 'syntax_error', severity: 'error', line: 3 }] };
+  assert.deepEqual(acceptBuild(failed, () => { throw new Error('not called'); }), failed);
 });

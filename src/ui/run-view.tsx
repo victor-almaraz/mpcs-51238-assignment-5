@@ -2,7 +2,7 @@
 
 // Run mode (doc/ui.md, Running) for /projects/[id]/run and /listen: the preview fills the window,
 // cursor and chrome start hidden, appear on movement or a key and hide after 3 s idle, overlays toggle with C (console), N (sounding
-// voices) and S (status bar), and Escape returns to the editor. `?kiosk=1` is installation mode:
+// voices) and S (status bar), Escape is Panic and E returns to the editor. `?kiosk=1` is installation mode:
 // no cursor, no chrome, one "Begin listening" click starts audio, and the sky store ignores the
 // hidden-tab disconnect. Run mode never loads the type-check worker. A piece whose IR has a
 // program is built from `source` first, since its handlers live only in the sandbox VM.
@@ -94,6 +94,9 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Escape is Panic in every run view, whatever has focus (doc/ui.md, Running; audio/audio-safety.md,
+      // Safety UI). The start notice handles its own Escape and stops it here.
+      if (e.key === 'Escape') { session?.panic(); return; }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;
@@ -101,11 +104,11 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
       if (k === 'c') setOverlay((o) => ({ ...o, console: !o.console }));
       else if (k === 'n') setOverlay((o) => ({ ...o, voices: !o.voices }));
       else if (k === 's') setOverlay((o) => ({ ...o, status: !o.status }));
-      else if (e.key === 'Escape' && backHref && !kiosk) router.push(backHref);
+      else if (k === 'e' && backHref && !kiosk) router.push(backHref);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [backHref, kiosk, router]);
+  }, [backHref, kiosk, router, session]);
 
   const followedSources = state.followed.map((g) => sourceOf(g) ?? g);
   const canRun = !!session?.ir && state.ready && !problem;
@@ -144,7 +147,7 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
           <h1 className="text-xs font-medium">{name}</h1>
           <Transport session={session} state={state} onRun={run} canRun={canRun} maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
           <span className="flex-1" />
-          <span className="text-xs">C console · N voices · S status{backHref ? ' · Esc editor' : ''}</span>
+          <span className="text-xs">Esc panic · C console · N voices · S status{backHref ? ' · E editor' : ''}</span>
           {backHref && <Link href={backHref} className={button('ghost', 'sm')}>Editor</Link>}
           {links}
         </div>

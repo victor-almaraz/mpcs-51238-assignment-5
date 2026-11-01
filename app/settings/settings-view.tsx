@@ -10,7 +10,7 @@ import { getPath, parseSettingsJson, searchSettings, setPath, settingsJson, type
 import { validateSettings } from '@/src/lib/settings.js';
 import { Attribution } from '@/src/ui/attribution';
 import { useSettings, type SettingsWarning } from '@/src/ui/app-providers';
-import { button, container, heading } from '@/src/ui/styles';
+import { button, container, heading, input, segmented } from '@/src/ui/styles';
 import { SiteHeader } from '@/src/ui/site-header';
 
 const SAVE_DELAY_MS = 1000;
@@ -86,14 +86,14 @@ export function SettingsView() {
           </span>
         </div>
         {(loadError || saveError) && <p role="alert" className="mb-4 text-xs text-error">{saveError ?? loadError}</p>}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
           <input
             type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search settings" aria-label="Search settings"
-            disabled={view === 'json'} className="min-w-64 flex-1 border border-line bg-panel px-2 py-1 text-sm disabled:opacity-50"
+            disabled={view === 'json'} className={`${input} min-w-64 flex-1`}
           />
-          <div role="group" aria-label="View" className="flex">
-            <button type="button" className={`${btn} ${view === 'list' ? 'bg-fg text-bg' : ''}`} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
-            <button type="button" className={`${btn} ${view === 'json' ? 'bg-fg text-bg' : ''}`} aria-pressed={view === 'json'} onClick={() => setView('json')}>settings.json</button>
+          <div role="group" aria-label="View" className={segmented.group}>
+            <button type="button" className={segmented.option(view === 'list')} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
+            <button type="button" className={segmented.option(view === 'json')} aria-pressed={view === 'json'} onClick={() => setView('json')}>settings.json</button>
           </div>
         </div>
         {warnings.length > 0 && (
@@ -120,7 +120,7 @@ export function SettingsView() {
             <textarea
               value={text} onChange={(e) => editJson(e.target.value)} spellCheck={false} aria-label="settings.json"
               aria-invalid={parseError ? true : undefined}
-              className="h-96 w-full border border-line bg-panel p-2 font-mono text-sm"
+              className="h-96 w-full rounded-md border border-line bg-bg p-3 font-mono text-sm"
             />
             {parseError && <p role="alert" className="mt-1 text-xs text-error">Not saved: {parseError}</p>}
           </div>
@@ -140,7 +140,7 @@ function SettingRow({ def, value, onChange, maxDb }: { def: SettingDef; value: a
   let control: React.ReactNode;
   if (def.control === 'select') {
     control = (
-      <select id={id} className="border border-line bg-panel px-1 py-0.5 text-sm" value={String(value)}
+      <select id={id} className={`${input} pr-8`} value={String(value)}
         onChange={(e) => { const o = def.options?.find((x) => String(x) === e.target.value); onChange(o); }}>
         {def.options?.map((o) => <option key={String(o)} value={String(o)}>{String(o)}</option>)}
       </select>
@@ -150,14 +150,14 @@ function SettingRow({ def, value, onChange, maxDb }: { def: SettingDef; value: a
     control = (
       <input id={id} type="number" min={def.min} max={max} step={def.step} value={value ?? ''}
         onChange={(e) => { if (e.target.value !== '') onChange(Number(e.target.value)); }}
-        className="w-28 border border-line bg-panel px-1 py-0.5 text-sm" />
+        className={`${input} w-28`} />
     );
   } else if (def.control === 'observer') {
     control = (
       <span id={id} className="flex gap-2 text-sm">
-        <label>lat <input type="number" min={-90} max={90} step={0.01} value={value?.lat ?? ''} className="w-24 border border-line bg-panel px-1"
+        <label>lat <input type="number" min={-90} max={90} step={0.01} value={value?.lat ?? ''} className={`${input} ml-1 w-24`}
           onChange={(e) => onChange({ ...value, lat: Number(e.target.value) })} /></label>
-        <label>lon <input type="number" min={-180} max={180} step={0.01} value={value?.lon ?? ''} className="w-24 border border-line bg-panel px-1"
+        <label>lon <input type="number" min={-180} max={180} step={0.01} value={value?.lon ?? ''} className={`${input} ml-1 w-24`}
           onChange={(e) => onChange({ ...value, lon: Number(e.target.value) })} /></label>
       </span>
     );
@@ -181,6 +181,6 @@ function TextSetting({ id, value, onCommit }: { id: string; value: string; onCom
   useEffect(() => setV(value), [value]);
   return (
     <input id={id} value={v} onChange={(e) => setV(e.target.value)} onBlur={() => { if (v !== value) onCommit(v); }}
-      onKeyDown={(e) => { if (e.key === 'Enter') onCommit(v); }} className="w-56 border border-line bg-panel px-1 py-0.5 text-sm" />
+      onKeyDown={(e) => { if (e.key === 'Enter') onCommit(v); }} className={`${input} w-56`} />
   );
 }

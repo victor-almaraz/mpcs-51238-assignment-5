@@ -134,6 +134,13 @@ test('lfo_rate_range: an expression rate must end in map or clamp', () => {
   assert.deepEqual([ok.ir.lfos[0].rate.min, ok.ir.lfos[0].rate.max], [0.01, 20]);
 });
 
+test('lfo_rate_range: an empty rate range, before or after clamping to 0.01–20 Hz, is an error', () => {
+  for (const step of ['map(0, 9, 5, 5)', 'map(0, 9, 25, 30)', 'clamp(0, 0.001)']) {
+    assert.deepEqual(codes(build(`const a = additive({}); a.attack.mod(lfo({ rate: sky.swpc('kp.kp').${step} }), { depth: 0.1 });`)),
+      ['lfo_rate_range /lfos/0/rate'], step);
+  }
+});
+
 test('unknown_group and unknown_field', () => {
   const r = build(`const a = additive({});
 sky.group('celestrak.nope').voices(a, { pitch: 60 });

@@ -11,14 +11,14 @@ import { relativeTime } from '@/src/ui/status.js';
 import { Attribution } from '@/src/ui/attribution';
 import { useSupabase } from '@/src/ui/app-providers';
 import { createProject } from '@/src/ui/project-actions';
-import { button, container, heading } from '@/src/ui/styles';
+import { button, container, heading, table, textLink } from '@/src/ui/styles';
 import { SiteHeader } from '@/src/ui/site-header';
 
 type Row = { id: string; name: string; updatedAt: string | null; starterSlug: string | null; groups: string[] };
 type Template = { slug: string; name: string; source: string; ir: unknown };
 
 const btn = button('secondary', 'sm');
-const primary = button('primary', 'sm');
+const primary = button('primary');
 
 export function ProjectsView({ rows: initial, error, seedError, templates }: { rows: Row[] | null; error: string | null; seedError: string | null; templates: Template[] }) {
   const router = useRouter();
@@ -100,10 +100,10 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
         {busy === 'new' ? 'Creating…' : 'New Project'}
       </button>
       {menu && (
-        <ul role="menu" className="absolute right-0 z-10 mt-1 w-64 border border-line bg-panel py-1 text-xs">
-          <li role="none"><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-fg hover:text-bg" onClick={() => newProject(null)}>Blank</button></li>
+        <ul role="menu" className="absolute right-0 z-10 mt-1 w-64 rounded-md border border-line bg-bg py-1 text-sm">
+          <li role="none"><button role="menuitem" type="button" className="block w-full px-3 py-1.5 text-left hover:bg-fg hover:text-bg" onClick={() => newProject(null)}>Blank</button></li>
           {templates.map((t) => (
-            <li role="none" key={t.slug}><button role="menuitem" type="button" className="block w-full px-3 py-1 text-left hover:bg-fg hover:text-bg" onClick={() => newProject(t)}>{t.name}</button></li>
+            <li role="none" key={t.slug}><button role="menuitem" type="button" className="block w-full px-3 py-1.5 text-left hover:bg-fg hover:text-bg" onClick={() => newProject(t)}>{t.name}</button></li>
           ))}
         </ul>
       )}
@@ -131,38 +131,40 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
               <button type="button" className={btn} onClick={() => newProject(null)} disabled={!client}>New Project: Blank</button>
               {templates.map((t) => <button key={t.slug} type="button" className={btn} onClick={() => newProject(t)} disabled={!client}>{t.name}</button>)}
             </div>
-            <p className="text-sm">Learning the script? Start with <Link className="underline" href="/learn/first-piece">Your first piece</Link>.</p>
+            <p className="text-sm">Learning the script? Start with <Link className={textLink} href="/learn/first-piece">Your first piece</Link>.</p>
           </div>
         ) : (
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-line text-left text-xs text-fg-muted">
-                <th className="py-1 pr-4 font-normal">Name</th><th className="pr-4 font-normal">Groups Followed</th>
-                <th className="pr-4 font-normal">Last Edited</th><th className="pr-4 font-normal">Last Run</th><th className="font-normal"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b border-line align-top">
-                  <td className="py-1.5 pr-4"><Link href={`/projects/${r.id}`} className="hover:underline">{r.name}</Link></td>
-                  <td className="pr-4 font-mono text-xs">{r.groups.length ? r.groups.join(', ') : <span className="text-fg-muted">none</span>}</td>
-                  <td className="pr-4 text-xs" title={r.updatedAt ?? undefined}>{relativeTime(r.updatedAt, now)}</td>
-                  <td className="pr-4 text-xs">{relativeTime(lastRuns[r.id] ?? null, now)}</td>
-                  <td className="whitespace-nowrap py-1">
-                    <span className="flex gap-1">
-                      <Link className={btn} href={`/projects/${r.id}`}>Open</Link>
-                      <Link className={btn} href={`/projects/${r.id}/run`}>Run</Link>
-                      <button type="button" className={btn} onClick={() => duplicate(r)} disabled={busy === r.id}>Duplicate</button>
-                      <button type="button" className={btn} onClick={() => remove(r)} aria-label={`Delete ${r.name}`}>Delete</button>
-                    </span>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className={table.table}>
+              <thead>
+                <tr className={table.head}>
+                  <th className={table.th}>Name</th><th className={table.th}>Groups Followed</th>
+                  <th className={table.th}>Last Edited</th><th className={table.th}>Last Run</th><th className={table.th}><span className="sr-only">Actions</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} className={table.row}>
+                    <td className={table.td}><Link href={`/projects/${r.id}`} className="font-medium hover:underline">{r.name}</Link></td>
+                    <td className={`${table.td} font-mono text-xs`}>{r.groups.length ? r.groups.join(', ') : 'none'}</td>
+                    <td className={`${table.td} whitespace-nowrap`} title={r.updatedAt ?? undefined}>{relativeTime(r.updatedAt, now)}</td>
+                    <td className={`${table.td} whitespace-nowrap`}>{relativeTime(lastRuns[r.id] ?? null, now)}</td>
+                    <td className={table.td}>
+                      <span className="flex justify-end gap-1.5">
+                        <Link className={btn} href={`/projects/${r.id}`}>Open</Link>
+                        <Link className={btn} href={`/projects/${r.id}/run`}>Run</Link>
+                        <button type="button" className={btn} onClick={() => duplicate(r)} disabled={busy === r.id}>Duplicate</button>
+                        <button type="button" className={btn} onClick={() => remove(r)} aria-label={`Delete ${r.name}`}>Delete</button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {!error && rows.length > 0 && (
-          <p className="mt-6 text-sm text-fg-muted">Learning the script? Start with <Link className="underline" href="/learn/first-piece">Your first piece</Link>.</p>
+          <p className="mt-6 text-sm text-fg-muted">Learning the script? Start with <Link className={textLink} href="/learn/first-piece">Your first piece</Link>.</p>
         )}
       </main>
       {toast && (

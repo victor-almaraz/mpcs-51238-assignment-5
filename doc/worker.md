@@ -51,8 +51,8 @@ Modules other than `index.ts` use only APIs that Node.js 24 and Deno share (`fet
 ## Pipeline
 1. `fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(timeoutMs) })`.
 2. On a non-200 status, apply the entry's failure policy and record a failed run.
-3. Upsert the raw body, truncated to 64 KB, into `source_samples`.
-4. Normalize the body to `SkyObject[]`. Two objects with the same id are a normalize error. Compute `hash` for each object.
+3. Strip trailing NUL bytes, which SWPC pads some files with and Postgres `text` cannot hold. Upsert this body, truncated to 64 KB, into `source_samples`.
+4. Normalize the same body to `SkyObject[]`. Two objects with the same id are a normalize error. A CelesTrak record whose required orbital elements (`NORAD_CAT_ID`, `EPOCH`, `MEAN_MOTION`, `ECCENTRICITY`, `INCLINATION`, `RA_OF_ASC_NODE`, `ARG_OF_PERICENTER`, `MEAN_ANOMALY`) are not finite numbers or valid timestamps is a normalize error, which halts the group; optional fields that do not parse become `null`. Compute `hash` for each object.
 5. Call RPC `upsert_sky_objects(p_source, p_group, p_rows, p_full)`. The RPC writes only rows whose hash differs, marks absent objects removed when `p_full` is true, inserts one `changes` row per changed object, and returns the changed ids.
 6. Upsert `source_status` (clearing `in_flight_at`), then insert one `runs` row. The status comes first, so a halt is saved even when the `runs` insert fails.
 

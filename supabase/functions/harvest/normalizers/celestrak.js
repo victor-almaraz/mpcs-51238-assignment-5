@@ -27,6 +27,7 @@ function epoch(value) {
   if (!Number.isFinite(Date.parse(iso))) throw new NormalizeError(`EPOCH ${JSON.stringify(s.slice(0, 40))} is not a timestamp`);
   return iso;
 }
+/** Elements propagation needs: a record without a usable value for any of them is an error (doc/worker.md, Pipeline). */
 const REQUIRED = ['NORAD_CAT_ID', 'EPOCH', 'MEAN_MOTION', 'ECCENTRICITY', 'INCLINATION', 'RA_OF_ASC_NODE', 'ARG_OF_PERICENTER', 'MEAN_ANOMALY'];
 
 /** CelesTrak GP OMM JSON: one object per catalog number. */
@@ -36,8 +37,12 @@ export function celestrakOmm(body, _args, ctx) {
   return doc.map((row, i) => {
     requireKeys(row, REQUIRED, `OMM record ${i}`);
     const fields = {};
-    for (const [name, [key, conv]] of Object.entries(FIELDS)) fields[name] = conv(row[key]);
-    if (!fields.noradId) throw new NormalizeError(`OMM record ${i} has an empty NORAD_CAT_ID`);
+    for (const [name, [key, conv]] of Object.entries(FIELDS)) {
+      fields[name] = conv(row[key]);
+      if (fields[name] === null && REQUIRED.includes(key)) {
+        throw new NormalizeError(`OMM record ${i} ${key} is not a usable value: ${JSON.stringify(String(row[key]).slice(0, 40))}`);
+      }
+    }
     return skyObject(ctx, fields.noradId, fields);
   });
 }
