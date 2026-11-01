@@ -27,12 +27,14 @@ export async function runSource(entry, st, { store, fetch, userAgent, log, now }
     failure = { error: res.error ?? `HTTP ${res.status}: ${res.body.slice(0, 200)}`, retryAfterSec: res.retryAfterSec };
   } else {
     try {
-      await store.saveSample(entry.id, iso(fetchedAt), res.status, res.body);
+      // SWPC pads some files with NUL bytes, which Postgres text rejects (doc/worker.md, Pipeline).
+      const body = res.body.replace(/\u0000+$/, '');
+      await store.saveSample(entry.id, iso(fetchedAt), res.status, body);
       const ctx = {
         source: entry.id, group: entry.group,
         warn: (fields) => log.warn({ source: entry.id, ...fields }),
       };
-      const objects = normalizers[entry.normalizer](res.body, entry.normalizerArgs, ctx);
+      const objects = normalizers[entry.normalizer](body, entry.normalizerArgs, ctx);
       const rows = [];
       const seen = new Set();
       for (const o of objects) {

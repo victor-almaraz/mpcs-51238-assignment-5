@@ -21,6 +21,25 @@ function setup(routes, start = '2026-10-30T03:00:00Z') {
 }
 const ok = (file) => ({ status: 200, body: fixture(file) });
 
+test('a NUL-padded SWPC body is stored and normalized without its NUL bytes', async () => {
+  const e = entry('swpc.wind');
+  const { store, deps } = setup({ [e.url]: [ok('swpc-wind-nul.json')] });
+  assert.deepEqual(await runSource(e, undefined, deps), { ok: true, rowsChanged: 1 });
+  assert.equal(store.samples.get(e.id).body.includes('\u0000'), false);
+  assert.equal(store.runs.at(-1).ok, true);
+});
+
+test('a CelesTrak record with a non-numeric required element halts the group instead of storing null', async () => {
+  const e = entry('celestrak.stations');
+  const records = JSON.parse(fixture('celestrak-stations-1.json'));
+  records[0].MEAN_MOTION = 'abc';
+  const { store, deps } = setup({ [e.url]: [{ status: 200, body: JSON.stringify(records) }] });
+  assert.deepEqual(await runSource(e, undefined, deps), { ok: false, rowsChanged: 0 });
+  assert.match(store.runs.at(-1).error, /^normalize: OMM record 0 MEAN_MOTION/);
+  assert.equal(store.status.get(e.id).halted, true);
+  assert.equal(store.objects.size, 0);
+});
+
 test('first run enters every object; identical second run changes 0 rows', async () => {
   const e = entry('celestrak.stations');
   const { store, deps } = setup({ [e.url]: [ok('celestrak-stations-1.json'), ok('celestrak-stations-2.json')] });

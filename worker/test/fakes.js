@@ -71,6 +71,8 @@ export function fakeStore({ now = Date.now } = {}) {
       return out;
     },
     async saveSample(sourceId, fetchedAt, httpStatus, body) {
+      // Like Postgres text: a NUL byte is rejected.
+      if (body.includes('\u0000')) throw new Error('upsert source_samples: unsupported Unicode escape sequence');
       samples.set(sourceId, { fetchedAt, httpStatus, body: body.slice(0, 65536) });
     },
     async insertRun(run) {
