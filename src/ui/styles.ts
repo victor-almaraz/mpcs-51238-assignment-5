@@ -14,6 +14,24 @@ const KIND: Record<Kind, string> = {
 /** Button or button-styled link. `md` on document pages, `sm` in tool views. */
 export const button = (kind: Kind = 'secondary', size: Size = 'md') => `${BASE} ${SIZE[size]} ${KIND[kind]}`;
 
+/** Text input on document pages: the height of an `md` button. */
+export const input = 'h-8 rounded-md border border-line bg-bg px-3 text-sm placeholder:text-fg-muted disabled:border-dashed';
+
+/** Segmented control: one bordered group, 1 px dividers, the selected option inverted. */
+export const segmented = {
+  group: 'inline-flex h-8 shrink-0 overflow-hidden rounded-md border border-line text-sm',
+  option: (selected: boolean) => `px-3 whitespace-nowrap [&+&]:border-l [&+&]:border-line ${selected ? 'bg-fg text-bg' : 'hover:bg-fg hover:text-bg'}`,
+};
+
+/** Table cells on document pages: 12 px by 10 px, centred, no padding at the outer edges. */
+export const table = {
+  table: 'w-full border-collapse text-sm',
+  head: 'border-b border-line text-left text-xs font-medium',
+  th: 'px-3 py-2.5 align-middle font-medium first:pl-0 last:pr-0',
+  row: 'border-b border-line',
+  td: 'px-3 py-2.5 align-middle first:pl-0 last:pr-0',
+};
+
 /** Link inside body text. */
 export const textLink = 'text-accent underline underline-offset-2';
 

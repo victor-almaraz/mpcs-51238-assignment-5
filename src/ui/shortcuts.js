@@ -7,6 +7,8 @@ export const SHORTCUTS = Object.freeze({
   stop: ['Mod-.'],
   save: ['Mod-s'],
   palette: ['Mod-Shift-p', 'Mod-k'],
+  toggleSide: ['Mod-b'],
+  togglePreview: ['Mod-Alt-b'],
   togglePanel: ['Mod-j'],
   focusEditor: ['Mod-1'],
   focusPreview: ['Mod-2'],
