@@ -7,7 +7,7 @@
 import { ColorExpr, Expr, expr, finite, isExpr, toValue } from './expr.js';
 import { collectGroups, forEachNode } from './ir-walk.js';
 import { own } from './defs.js';
-import { createIo } from './program.js';
+import { createIo, orbitKey } from './program.js';
 import {
   COLOR_HEX, CURRENT_IR_VERSION, DEFAULTS, EVENT_KINDS, HANDLER_EVENTS, LFO_SHAPES, NOTE_ROOT, PROGRAM, PROJECTIONS, RANGES, SCALE_MODES,
 } from './limits.js';
@@ -44,11 +44,16 @@ export function createBuilder(defs, { line = () => null } = {}) {
     /** @type {any[]} */ layers: [],
     /** @type {any[]} */ handlers: [],
     /** @type {string[]} */ follow: [],
+    /** `orbit` nodes declared with follow(sky.orbit(...)). @type {any[]} */ orbits: [],
     localOnly: false,
   };
 
   // Program IO (doc/piece-dsl.md, Program): handlers, output calls, `read.*` and the seeded random.
-  const P = createIo({ groupSource: (k) => own(defs.groups, k)?.source ?? null, seed: () => st.seed });
+  const P = createIo({
+    groupSource: (k) => own(defs.groups, k)?.source ?? null,
+    seed: () => st.seed,
+    timeScaleOf: (opts, where) => timeScaleOf(opts, where),
+  });
 
   // ---------- helpers ----------
   /** @param {string} pointer @param {number | null} ln */
@@ -187,9 +192,16 @@ export function createBuilder(defs, { line = () => null } = {}) {
       const where = `${name}.set()`;
       P.inHandler(where);
       const o = plainObject(opts, where);
-      onlyKeys(o, ['smoothMs'], where);
       const types = owner.kind === 'instrument' ? defs.instruments : defs.effects;
       const spec = own(own(types, /** @type {any} */ (owner).type)?.params ?? {}, name);
+      if (spec?.kind === 'array') {
+        onlyKeys(o, [], where);
+        const n = /** @type {number} */ (spec.length);
+        if (!Array.isArray(value) || value.length > n) throw new TypeError(`${where}: values must be a list of up to ${n} numbers`);
+        P.emit(where, { op: 'set', target: `${owner.id}.${name}`, value: coerceParam(spec, value, where, name, 'name') });
+        return;
+      }
+      onlyKeys(o, ['smoothMs'], where);
       if (!spec || spec.kind !== 'number') throw new TypeError(`${where}: ${name} is not a numeric parameter of ${/** @type {any} */ (owner).type}`);
       if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${where}: value must be a number`);
       const smoothMs = o.smoothMs === undefined ? DEFAULTS.smoothMs : clampNum(o.smoothMs, /** @type {[number, number]} */ (RANGES.smoothMs), where, 'smoothMs');
@@ -702,12 +714,25 @@ export function createBuilder(defs, { line = () => null } = {}) {
       if (typeof source !== 'string' || !source) throw new TypeError("onFreshness(): source must be a source id, a group or '*'");
       register('onFreshness()', { kind: 'freshness', source }, fn);
     },
-    /** @param {unknown[]} groups */
+    /** @param {unknown[]} groups groups, or sky.orbit(...) expressions that declare orbits for read.orbit */
     follow(...groups) {
       if (P.io.phase !== 'setup') throw new TypeError('follow(): call it in the setup code');
       const ln = line();
       for (const g of groups) {
-        if (typeof g !== 'string' || !g) throw new TypeError("follow(): groups must be text such as 'swpc.kp'");
+        if (g instanceof Expr) {
+          const [quantity, objectId, timeScale] = g.node.args;
+          if (g.node.op !== 'orbit' || typeof objectId !== 'string') {
+            throw new TypeError("follow(): an expression must be sky.orbit(objectId, quantity), such as sky.orbit('celestrak.stations:25544', 'latitude')");
+          }
+          const key = orbitKey(objectId, quantity, timeScale);
+          if (!P.io.orbitKeys.includes(key)) {
+            mark(`/program/orbits/${st.orbits.length}`, ln);
+            st.orbits.push(g.node);
+            P.io.orbitKeys.push(key);
+          }
+          continue;
+        }
+        if (typeof g !== 'string' || !g) throw new TypeError("follow(): groups must be text such as 'swpc.kp', or sky.orbit(...)");
         if (!st.follow.includes(g)) {
           mark(`/program/follow/${st.follow.length}`, ln);
           st.follow.push(g);
@@ -784,10 +809,11 @@ export function createBuilder(defs, { line = () => null } = {}) {
       groups: /** @type {string[]} */ ([]),
       localOnly: st.localOnly,
     };
-    if (st.handlers.length || st.follow.length) {
+    if (st.handlers.length || st.follow.length || st.orbits.length) {
       /** @type {any} */ (ir).program = {
         handlers: st.handlers.map(({ fn, disabled, ...h }) => h),
         follow: [...st.follow],
+        ...(st.orbits.length ? { orbits: [...st.orbits] } : {}),
       };
     }
     ir.groups = collectGroups(ir);

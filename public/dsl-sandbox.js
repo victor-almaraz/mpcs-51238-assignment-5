@@ -456,11 +456,14 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   return (whole / Number(m[1])) * mult;
 } exports.syncMs = syncMs;
 
+/** Key of one orbit source: object, quantity and time scale. @param {unknown} objectId @param {unknown} quantity @param {unknown} timeScale */
+ const orbitKey = (objectId, quantity, timeScale) => `${objectId}|${quantity}|${timeScale}`; exports.orbitKey = orbitKey;
+
 /**
  * IO state shared by the builder's program calls and the runner.
- * @param {{ groupSource: (key: string) => string | null, seed: () => number }} opts
+ * @param {{ groupSource: (key: string) => string | null, seed: () => number, timeScaleOf: (opts: unknown, where: string) => number }} opts
  */
- function createIo({ groupSource, seed }) {
+ function createIo({ groupSource, seed, timeScaleOf }) {
   /** @type {(() => number) | null} */
   let rng = null;
   const io = {
@@ -474,6 +477,8 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     /** @type {Map<string, Map<string, SkyRecord>>} */ byGroup: new Map(),
     /** @type {Map<string, SkyRecord>} */ objects: new Map(),
     /** @type {Map<string, string>} */ fresh: new Map(),
+    /** Orbits declared with follow(sky.orbit(...)), in IR order. @type {string[]} */ orbitKeys: [],
+    /** @type {Map<string, number | null>} */ orbitValues: new Map(),
     /** @type {Timer[]} */ timers: [],
     groupSource,
     random: () => (rng ??= createRng(seed()))(),
@@ -531,6 +536,18 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
       if (typeof source !== 'string') throw new TypeError('read.freshness(): source must be text');
       const s = _nullishCoalesce(io.groupSource(source), () => ( source));
       return _nullishCoalesce(io.fresh.get(s), () => ( 'loading'));
+    },
+    /** @param {unknown} objectId @param {unknown} quantity @param {unknown} [opts] */
+    orbit(objectId, quantity, opts) {
+      inHandler('read.orbit()');
+      if (typeof objectId !== 'string' || typeof quantity !== 'string') throw new TypeError("read.orbit(): use read.orbit(objectId, quantity), such as read.orbit('celestrak.stations:25544', 'latitude')");
+      const timeScale = timeScaleOf(opts, 'read.orbit()');
+      const key = exports.orbitKey.call(void 0, objectId, quantity, timeScale);
+      if (!io.orbitKeys.includes(key)) {
+        const opt = timeScale === 1 ? '' : `, { timeScale: ${timeScale} }`;
+        throw new TypeError(`read.orbit(): add follow(sky.orbit('${objectId}', '${quantity}'${opt})) to the setup code`);
+      }
+      return _nullishCoalesce(io.orbitValues.get(key), () => ( null));
     },
   });
 
@@ -641,6 +658,15 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     io.timers = io.timers.filter(live);
   };
 
+  /** Stores the page's orbit values, given in `io.orbitKeys` order. @param {unknown} values */
+  const setOrbits = (values) => {
+    if (!Array.isArray(values)) return;
+    io.orbitKeys.forEach((key, i) => {
+      const v = values[i];
+      io.orbitValues.set(key, typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(-1, v)) : null);
+    });
+  };
+
   /** @param {WireEvent} ev */
   const apply = (ev) => {
     const o = ev.obj;
@@ -673,10 +699,10 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     /**
      * Starts the program: fills the sky copy and freshness, schedules timers and calls the
      * initial enters.
-     * @param {{ groups: string[], objects: WireObject[], freshness?: { source: string, state: string }[] }} msg
+     * @param {{ groups: string[], objects: WireObject[], freshness?: { source: string, state: string }[], orbits?: (number | null)[] }} msg
      * @returns {RunResult}
      */
-    start({ groups, objects, freshness = [] }) {
+    start({ groups, objects, freshness = [], orbits }) {
       begin();
       io.phase = 'idle';
       io.now = 0;
@@ -684,6 +710,8 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
       io.byGroup.clear();
       io.objects.clear();
       io.fresh.clear();
+      io.orbitValues.clear();
+      setOrbits(orbits);
       for (const f of Array.isArray(freshness) ? freshness : []) {
         if (f && typeof f.source === 'string' && typeof f.state === 'string') io.fresh.set(f.source, f.state);
       }
@@ -710,11 +738,12 @@ const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     },
 
     /**
-     * @param {{ now: number, events?: WireEvent[], freshness?: { source: string, state: string }[] }} msg
+     * @param {{ now: number, events?: WireEvent[], freshness?: { source: string, state: string }[], orbits?: (number | null)[] }} msg
      * @returns {RunResult}
      */
-    batch({ now, events = [], freshness = [] }) {
+    batch({ now, events = [], freshness = [], orbits }) {
       begin();
+      setOrbits(orbits);
       const t = typeof now === 'number' && Number.isFinite(now) ? Math.max(now, io.now) : io.now;
       runTimers(t);
       io.now = t;
@@ -2862,11 +2891,16 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
     /** @type {any[]} */ layers: [],
     /** @type {any[]} */ handlers: [],
     /** @type {string[]} */ follow: [],
+    /** `orbit` nodes declared with follow(sky.orbit(...)). @type {any[]} */ orbits: [],
     localOnly: false,
   };
 
   // Program IO (doc/piece-dsl.md, Program): handlers, output calls, `read.*` and the seeded random.
-  const P = _programjs.createIo.call(void 0, { groupSource: (k) => _nullishCoalesce(_optionalChain([_defsjs.own.call(void 0, defs.groups, k), 'optionalAccess', _2 => _2.source]), () => ( null)), seed: () => st.seed });
+  const P = _programjs.createIo.call(void 0, {
+    groupSource: (k) => _nullishCoalesce(_optionalChain([_defsjs.own.call(void 0, defs.groups, k), 'optionalAccess', _2 => _2.source]), () => ( null)),
+    seed: () => st.seed,
+    timeScaleOf: (opts, where) => timeScaleOf(opts, where),
+  });
 
   // ---------- helpers ----------
   /** @param {string} pointer @param {number | null} ln */
@@ -3005,9 +3039,16 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       const where = `${name}.set()`;
       P.inHandler(where);
       const o = plainObject(opts, where);
-      onlyKeys(o, ['smoothMs'], where);
       const types = owner.kind === 'instrument' ? defs.instruments : defs.effects;
       const spec = _defsjs.own.call(void 0, _nullishCoalesce(_optionalChain([_defsjs.own.call(void 0, types, /** @type {any} */ (owner).type), 'optionalAccess', _5 => _5.params]), () => ( {})), name);
+      if (_optionalChain([spec, 'optionalAccess', _6 => _6.kind]) === 'array') {
+        onlyKeys(o, [], where);
+        const n = /** @type {number} */ (spec.length);
+        if (!Array.isArray(value) || value.length > n) throw new TypeError(`${where}: values must be a list of up to ${n} numbers`);
+        P.emit(where, { op: 'set', target: `${owner.id}.${name}`, value: coerceParam(spec, value, where, name, 'name') });
+        return;
+      }
+      onlyKeys(o, ['smoothMs'], where);
       if (!spec || spec.kind !== 'number') throw new TypeError(`${where}: ${name} is not a numeric parameter of ${/** @type {any} */ (owner).type}`);
       if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${where}: value must be a number`);
       const smoothMs = o.smoothMs === undefined ? _limitsjs.DEFAULTS.smoothMs : clampNum(o.smoothMs, /** @type {[number, number]} */ (_limitsjs.RANGES.smoothMs), where, 'smoothMs');
@@ -3358,7 +3399,7 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
         if (typeof v !== 'string' || !_limitsjs.COLOR_HEX.test(v)) throw new TypeError(`${where}: colour must look like '#rrggbb'`);
         return v;
       case 'enum':
-        if (typeof v !== 'string' || !_optionalChain([spec, 'access', _6 => _6.options, 'optionalAccess', _7 => _7.includes, 'call', _8 => _8(v)])) throw new TypeError(`${where}: use one of ${_optionalChain([spec, 'access', _9 => _9.options, 'optionalAccess', _10 => _10.join, 'call', _11 => _11(', ')])}`);
+        if (typeof v !== 'string' || !_optionalChain([spec, 'access', _7 => _7.options, 'optionalAccess', _8 => _8.includes, 'call', _9 => _9(v)])) throw new TypeError(`${where}: use one of ${_optionalChain([spec, 'access', _10 => _10.options, 'optionalAccess', _11 => _11.join, 'call', _12 => _12(', ')])}`);
         return v;
       default:
         if (typeof v !== 'string') throw new TypeError(`${where}: value must be text`);
@@ -3520,12 +3561,25 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       if (typeof source !== 'string' || !source) throw new TypeError("onFreshness(): source must be a source id, a group or '*'");
       register('onFreshness()', { kind: 'freshness', source }, fn);
     },
-    /** @param {unknown[]} groups */
+    /** @param {unknown[]} groups groups, or sky.orbit(...) expressions that declare orbits for read.orbit */
     follow(...groups) {
       if (P.io.phase !== 'setup') throw new TypeError('follow(): call it in the setup code');
       const ln = line();
       for (const g of groups) {
-        if (typeof g !== 'string' || !g) throw new TypeError("follow(): groups must be text such as 'swpc.kp'");
+        if (g instanceof _exprjs.Expr) {
+          const [quantity, objectId, timeScale] = g.node.args;
+          if (g.node.op !== 'orbit' || typeof objectId !== 'string') {
+            throw new TypeError("follow(): an expression must be sky.orbit(objectId, quantity), such as sky.orbit('celestrak.stations:25544', 'latitude')");
+          }
+          const key = _programjs.orbitKey.call(void 0, objectId, quantity, timeScale);
+          if (!P.io.orbitKeys.includes(key)) {
+            mark(`/program/orbits/${st.orbits.length}`, ln);
+            st.orbits.push(g.node);
+            P.io.orbitKeys.push(key);
+          }
+          continue;
+        }
+        if (typeof g !== 'string' || !g) throw new TypeError("follow(): groups must be text such as 'swpc.kp', or sky.orbit(...)");
         if (!st.follow.includes(g)) {
           mark(`/program/follow/${st.follow.length}`, ln);
           st.follow.push(g);
@@ -3602,10 +3656,11 @@ const RESERVED = new Set(['then', 'toJSON', 'toString', 'valueOf', 'constructor'
       groups: /** @type {string[]} */ ([]),
       localOnly: st.localOnly,
     };
-    if (st.handlers.length || st.follow.length) {
+    if (st.handlers.length || st.follow.length || st.orbits.length) {
       /** @type {any} */ (ir).program = {
         handlers: st.handlers.map(({ fn, disabled, ...h }) => h),
         follow: [...st.follow],
+        ...(st.orbits.length ? { orbits: [...st.orbits] } : {}),
       };
     }
     ir.groups = _irwalkjs.collectGroups.call(void 0, ir);
@@ -3691,6 +3746,8 @@ function structuredCloneJson(v) {
   noteStartsPerSecond: 200,
   /** Most sky events the page queues between two batches; older ones are dropped. */
   queuedEvents: 4096,
+  /** Array parameter updates (`harmonics.set`) the page sends per instrument per second. */
+  harmonicsPerSecond: 30,
 }); exports.PROGRAM = PROGRAM;
 
 /** Event kinds of `on(group, kind, fn)`. */
@@ -4206,6 +4263,9 @@ class Checker {
       }
     });
     pr.follow.forEach((/** @type {string} */ g, /** @type {number} */ i) => this.group(g, `/program/follow/${i}`));
+    (_nullishCoalesce(pr.orbits, () => ( []))).forEach((/** @type {any} */ n, /** @type {number} */ i) => {
+      if (_optionalChain([n, 'optionalAccess', _11 => _11.op]) !== 'orbit' || typeof _optionalChain([n, 'access', _12 => _12.args, 'optionalAccess', _13 => _13[1]]) !== 'string') this.add('ir_schema', `/program/orbits/${i}`, 'A program orbit must be sky.orbit(objectId, quantity)');
+    });
   }
 
   /** @param {string} key @param {string} path @returns {boolean} */
@@ -4221,7 +4281,7 @@ class Checker {
     if (!g) return;
     if (_defsjs.own.call(void 0, g.fields, name)) return;
     const objs = _nullishCoalesce(_defsjs.own.call(void 0, this.snapshot, group), () => ( []));
-    if (objs.some((o) => _optionalChain([o, 'optionalAccess', _11 => _11.fields]) && Object.prototype.hasOwnProperty.call(o.fields, name))) return;
+    if (objs.some((o) => _optionalChain([o, 'optionalAccess', _14 => _14.fields]) && Object.prototype.hasOwnProperty.call(o.fields, name))) return;
     this.add('unknown_field', path, `No object of ${group} has the field ${name}`);
   }
 
@@ -10213,6 +10273,7 @@ exports.isNode = _evaluatejs.isNode; exports.objectGroup = _depsjs.objectGroup;
     const ctx = { object: l.group, layer: true };
     for (const [k, v] of Object.entries(l.props)) visit(v, `/layers/${i}/props/${escapePointer(k)}`, ctx);
   });
+  (_nullishCoalesce(_optionalChain([ir, 'access', _ => _.program, 'optionalAccess', _2 => _2.orbits]), () => ( []))).forEach((/** @type {unknown} */ n, /** @type {number} */ i) => visit(n, `/program/orbits/${i}`, global));
 } exports.forEachExprPosition = forEachExprPosition;
 
 /**
@@ -10243,7 +10304,7 @@ exports.isNode = _evaluatejs.isNode; exports.objectGroup = _depsjs.objectGroup;
  function nodeGroup(node) {
   const a = node.args;
   switch (node.op) {
-    case 'swpc': return _nullishCoalesce(_optionalChain([_depsjs.parseSwpcPath.call(void 0, a[0]), 'optionalAccess', _ => _.group]), () => ( null));
+    case 'swpc': return _nullishCoalesce(_optionalChain([_depsjs.parseSwpcPath.call(void 0, a[0]), 'optionalAccess', _3 => _3.group]), () => ( null));
     case 'value': return typeof a[0] === 'string' ? _depsjs.objectGroup.call(void 0, a[0]) : null;
     case 'count': case 'mean': case 'spread': return typeof a[0] === 'string' ? a[0] : null;
     case 'orbit': return typeof a[1] === 'string' ? _depsjs.objectGroup.call(void 0, a[1]) : null;
@@ -10260,8 +10321,8 @@ exports.isNode = _evaluatejs.isNode; exports.objectGroup = _depsjs.objectGroup;
   const out = new Set();
   for (const b of ir.bindings) if (typeof b.group === 'string') out.add(b.group);
   for (const l of ir.layers) if (typeof l.group === 'string') out.add(l.group);
-  for (const h of _nullishCoalesce(_optionalChain([ir, 'access', _2 => _2.program, 'optionalAccess', _3 => _3.handlers]), () => ( []))) if (h.kind === 'on' && typeof h.group === 'string') out.add(h.group);
-  for (const g of _nullishCoalesce(_optionalChain([ir, 'access', _4 => _4.program, 'optionalAccess', _5 => _5.follow]), () => ( []))) if (typeof g === 'string') out.add(g);
+  for (const h of _nullishCoalesce(_optionalChain([ir, 'access', _4 => _4.program, 'optionalAccess', _5 => _5.handlers]), () => ( []))) if (h.kind === 'on' && typeof h.group === 'string') out.add(h.group);
+  for (const g of _nullishCoalesce(_optionalChain([ir, 'access', _6 => _6.program, 'optionalAccess', _7 => _7.follow]), () => ( []))) if (typeof g === 'string') out.add(g);
   forEachExprPosition(ir, (value, path) => forEachNode(value, path, (node) => {
     const g = nodeGroup(node);
     if (g) out.add(g);
@@ -10507,7 +10568,7 @@ function isObject(v) {
 
 }, {"./limits.js":17}],
 /* src/dsl/ir.schema.json */ [function (module, exports, require) {
-module.exports = {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://sphaerenmusik/ir.schema.json","title":"Sphärenmusik piece IR, version 1","description":"Structure of the IR (doc/piece-dsl.md, IR). Ranges, vocabularies and references are semantic checks in src/dsl/validate.js.","type":"object","additionalProperties":false,"required":["irVersion","seed","tempo","scale","instruments","master","lfos","mods","bindings","reactions","view","layers","groups","localOnly"],"properties":{"irVersion":{"type":"integer"},"seed":{"type":"integer"},"tempo":{"type":"number"},"scale":{"type":"object","additionalProperties":false,"required":["root","mode"],"properties":{"root":{"type":"string"},"mode":{"type":"string"}}},"instruments":{"type":"array","items":{"$ref":"#/$defs/instrument"}},"master":{"type":"object","additionalProperties":false,"required":["fx"],"properties":{"fx":{"$ref":"#/$defs/chain"}}},"lfos":{"type":"array","items":{"$ref":"#/$defs/lfo"}},"mods":{"type":"array","items":{"$ref":"#/$defs/mod"}},"bindings":{"type":"array","items":{"$ref":"#/$defs/binding"}},"reactions":{"type":"array","items":{"$ref":"#/$defs/reaction"}},"view":{"type":"object","additionalProperties":false,"required":["projection","background"],"properties":{"projection":{"type":"string"},"background":{"$ref":"#/$defs/value"}}},"layers":{"type":"array","items":{"$ref":"#/$defs/layer"}},"groups":{"type":"array","items":{"type":"string"}},"localOnly":{"type":"boolean"},"program":{"type":"object","additionalProperties":false,"required":["handlers","follow"],"properties":{"handlers":{"type":"array","items":{"$ref":"#/$defs/handler"}},"follow":{"type":"array","items":{"type":"string"}}}}},"$defs":{"id":{"type":"string","pattern":"^[a-z]+[0-9]+$"},"handler":{"type":"object","required":["id","kind"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"type":"string"},"group":{"type":"string"},"event":{"type":"string"},"intervalMs":{"type":"number"},"sync":{"type":"string"},"ms":{"type":"number"},"source":{"type":"string"}}},"expr":{"type":"object","additionalProperties":false,"required":["op","args"],"properties":{"op":{"type":"string"},"args":{"type":"array","items":{"$ref":"#/$defs/value"}}}},"value":{"anyOf":[{"type":"number"},{"type":"string"},{"type":"boolean"},{"type":"null"},{"$ref":"#/$defs/expr"}]},"select":{"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["top","by","order"],"properties":{"top":{"type":"integer"},"by":{"type":"string"},"order":{"type":"string"}}}]},"slot":{"type":"object","additionalProperties":false,"required":["id","type","params","bypass"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"params":{"type":"object"},"bypass":{"type":"boolean"}}},"chain":{"type":"array","items":{"$ref":"#/$defs/slot"}},"instrument":{"type":"object","additionalProperties":false,"required":["id","type","volumeDb","octave","cents","params","fx"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"volumeDb":{"type":"number"},"octave":{"type":"integer"},"cents":{"type":"number"},"params":{"type":"object"},"fx":{"$ref":"#/$defs/chain"}}},"lfo":{"type":"object","additionalProperties":false,"required":["id","shape","rate","phase","retrigger","smooth"],"properties":{"id":{"$ref":"#/$defs/id"},"shape":{"type":"string"},"rate":{"anyOf":[{"type":"number"},{"type":"object","additionalProperties":false,"required":["sync"],"properties":{"sync":{"type":"string"}}},{"type":"object","additionalProperties":false,"required":["expr","min","max"],"properties":{"expr":{"$ref":"#/$defs/expr"},"min":{"type":"number"},"max":{"type":"number"}}}]},"phase":{"type":"number"},"retrigger":{"type":"boolean"},"smooth":{"type":"number"}}},"mod":{"type":"object","additionalProperties":false,"required":["target","source","depth","smoothMs"],"properties":{"target":{"type":"string","pattern":"^[a-z]+[0-9]+\\.[A-Za-z0-9_]+$"},"source":{"anyOf":[{"type":"object","additionalProperties":false,"required":["lfo"],"properties":{"lfo":{"$ref":"#/$defs/id"}}},{"type":"object","additionalProperties":false,"required":["expr"],"properties":{"expr":{"$ref":"#/$defs/expr"}}}]},"depth":{"type":"number"},"smoothMs":{"type":"number"}}},"binding":{"anyOf":[{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","pitch","velocity","pan","voiceMods"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"voices"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"pan":{"$ref":"#/$defs/value"},"voiceMods":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","event","when","pitch","velocity","durationMs","maxPerSecond"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"trigger"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"event":{"type":"string"},"when":{"$ref":"#/$defs/value"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"durationMs":{"type":"number"},"maxPerSecond":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"param"},"inst":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxParam"},"slot":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","expr"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxBypass"},"slot":{"$ref":"#/$defs/id"},"expr":{"$ref":"#/$defs/value"}}}]},"reaction":{"type":"object","additionalProperties":false,"required":["on","source","actions"],"properties":{"on":{"type":"string"},"source":{"type":"string"},"actions":{"type":"object","additionalProperties":false,"properties":{"detuneCents":{"type":"number"},"mute":{"type":"array","items":{"$ref":"#/$defs/id"}},"only":{"type":"array","items":{"$ref":"#/$defs/id"}},"desaturate":{"type":"number"}}}}},"layer":{"type":"object","additionalProperties":false,"required":["id","type","group","select","props"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"group":{"type":["string","null"]},"select":{"$ref":"#/$defs/select"},"glsl":{"type":"string"},"props":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}}}};
+module.exports = {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://sphaerenmusik/ir.schema.json","title":"Sphärenmusik piece IR, version 1","description":"Structure of the IR (doc/piece-dsl.md, IR). Ranges, vocabularies and references are semantic checks in src/dsl/validate.js.","type":"object","additionalProperties":false,"required":["irVersion","seed","tempo","scale","instruments","master","lfos","mods","bindings","reactions","view","layers","groups","localOnly"],"properties":{"irVersion":{"type":"integer"},"seed":{"type":"integer"},"tempo":{"type":"number"},"scale":{"type":"object","additionalProperties":false,"required":["root","mode"],"properties":{"root":{"type":"string"},"mode":{"type":"string"}}},"instruments":{"type":"array","items":{"$ref":"#/$defs/instrument"}},"master":{"type":"object","additionalProperties":false,"required":["fx"],"properties":{"fx":{"$ref":"#/$defs/chain"}}},"lfos":{"type":"array","items":{"$ref":"#/$defs/lfo"}},"mods":{"type":"array","items":{"$ref":"#/$defs/mod"}},"bindings":{"type":"array","items":{"$ref":"#/$defs/binding"}},"reactions":{"type":"array","items":{"$ref":"#/$defs/reaction"}},"view":{"type":"object","additionalProperties":false,"required":["projection","background"],"properties":{"projection":{"type":"string"},"background":{"$ref":"#/$defs/value"}}},"layers":{"type":"array","items":{"$ref":"#/$defs/layer"}},"groups":{"type":"array","items":{"type":"string"}},"localOnly":{"type":"boolean"},"program":{"type":"object","additionalProperties":false,"required":["handlers","follow"],"properties":{"handlers":{"type":"array","items":{"$ref":"#/$defs/handler"}},"follow":{"type":"array","items":{"type":"string"}},"orbits":{"type":"array","items":{"$ref":"#/$defs/expr"}}}}},"$defs":{"id":{"type":"string","pattern":"^[a-z]+[0-9]+$"},"handler":{"type":"object","required":["id","kind"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"type":"string"},"group":{"type":"string"},"event":{"type":"string"},"intervalMs":{"type":"number"},"sync":{"type":"string"},"ms":{"type":"number"},"source":{"type":"string"}}},"expr":{"type":"object","additionalProperties":false,"required":["op","args"],"properties":{"op":{"type":"string"},"args":{"type":"array","items":{"$ref":"#/$defs/value"}}}},"value":{"anyOf":[{"type":"number"},{"type":"string"},{"type":"boolean"},{"type":"null"},{"$ref":"#/$defs/expr"}]},"select":{"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["top","by","order"],"properties":{"top":{"type":"integer"},"by":{"type":"string"},"order":{"type":"string"}}}]},"slot":{"type":"object","additionalProperties":false,"required":["id","type","params","bypass"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"params":{"type":"object"},"bypass":{"type":"boolean"}}},"chain":{"type":"array","items":{"$ref":"#/$defs/slot"}},"instrument":{"type":"object","additionalProperties":false,"required":["id","type","volumeDb","octave","cents","params","fx"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"volumeDb":{"type":"number"},"octave":{"type":"integer"},"cents":{"type":"number"},"params":{"type":"object"},"fx":{"$ref":"#/$defs/chain"}}},"lfo":{"type":"object","additionalProperties":false,"required":["id","shape","rate","phase","retrigger","smooth"],"properties":{"id":{"$ref":"#/$defs/id"},"shape":{"type":"string"},"rate":{"anyOf":[{"type":"number"},{"type":"object","additionalProperties":false,"required":["sync"],"properties":{"sync":{"type":"string"}}},{"type":"object","additionalProperties":false,"required":["expr","min","max"],"properties":{"expr":{"$ref":"#/$defs/expr"},"min":{"type":"number"},"max":{"type":"number"}}}]},"phase":{"type":"number"},"retrigger":{"type":"boolean"},"smooth":{"type":"number"}}},"mod":{"type":"object","additionalProperties":false,"required":["target","source","depth","smoothMs"],"properties":{"target":{"type":"string","pattern":"^[a-z]+[0-9]+\\.[A-Za-z0-9_]+$"},"source":{"anyOf":[{"type":"object","additionalProperties":false,"required":["lfo"],"properties":{"lfo":{"$ref":"#/$defs/id"}}},{"type":"object","additionalProperties":false,"required":["expr"],"properties":{"expr":{"$ref":"#/$defs/expr"}}}]},"depth":{"type":"number"},"smoothMs":{"type":"number"}}},"binding":{"anyOf":[{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","pitch","velocity","pan","voiceMods"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"voices"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"pan":{"$ref":"#/$defs/value"},"voiceMods":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","group","select","event","when","pitch","velocity","durationMs","maxPerSecond"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"trigger"},"inst":{"$ref":"#/$defs/id"},"group":{"type":"string"},"select":{"$ref":"#/$defs/select"},"event":{"type":"string"},"when":{"$ref":"#/$defs/value"},"pitch":{"$ref":"#/$defs/value"},"velocity":{"$ref":"#/$defs/value"},"durationMs":{"type":"number"},"maxPerSecond":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","inst","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"param"},"inst":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","param","expr","smoothMs"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxParam"},"slot":{"$ref":"#/$defs/id"},"param":{"type":"string"},"expr":{"$ref":"#/$defs/value"},"smoothMs":{"type":"number"}}},{"type":"object","additionalProperties":false,"required":["id","kind","slot","expr"],"properties":{"id":{"$ref":"#/$defs/id"},"kind":{"const":"fxBypass"},"slot":{"$ref":"#/$defs/id"},"expr":{"$ref":"#/$defs/value"}}}]},"reaction":{"type":"object","additionalProperties":false,"required":["on","source","actions"],"properties":{"on":{"type":"string"},"source":{"type":"string"},"actions":{"type":"object","additionalProperties":false,"properties":{"detuneCents":{"type":"number"},"mute":{"type":"array","items":{"$ref":"#/$defs/id"}},"only":{"type":"array","items":{"$ref":"#/$defs/id"}},"desaturate":{"type":"number"}}}}},"layer":{"type":"object","additionalProperties":false,"required":["id","type","group","select","props"],"properties":{"id":{"$ref":"#/$defs/id"},"type":{"type":"string"},"group":{"type":["string","null"]},"select":{"$ref":"#/$defs/select"},"glsl":{"type":"string"},"props":{"type":"object","additionalProperties":{"$ref":"#/$defs/value"}}}}}};
 }, {}],
 /* src/dsl/schema-check.js */ [function (module, exports, require) {
 "use strict";Object.defineProperty(exports, "__esModule", {value: true}); function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } }// A JSON Schema (draft 2020-12) checker for the subset used by ir.schema.json: type, const,

@@ -174,6 +174,7 @@ test('limits in reference.md match the validator and engine constants', () => {
     'New notes per second from handlers': `${PROGRAM.noteStartsPerSecond}`,
     'Commands per round': `${PROGRAM.commandsPerBatch}`,
     'Waiting after() calls': `${PROGRAM.pendingTimers}`,
+    'Harmonics updates per second, per instrument': `${PROGRAM.harmonicsPerSecond}`,
   };
   assert.deepEqual(Object.fromEntries(rows), expect);
 });

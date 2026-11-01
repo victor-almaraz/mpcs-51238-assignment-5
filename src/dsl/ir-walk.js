@@ -48,6 +48,7 @@ export function forEachExprPosition(ir, visit) {
     const ctx = { object: l.group, layer: true };
     for (const [k, v] of Object.entries(l.props)) visit(v, `/layers/${i}/props/${escapePointer(k)}`, ctx);
   });
+  (ir.program?.orbits ?? []).forEach((/** @type {unknown} */ n, /** @type {number} */ i) => visit(n, `/program/orbits/${i}`, global));
 }
 
 /**

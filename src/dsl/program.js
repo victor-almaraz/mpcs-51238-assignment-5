@@ -54,11 +54,14 @@ export function syncMs(name, bpm) {
   return (whole / Number(m[1])) * mult;
 }
 
+/** Key of one orbit source: object, quantity and time scale. @param {unknown} objectId @param {unknown} quantity @param {unknown} timeScale */
+export const orbitKey = (objectId, quantity, timeScale) => `${objectId}|${quantity}|${timeScale}`;
+
 /**
  * IO state shared by the builder's program calls and the runner.
- * @param {{ groupSource: (key: string) => string | null, seed: () => number }} opts
+ * @param {{ groupSource: (key: string) => string | null, seed: () => number, timeScaleOf: (opts: unknown, where: string) => number }} opts
  */
-export function createIo({ groupSource, seed }) {
+export function createIo({ groupSource, seed, timeScaleOf }) {
   /** @type {(() => number) | null} */
   let rng = null;
   const io = {
@@ -72,6 +75,8 @@ export function createIo({ groupSource, seed }) {
     /** @type {Map<string, Map<string, SkyRecord>>} */ byGroup: new Map(),
     /** @type {Map<string, SkyRecord>} */ objects: new Map(),
     /** @type {Map<string, string>} */ fresh: new Map(),
+    /** Orbits declared with follow(sky.orbit(...)), in IR order. @type {string[]} */ orbitKeys: [],
+    /** @type {Map<string, number | null>} */ orbitValues: new Map(),
     /** @type {Timer[]} */ timers: [],
     groupSource,
     random: () => (rng ??= createRng(seed()))(),
@@ -129,6 +134,18 @@ export function createIo({ groupSource, seed }) {
       if (typeof source !== 'string') throw new TypeError('read.freshness(): source must be text');
       const s = io.groupSource(source) ?? source;
       return io.fresh.get(s) ?? 'loading';
+    },
+    /** @param {unknown} objectId @param {unknown} quantity @param {unknown} [opts] */
+    orbit(objectId, quantity, opts) {
+      inHandler('read.orbit()');
+      if (typeof objectId !== 'string' || typeof quantity !== 'string') throw new TypeError("read.orbit(): use read.orbit(objectId, quantity), such as read.orbit('celestrak.stations:25544', 'latitude')");
+      const timeScale = timeScaleOf(opts, 'read.orbit()');
+      const key = orbitKey(objectId, quantity, timeScale);
+      if (!io.orbitKeys.includes(key)) {
+        const opt = timeScale === 1 ? '' : `, { timeScale: ${timeScale} }`;
+        throw new TypeError(`read.orbit(): add follow(sky.orbit('${objectId}', '${quantity}'${opt})) to the setup code`);
+      }
+      return io.orbitValues.get(key) ?? null;
     },
   });
 
@@ -239,6 +256,15 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
     io.timers = io.timers.filter(live);
   };
 
+  /** Stores the page's orbit values, given in `io.orbitKeys` order. @param {unknown} values */
+  const setOrbits = (values) => {
+    if (!Array.isArray(values)) return;
+    io.orbitKeys.forEach((key, i) => {
+      const v = values[i];
+      io.orbitValues.set(key, typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(-1, v)) : null);
+    });
+  };
+
   /** @param {WireEvent} ev */
   const apply = (ev) => {
     const o = ev.obj;
@@ -271,10 +297,10 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
     /**
      * Starts the program: fills the sky copy and freshness, schedules timers and calls the
      * initial enters.
-     * @param {{ groups: string[], objects: WireObject[], freshness?: { source: string, state: string }[] }} msg
+     * @param {{ groups: string[], objects: WireObject[], freshness?: { source: string, state: string }[], orbits?: (number | null)[] }} msg
      * @returns {RunResult}
      */
-    start({ groups, objects, freshness = [] }) {
+    start({ groups, objects, freshness = [], orbits }) {
       begin();
       io.phase = 'idle';
       io.now = 0;
@@ -282,6 +308,8 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
       io.byGroup.clear();
       io.objects.clear();
       io.fresh.clear();
+      io.orbitValues.clear();
+      setOrbits(orbits);
       for (const f of Array.isArray(freshness) ? freshness : []) {
         if (f && typeof f.source === 'string' && typeof f.state === 'string') io.fresh.set(f.source, f.state);
       }
@@ -308,11 +336,12 @@ export function createRunner({ handlers, io, tempo, lineOf }) {
     },
 
     /**
-     * @param {{ now: number, events?: WireEvent[], freshness?: { source: string, state: string }[] }} msg
+     * @param {{ now: number, events?: WireEvent[], freshness?: { source: string, state: string }[], orbits?: (number | null)[] }} msg
      * @returns {RunResult}
      */
-    batch({ now, events = [], freshness = [] }) {
+    batch({ now, events = [], freshness = [], orbits }) {
       begin();
+      setOrbits(orbits);
       const t = typeof now === 'number' && Number.isFinite(now) ? Math.max(now, io.now) : io.now;
       runTimers(t);
       io.now = t;

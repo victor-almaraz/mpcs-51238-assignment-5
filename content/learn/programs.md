@@ -68,6 +68,7 @@ Inside a handler, instruments, parameters and layers take commands:
 | `inst.cutoff.set(value, { smoothMs })` | Sets a parameter |
 | `delayFx.bypass.set(true)` | Bypasses an effect |
 | `glyphs.set({ color: '#ff8800' })` | Sets a layer's properties; `layer.*(...)` returns the layer |
+| `pad.harmonics.set([1, 0.5, 0, 0.25])` | Sets an additive instrument's harmonics |
 
 Commands work only inside handlers. In the setup they stop the build with `io_outside_handler`.
 
@@ -85,6 +86,30 @@ on('swpc.wind', '*', () => {
   drone.cutoff.set(200 + speed * 4, { smoothMs: 4000 });
 });
 ```
+
+## Reading an orbit
+`read.orbit(id, quantity)` reads a satellite's orbit as a value from −1 to 1, like `sky.orbit` ([Effects and modulation](effects-and-modulation#orbits-as-very-slow-lfos)), but as a number your code can work with. Declare each orbit in the setup with `follow(sky.orbit(...))`; the value changes every 500 ms and is `null` until the first one arrives.
+
+## Changing harmonics
+`harmonics` cannot follow an expression, because it is a list. A handler can compute the list instead. Here the ISS's latitude moves a peak up and down the eight harmonics, like a slow vowel:
+
+```ts piece
+const iss = 'celestrak.stations:25544';
+const fast = { timeScale: 60 };          // one orbit in about 90 seconds
+follow(sky.orbit(iss, 'latitude', fast));
+
+const pad = additive({ volume: -6, attack: 2, release: 4 });
+let x = 0;
+
+after(0, () => pad.hold('drone', 45));
+every(50, () => {
+  x += ((read.orbit(iss, 'latitude', fast) ?? 0) - x) * 0.1;   // smooth the 500 ms steps
+  const peak = 1 + (x + 1) * 3.5;                                // harmonic 1 to 8
+  pad.harmonics.set([1, 2, 3, 4, 5, 6, 7, 8].map((k) => Math.exp(-((k - peak) ** 2) / 2)));
+});
+```
+
+Each `set` replaces the wave of the sounding notes at once. Small steps, as here, sound smooth; a piece sends at most 30 a second to each instrument.
 
 ## Chance that repeats
 `random()`, `randInt(n)` and `choose(list)` make choices seeded by `seed(n)`. The same seed and the same sky make the same choices, so a piece can be replayed exactly.

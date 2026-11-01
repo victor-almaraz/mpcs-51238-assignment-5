@@ -45,6 +45,8 @@ export const PROGRAM = Object.freeze({
   noteStartsPerSecond: 200,
   /** Most sky events the page queues between two batches; older ones are dropped. */
   queuedEvents: 4096,
+  /** Array parameter updates (`harmonics.set`) the page sends per instrument per second. */
+  harmonicsPerSecond: 30,
 });
 
 /** Event kinds of `on(group, kind, fn)`. */

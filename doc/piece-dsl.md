@@ -102,7 +102,7 @@ Each numeric parameter is a handle property with two methods:
 | `inst.<param>.follow(expr, { smoothMs })` | Sets the parameter's base value from an expression. `smoothMs` default 250. A choice parameter receives the option index. |
 | `inst.<param>.mod(source, { depth, smoothMs })` | Adds a modulation route (Modulation). `depth` is required. |
 
-Array parameters (additive `harmonics`) are set in the constructor only and have no handle property.
+Array parameters (additive `harmonics`) accept neither `follow` nor `mod`. They are set in the constructor and, from a handler, with `inst.harmonics.set(values)` (Program, Output).
 
 | Call | Effect |
 |---|---|
@@ -251,7 +251,7 @@ Handlers are registered during setup only. Registering one inside a handler thro
 | `every(interval, fn)` | Every `interval`, with `(t)`: milliseconds (10–3,600,000) or a sync name (`1/32`–`1/1`, with `d` or `t`) at the piece tempo. The first call is at the start of the program. |
 | `after(ms, fn)` | Once, `ms` (0–3,600,000) after the call; called in setup, `ms` after the start of the program. Valid in setup and in handlers. Returns a function that cancels the call. |
 | `onFreshness(source, fn)` | When the freshness of `source` (a registry id, a group key or `'*'`) changes, with `({ source, state })` |
-| `follow(...groups)` | Follows groups the script reads with `read.*` but names nowhere else |
+| `follow(...groups)` | Follows groups the script reads with `read.*` but names nowhere else. An argument may also be `sky.orbit(objectId, quantity, { timeScale })`: it declares that orbit for `read.orbit` and follows the object's group. |
 
 - `o` is a frozen plain record `{ id, group, ...fields }` with the object's current field values; a field the source does not report is `null`. `e` is `{ kind, traceId, initial, prev }`, where `prev` is the record before an `update` or `exit`, otherwise `null`.
 - At every start the VM calls each `on(group, 'enter' | '*')` handler once per object already in its group, with `e.initial` true, in id order. Trigger bindings skip these events; handlers receive them so a program can build its state from the current sky.
@@ -267,6 +267,7 @@ Output methods are valid inside handlers only. In setup they throw, and the buil
 | `inst.glide(key, pitch, ms)` | Moves a held note to `pitch` over `ms` (0–10,000, default 150) |
 | `inst.stop(key)`, `inst.stopAll()` | Releases one held note, or all of the instrument's held notes |
 | `inst.<param>.set(value, { smoothMs })`, `slot.<param>.set(value, { smoothMs })` | Sets a numeric parameter's base value; `smoothMs` default 250. Values outside the range move to the nearest end. |
+| `inst.harmonics.set(values)` | Sets additive `harmonics`: a list of up to 8 numbers, each moved into 0–1; missing entries are 0. Sounding voices change their wave at once, without smoothing, so a handler that wants a smooth change sends small steps. |
 | `slot.bypass.set(on)` | Bypasses an effect slot |
 | `layerHandle.set(props)` | Sets constant layer properties; every `layer.*(...)` constructor except `layer.shader` returns the handle. An unknown property or an expression value throws. |
 
@@ -279,6 +280,7 @@ A `null` pitch plays nothing, as in expressions. Any other value of the wrong ki
 | `read.group(key)` | Current records of a group, in id order |
 | `read.object(id)` | One record, or `null` |
 | `read.freshness(source)` | `loading`, `fresh`, `stale` or `down`; `source` is a registry id or a group key. A source without a known state is `loading`. |
+| `read.orbit(objectId, quantity, { timeScale })` | The current value, −1 to 1, of an orbit declared with `follow(sky.orbit(...))` (Orbits), or `null` before the first sample. The value changes every 500 ms. Reading an undeclared orbit throws. |
 | `time()` | Milliseconds since the program started; in a timer handler, the timer's scheduled time |
 
 `read.*` is valid inside handlers only. `read.swpc` and `read.group` read groups the piece follows: the groups of its bindings, layers, `on` handlers, `sky.swpc` expressions and `follow` calls. Reading another group throws. `read.object` returns `null` for an object outside the followed groups.
@@ -299,6 +301,8 @@ A `null` pitch plays nothing, as in expressions. Any other value of the wrong ki
 | More than 256 commands in one batch | The rest are dropped and traced |
 | More than 200 note starts per second | The rest are dropped and traced |
 | More than 4096 sky events waiting for the next batch | The oldest are dropped and traced |
+| More than 30 `harmonics.set` updates per second for one instrument | Only the latest update of each 33 ms is sent |
+| Orbits declared with `follow` | Count toward the 64 orbit sources of a piece (Validation) |
 
 ## Types
 `src/dsl/builder.d.ts` declares the global builder API. Its types are generated from `PARAM_DEFS`, the effect registry, `src/visual/layer-defs.js` and `src/sky/groups.json` by `scripts/gen-builder-dts.mjs` (`src/dsl/gen-dts.js`), which also writes `src/dsl/builder-dts.js` (the same text as a module) and `src/dsl/ts-lib-files.js` (the ES2022 library declarations) for the type-check worker. Generation depends only on the tables and the installed TypeScript library files, so it is deterministic; `--check` fails when a generated file is out of date.
@@ -465,7 +469,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 - Layers: `{ id, type, group, select, props }`; `group` and `select` are `null` for `field` and `aurora`. `props` holds every property of the layer type, with defaults filled in. A shader layer is `{ id, type: "shader", group: null, select: null, glsl, props }`; its `props` hold `opacity`, with its default filled in, and any other value the script passes. The validator does not check shader `props`, and the renderer reads only `opacity` (`visuals.md`, Shader layers).
 - `view` defaults to `{ "projection": "orbital", "background": "#000000" }`.
 - `groups` lists every group referenced by a binding, expression, layer or program handler, including `swpc.*` groups referenced by `sky.swpc` and groups named by `follow`, in sorted order. On save, the page inserts and deletes `project_subscriptions` rows so that the project's rows equal these values.
-- `program` is present only when the script registers handlers or calls `follow`: `{ "handlers": [...], "follow": [group, ...] }`. Each handler is `{ "id": "h<n>", "kind": "on", "group", "event" }`, `{ "id", "kind": "every", "intervalMs" }` or `{ "id", "kind": "every", "sync" }`, `{ "id", "kind": "after", "ms" }` (registered in setup) or `{ "id", "kind": "freshness", "source" }`. The functions stay in the VM; the IR records what was registered, so hot reload can diff it and the page knows the piece needs the VM.
+- `program` is present only when the script registers handlers or calls `follow`: `{ "handlers": [...], "follow": [group, ...], "orbits": [node, ...] }`. `orbits` is present only when `follow` declares orbits; each entry is an `orbit` expression node with an object id, validated like any `sky.orbit` expression. Each handler is `{ "id": "h<n>", "kind": "on", "group", "event" }`, `{ "id", "kind": "every", "intervalMs" }` or `{ "id", "kind": "every", "sync" }`, `{ "id", "kind": "after", "ms" }` (registered in setup) or `{ "id", "kind": "freshness", "source" }`. The functions stay in the VM; the IR records what was registered, so hot reload can diff it and the page knows the piece needs the VM.
 
 ### Schema file
 `src/dsl/ir.schema.json` is a JSON Schema (draft 2020-12) for the document. `validateIr` (`src/dsl/validate.js`) checks `irVersion`, the nesting depth of the document and its serialized size, then runs the schema check, then the semantic checks below. A version, nesting or schema error ends validation before the semantic checks.
@@ -551,12 +555,13 @@ The worker keeps the source and handlers of its last build without errors. Build
 
 | Page → worker | Worker → page |
 |---|---|
-| `{ program: { id, op: 'start', groups, objects, freshness } }` | `{ program: { id, commands, errors, dropped } }` |
-| `{ program: { id, op: 'batch', now, events, freshness } }` | `{ program: { id, commands, errors, dropped } }` |
+| `{ program: { id, op: 'start', groups, objects, freshness, orbits } }` | `{ program: { id, commands, errors, dropped } }` |
+| `{ program: { id, op: 'batch', now, events, freshness, orbits } }` | `{ program: { id, commands, errors, dropped } }` |
 | `{ program: { id, op: 'stop' } }` | `{ program: { id, commands: [], errors: [], dropped: 0 } }` |
 
 - `start` builds the kept source again, so setup starts from fresh variables, then calls the initial `enter` handlers (Program, Handlers). `groups` are the IR's groups; `objects` are their current objects as `{ id, group, fields }`; `freshness` is the current state of every source as `{ source, state }`.
 - `batch` advances the program clock to `now` (ms since start). The VM first runs due timers in time order, each at its scheduled time. A timer more than 1000 ms late fires once and skips the missed calls. It then applies `events` (`{ kind, obj, prev, traceId, initial }`) to its copy of the followed groups and calls the matching `on` handlers, then `freshness` changes (`{ source, state }`) and the matching `onFreshness` handlers.
+- `orbits` in `start` and `batch` holds the current value of each entry of `program.orbits`, in order: a number from −1 to 1 or `null`. `read.orbit` returns the latest one.
 - A command is `{ op, at, trace, src, ...args }`. `op` is `play`, `hold`, `glide`, `stop`, `stopAll`, `set` or `layer`; `at` is the handler's program time, `trace` the event's trace id (`null` for timers), `src` the handler id. At most 256 per batch; `dropped` counts the rest.
 - An error is `{ handler, line, message }`. The VM disables that handler. An error from `setup` or `vm` (the kept build failed, or the worker holds no running program) means the program is gone; the page reports it once and stops the program.
 - The page waits up to 250 ms for each `program` reply. Past that it terminates the worker and reports `handler_timeout` (`bindings.md`, Program host). The next build starts a new worker.

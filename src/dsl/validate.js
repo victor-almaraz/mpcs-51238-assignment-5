@@ -434,6 +434,9 @@ class Checker {
       }
     });
     pr.follow.forEach((/** @type {string} */ g, /** @type {number} */ i) => this.group(g, `/program/follow/${i}`));
+    (pr.orbits ?? []).forEach((/** @type {any} */ n, /** @type {number} */ i) => {
+      if (n?.op !== 'orbit' || typeof n.args?.[1] !== 'string') this.add('ir_schema', `/program/orbits/${i}`, 'A program orbit must be sky.orbit(objectId, quantity)');
+    });
   }
 
   /** @param {string} key @param {string} path @returns {boolean} */

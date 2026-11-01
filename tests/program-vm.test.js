@@ -217,6 +217,44 @@ test('start seeds the state read.freshness returns', () => {
   assert.deepEqual(ops(runner.start({ groups: [], objects: [], freshness: [{ source: 'swpc.kp', state: 'stale' }] })), ['play']);
 });
 
+test('follow(sky.orbit(...)) declares an orbit that read.orbit reads from start and batch values', () => {
+  const { ir, runner } = vm(`
+    const pad = additive({});
+    const iss = 'celestrak.stations:25544';
+    follow(sky.orbit(iss, 'latitude', { timeScale: 60 }), sky.orbit(iss, 'sunlit'));
+    every(100, () => pad.play(60 + 10 * (read.orbit(iss, 'latitude', { timeScale: 60 }) ?? 0) + (read.orbit(iss, 'sunlit') === null ? 0.5 : 0)));
+    on('celestrak.stations', 'exit', () => read.orbit(iss, 'phaseSin'));
+  `);
+  assert.deepEqual(ir.program.orbits, [
+    { op: 'orbit', args: ['latitude', 'celestrak.stations:25544', 60] },
+    { op: 'orbit', args: ['sunlit', 'celestrak.stations:25544', 1] },
+  ]);
+  assert.ok(ir.groups.includes('celestrak.stations'));
+  assert.deepEqual(runner.start({ groups: ir.groups, objects: [], orbits: [0.5, null] }).commands.map((c) => c.pitch), [65.5]);
+  assert.deepEqual(runner.batch({ now: 100, orbits: [7, -1] }).commands.map((c) => c.pitch), [70]);
+  const e = runner.batch({ now: 150, events: [{ kind: 'exit', obj: { id: 'celestrak.stations:1', group: 'celestrak.stations', fields: {} }, traceId: 'x' }] });
+  assert.match(e.errors[0].message, /follow\(sky\.orbit\('celestrak\.stations:25544', 'phaseSin'\)\)/);
+});
+
+test('follow rejects expressions other than sky.orbit with an object', () => {
+  assert.deepEqual(codes(build(`follow(sky.swpc('kp.kp'));`)), ['runtime_error ']);
+  assert.deepEqual(codes(build(`follow(sky.orbit('swpc.kp:now', 'latitude'));`)).map((c) => c.split(' ')[0]), ['orbit_no_elements']);
+});
+
+test('harmonics.set sends the whole list, clamped and padded', () => {
+  const { runner } = vm(`
+    const pad = additive({});
+    on('jpl.scout', 'enter', () => pad.harmonics.set([2, 0.5, -1]));
+    on('jpl.scout', 'enter', () => pad.harmonics.set([1, 1, 1, 1, 1, 1, 1, 1, 1]));
+    on('jpl.scout', 'enter', () => pad.harmonics.set([1], { smoothMs: 10 }));
+  `);
+  runner.start({ groups: ['jpl.scout'], objects: [] });
+  const r = runner.batch({ now: 1, events: [enter(scout('A'))] });
+  assert.deepEqual(r.commands.map(({ op, target, value }) => ({ op, target, value })), [{ op: 'set', target: 'i0.harmonics', value: [1, 0.5, 0, 0, 0, 0, 0, 0] }]);
+  assert.match(r.errors[0].message, /up to 8 numbers/);
+  assert.match(r.errors[1].message, /unknown option 'smoothMs'/);
+});
+
 test('freshness handlers receive changes of their source', () => {
   const { runner } = vm(`const b = fm({}); onFreshness('swpc.kp', (f) => { if (f.state === 'stale') b.play(40); });`);
   runner.start({ groups: [], objects: [] });
