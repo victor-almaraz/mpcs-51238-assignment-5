@@ -25,7 +25,7 @@ The three hosted services, their environment variables, setup steps, free-tier l
 | `SOURCES_ENABLED` | | optional | `worker/.env` |
 | `LOG_LEVEL` | | optional | `worker/.env` |
 
-`.env.local` and `worker/.env` are in `.gitignore`. `.env.example` at the repository root lists the four page variables with no values. `worker/.env.example` lists the six local worker variables; only `LL2_BASE` has a value (`worker.md`, Secrets and environment).
+`.env.local` and `worker/.env` are in `.gitignore`. `worker/.env.example` lists the six local worker variables; only `LL2_BASE` has a value (`worker.md`, Secrets and environment).
 
 ## Supabase
 1. Create a project in the region nearest to Chicago.

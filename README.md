@@ -60,7 +60,7 @@ None of the sources requires an API key. `doc/sources.md` lists each endpoint, i
    ```bash
    npm install
    ```
-2. Copy `.env.example` to `.env.local` and fill in the Supabase URL, the Supabase publishable key, and the Clerk publishable and secret keys.
+2. Create `.env.local` with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` (`doc/deployment.md`).
 3. Start the development server:
    ```bash
    npm run dev
