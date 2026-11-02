@@ -4,14 +4,16 @@
  * owns the GL context, buffers and frame loop.
  */
 import { diffLayers, PropResolver, ValueGate, isExprNode } from './layer-state.js';
-import { buildSprites, buildSegments, objectScreenPosition, maxProp, SPRITE_STRIDE, SEGMENT_STRIDE } from './scene.js';
+import { buildSprites, buildSegments, objectScreenPosition, maxProp, trailRequest, linesRequest, SPRITE_STRIDE, SEGMENT_STRIDE, TRAIL_QUANTUM_SEC, SPAN_QUANTUM_MIN } from './scene.js';
 import { orbitalCamera, fitRadiusKm, cameraAzimuth, earthDisc, mapRect, projectMap, projectSky, skyRadius, PROJECTIONS } from './projection.js';
-import { createFlashGuard, createLimitTail, limitStep, GRID_W, GRID_H, MAX_LIMIT_DT_SEC } from './flash-guard.js';
+import { createFlashGuard, createLimitTail, limitStep, GRID_W, GRID_H, MAX_LIMIT_DT_SEC, MAX_FLASHES_PER_SECOND } from './flash-guard.js';
 import { isReducedMotion, watchSystemReducedMotion, clampPixelRatio, REDUCED_MOTION_STEP_MS } from './motion.js';
 import { parseHex, isHexColor, COLORMAPS, mixRgb } from './color.js';
 import { summaryLines, UNAVAILABLE_STATUS } from './summary.js';
 import * as S from './shaders.js';
 import { hasOrbit } from '../sky/groups.js';
+import { DEFAULT_OBSERVER } from '../lib/settings.js';
+import { safeTrace as wrapTrace } from '../trace/bus.js';
 
 const DEG = Math.PI / 180;
 const ATLAS_COLS = 16;
@@ -19,6 +21,10 @@ const ATLAS_CELL = 64;
 const FIT_INTERVAL_MS = 1000;
 const DESAT_RATE_PER_SEC = 1;
 const EMPTY_POSITIONS = { ids: [], data: new Float32Array(0), stride: 8, index: new Map() };
+/** A repeating frame error is traced at most this often. */
+export const ERROR_REPEAT_MS = 1000;
+/** Distinct frame error messages remembered; the oldest is forgotten first. */
+const MAX_ERROR_MESSAGES = 32;
 
 /**
  * @typedef {{
@@ -76,9 +82,33 @@ function unavailableRenderer(options) {
  * @param {((record: any) => void) | undefined} fn
  */
 export function safeTrace(fn) {
-  if (!fn) return () => {};
-  return (/** @type {any} */ rec) => {
-    try { fn(rec); } catch (err) { console.error('trace rejected a visual record', err); }
+  return wrapTrace(fn, 'visual');
+}
+
+/**
+ * Rate limit for a repeating error: `report(message, nowMs)` calls `emit({ message })`
+ * the first time a message occurs, then `emit({ message, repeats })` at most once per
+ * `intervalMs` while it repeats, with the count since the previous record.
+ * @param {(data: { message: string, repeats?: number }) => void} emit
+ * @param {number} [intervalMs]
+ */
+export function createErrorThrottle(emit, intervalMs = ERROR_REPEAT_MS) {
+  /** @type {Map<string, { repeats: number, lastAt: number }>} */
+  const seen = new Map();
+  return (/** @type {string} */ message, /** @type {number} */ nowMs) => {
+    const s = seen.get(message);
+    if (!s) {
+      if (seen.size >= MAX_ERROR_MESSAGES) seen.delete(/** @type {string} */ (seen.keys().next().value));
+      seen.set(message, { repeats: 0, lastAt: nowMs });
+      emit({ message });
+      return;
+    }
+    s.repeats++;
+    if (nowMs - s.lastAt >= intervalMs) {
+      emit({ message, repeats: s.repeats });
+      s.repeats = 0;
+      s.lastAt = nowMs;
+    }
   };
 }
 
@@ -109,8 +139,8 @@ class Renderer {
     this.settings = {
       pixelRatio: clampPixelRatio(o.pixelRatio ?? 1),
       reducedMotion: o.reducedMotion ?? 'system',
-      maxFlashesPerSecond: o.maxFlashesPerSecond ?? 3,
-      observer: o.observer ?? { lat: 41.79, lon: -87.6 },
+      maxFlashesPerSecond: o.maxFlashesPerSecond ?? MAX_FLASHES_PER_SECOND,
+      observer: o.observer ?? { ...DEFAULT_OBSERVER },
     };
     this.systemReduced = false;
     this.unwatchMotion = watchSystemReducedMotion((r) => { this.systemReduced = r; });
@@ -150,6 +180,7 @@ class Renderer {
     this.glyphDirty = true;
     this.guardPixels = new Uint8Array(GRID_W * GRID_H * 8); // output grid, then scene grid
     this.scratch = new Float32Array(8);
+    this.frameError = createErrorThrottle((data) => this.trace(record('renderer', 'frameError', 'error', data)));
     this.unsubSky = this.sky ? ['enter', 'update', 'exit'].map((t) => this.sky.on(t, (e) => this.onSkyEvent(e))) : [];
     this.onLost = (/** @type {Event} */ e) => {
       e.preventDefault();
@@ -209,9 +240,10 @@ class Renderer {
     if (p.pixelRatio !== undefined) this.settings.pixelRatio = clampPixelRatio(p.pixelRatio);
     if (p.reducedMotion !== undefined) this.settings.reducedMotion = p.reducedMotion;
     if (p.maxFlashesPerSecond !== undefined) {
-      this.settings.maxFlashesPerSecond = p.maxFlashesPerSecond;
+      // Throws RangeError for a non-finite limit before anything changes (doc/visuals.md, Visual safety).
       this.guard.setMaxFlashes(p.maxFlashesPerSecond);
       this.sceneGuard.setMaxFlashes(p.maxFlashesPerSecond);
+      this.settings.maxFlashesPerSecond = p.maxFlashesPerSecond;
     }
     if (p.observer) this.settings.observer = p.observer;
   }
@@ -229,7 +261,7 @@ class Renderer {
     const loop = (/** @type {number} */ t) => {
       if (!this.running) return;
       try { this.frame(t); } catch (err) {
-        this.trace(record('renderer', 'frameError', 'error', { message: err instanceof Error ? err.message : String(err) }));
+        this.frameError(err instanceof Error ? err.message : String(err), this.now());
       }
       this.rafId = this.raf(loop);
     };
@@ -257,6 +289,7 @@ class Renderer {
     for (const p of this.userPrograms.values()) if (p) gl.deleteProgram(p);
     for (const p of Object.values(this.prog ?? {})) gl.deleteProgram(p);
     for (const b of Object.values(this.buf ?? {})) gl.deleteBuffer(b);
+    for (const v of Object.values(this.vao ?? {})) gl.deleteVertexArray(v);
     for (const t of [...(this.targets ?? []), this.guardTarget, this.boxTarget]) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
     gl.deleteTexture(this.atlas);
     gl.getExtension('WEBGL_lose_context')?.loseContext();
@@ -268,7 +301,7 @@ class Renderer {
   onSkyEvent(e) {
     const obj = e?.obj;
     if (!obj) return;
-    if (e.type === 'exit') this.lastEventMs.delete(obj.id);
+    if (e.type === 'exit') { this.lastEventMs.delete(obj.id); this.resolver.forgetObject(obj.id); }
     else this.lastEventMs.set(obj.id, this.now());
     for (const l of this.order) {
       if (l.group !== obj.group) continue;
@@ -511,10 +544,10 @@ class Renderer {
         const objects = objectsOf(/** @type {string} */ (layer.group));
         if (layer.type === 'points' && hasOrbit(String(layer.group))) {
           const byId = new Map(objects.map((o) => [o.id, o]));
-          const maxTrail = maxProp(objects, resolve, 'trail', 60);
+          const maxTrail = maxProp(objects, resolve, 'trail', TRAIL_QUANTUM_SEC);
           if (maxTrail > 0) {
             const key = `trail:${layer.id}`;
-            pathRequests.push({ key, group: layer.group, fromSec: -(maxTrail + 5), toSec: 0, stepSec: Math.max(1, maxTrail / 60) });
+            pathRequests.push(trailRequest(key, String(layer.group), maxTrail));
             this.drawPaths(key, objects, projection, view, simNow, (id) => {
               const p = resolve(id);
               const trail = /** @type {number} */ (p.trail);
@@ -533,9 +566,9 @@ class Renderer {
       } else if (layer.type === 'lines') {
         const objects = objectsOf(/** @type {string} */ (layer.group));
         if (!hasOrbit(String(layer.group))) continue;
-        const maxSpan = maxProp(objects, resolve, 'span', 10);
+        const maxSpan = maxProp(objects, resolve, 'span', SPAN_QUANTUM_MIN);
         const key = `lines:${layer.id}`;
-        pathRequests.push({ key, group: layer.group, fromSec: -maxSpan * 30, toSec: maxSpan * 30, stepSec: 60 });
+        pathRequests.push(linesRequest(key, String(layer.group), maxSpan));
         this.drawPaths(key, objects, projection, view, simNow, (id) => {
           const p = resolve(id);
           const half = /** @type {number} */ (p.span) * 30;
@@ -737,9 +770,7 @@ class Renderer {
   }
 
   drawHighlight(positions, projection, view, ctx) {
-    const id = /** @type {string} */ (this.highlighted);
-    const group = id.slice(0, id.lastIndexOf(':'));
-    const obj = (this.sky?.get(group) ?? []).find((o) => o.id === id);
+    const obj = this.sky?.object(/** @type {string} */ (this.highlighted)) ?? null;
     if (!obj) return;
     const pos = objectScreenPosition(obj, positions, projection, view, ctx);
     if (!pos) return;

@@ -143,6 +143,13 @@ test('setVoicePan and setVoiceMod after noteOn when implemented; skipped when ab
   assert.deepEqual(b.rt.disabled(), []);
 });
 
+test('voiceMods values are clamped to −1..1 like pan', () => {
+  const a = setup({ binding: { voiceMods: { brightness: { op: 'mul', args: [f('x'), 10] }, damping: { op: 'neg', args: [f('x')] } } } });
+  a.rt.start();
+  a.sky.enter(cad('a', { p: 60, x: 3 }));
+  assert.deepEqual(a.inst.callsOf('setVoiceMod')[0], ['setVoiceMod', 'sky:b0:jpl.cad:a', { brightness: 1, damping: -1 }]);
+});
+
 test('without setVoicePitch: release and restart at the new pitch, traced as fallback', () => {
   const { inst, sky, clock, trace, rt } = setup({ instOpts: { voiceControl: ['setVoicePan'] } });
   rt.start();

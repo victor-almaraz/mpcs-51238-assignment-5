@@ -220,3 +220,17 @@ test('prototype keys are not definitions', () => {
   ir.layers[0].type = 'toString';
   assert.deepEqual(v(ir), ['unknown_option /instruments/0/params/constructor', 'ir_schema /layers/0/type']);
 });
+
+test('voiceMods names are modulatable parameters of the instrument; constants clamp to −1..1', () => {
+  const r = build(`const s = subtractive({});
+sky.group('celestrak.stations').voices(s, { pitch: 60, voiceMods: { cutoff: field('inclination'), wave: 0.5, nope: 1, resonance: 3 } });`);
+  assert.deepEqual(codes(r), ['unknown_option /bindings/0/voiceMods/wave', 'unknown_option /bindings/0/voiceMods/nope']);
+  assert.equal(r.problems[0].line, 2);
+  assert.equal(r.ir.bindings[0].voiceMods.resonance, 1);
+  const ir = example();
+  const voices = ir.bindings.findIndex((b) => b.kind === 'voices');
+  const inst = ir.instruments.find((i) => i.id === ir.bindings[voices].inst);
+  const name = Object.entries(defs.instruments[inst.type].params).find(([, p]) => p.modulatable)[0];
+  ir.bindings[voices].voiceMods = { [name]: 2 };
+  assert.deepEqual(v(ir), [`ir_schema /bindings/${voices}/voiceMods/${name}`]);
+});

@@ -4,9 +4,30 @@ import { NormalizeError, normalizers } from './normalizers/index.js';
 import { byHost, isDue, onFailure, onSuccess } from './scheduler.js';
 
 /** A tick stops starting requests after this many milliseconds. */
-export const TICK_BUDGET_MS = 120_000;
+const TICK_BUDGET_MS = 120_000;
 /** Host lease lifetime: the tick budget plus time for the last writes (doc/worker.md, Invocation model). */
-export const HOST_LEASE_SEC = 150;
+const HOST_LEASE_SEC = 150;
+
+/**
+ * Normalize a body and hash each object. Throws NormalizeError for a duplicate id; any other
+ * exception comes from the normalizer itself.
+ * @returns {Promise<{ id: string, fields: object, hash: string }[]>}
+ */
+async function normalizeRows(entry, body, log) {
+  const ctx = {
+    source: entry.id, group: entry.group,
+    warn: (fields) => log.warn({ source: entry.id, ...fields }),
+  };
+  const objects = normalizers[entry.normalizer](body, entry.normalizerArgs, ctx);
+  const seen = new Set();
+  for (const o of objects) {
+    if (seen.has(o.id)) throw new NormalizeError(`duplicate object id ${o.id}`);
+    seen.add(o.id);
+  }
+  const rows = [];
+  for (const o of objects) rows.push({ id: o.id, fields: o.fields, hash: await hashFields(o.fields) });
+  return rows;
+}
 
 /**
  * Fetch, normalize and store one registry entry. Records exactly one `runs` row.
@@ -26,26 +47,22 @@ export async function runSource(entry, st, { store, fetch, userAgent, log, now }
   if (res.status !== 200) {
     failure = { error: res.error ?? `HTTP ${res.status}: ${res.body.slice(0, 200)}`, retryAfterSec: res.retryAfterSec };
   } else {
-    try {
-      // SWPC pads some files with NUL bytes, which Postgres text rejects (doc/worker.md, Pipeline).
-      const body = res.body.replace(/\u0000+$/, '');
-      await store.saveSample(entry.id, iso(fetchedAt), res.status, body);
-      const ctx = {
-        source: entry.id, group: entry.group,
-        warn: (fields) => log.warn({ source: entry.id, ...fields }),
-      };
-      const objects = normalizers[entry.normalizer](body, entry.normalizerArgs, ctx);
-      const rows = [];
-      const seen = new Set();
-      for (const o of objects) {
-        if (seen.has(o.id)) throw new NormalizeError(`duplicate object id ${o.id}`);
-        seen.add(o.id);
+    // Each step labels its own errors (doc/worker.md, Pipeline): a normalizer bug is `normalize:`, not `store:`.
+    const step = async (label, fn) => {
+      try {
+        return await fn();
+      } catch (err) {
+        failure = { error: `${label}: ${String(err?.message ?? err)}`, retryAfterSec: null };
+        return undefined;
       }
-      for (const o of objects) rows.push({ id: o.id, fields: o.fields, hash: await hashFields(o.fields) });
-      const changed = await store.upsertObjects(entry.id, entry.group, rows, entry.full);
-      rowsChanged = changed.length;
-    } catch (err) {
-      failure = { error: `${err instanceof NormalizeError ? 'normalize' : 'store'}: ${err.message}`, retryAfterSec: null };
+    };
+    // SWPC pads some files with NUL bytes, which Postgres text rejects (doc/worker.md, Pipeline).
+    const body = res.body.replace(/\u0000+$/, '');
+    await step('store', () => store.saveSample(entry.id, iso(fetchedAt), res.status, body));
+    const rows = failure ? undefined : await step('normalize', () => normalizeRows(entry, body, log));
+    if (rows) {
+      const changed = await step('store', () => store.upsertObjects(entry.id, entry.group, rows, entry.full));
+      if (changed) rowsChanged = changed.length;
     }
   }
 
@@ -71,10 +88,35 @@ export async function runSource(entry, st, { store, fetch, userAgent, log, now }
  * Claim one entry (doc/database.md, Claim RPC). Returns whether it may run.
  * @param {object} entry @param {object | undefined} st @param {{ store, log }} deps
  */
-export async function claimEntry(entry, st, { store, log }) {
+async function claimEntry(entry, st, { store, log }) {
   const result = await store.claim(entry.id, entry.intervalSec, st?.last_attempt_at ?? null, entry.onNon200 === 'halt');
   if (result === 'halted') log.error({ source: entry.id, event: 'halt', error: 'previous run did not record its result' });
   return result === 'claimed';
+}
+
+const errorText = (err) => String(err?.message ?? err);
+
+/**
+ * Run one entry now, outside the due check (cli.js --once). Honors `halted` and takes the
+ * host lease like a tick, so it never overlaps another request to the same host.
+ * @param {object} entry validated registry entry
+ * @param {{ store, fetch, userAgent: string, log, now?: () => number, holder?: string }} deps
+ * @returns {Promise<{ result: 'ran' | 'halted' | 'host_busy' | 'not_claimed', ok: boolean }>}
+ */
+export async function runOnce(entry, deps) {
+  const now = deps.now ?? Date.now;
+  const holder = deps.holder ?? crypto.randomUUID();
+  const st = (await deps.store.loadStatus()).get(entry.id);
+  if (st?.halted) return { result: 'halted', ok: false };
+  if (!(await deps.store.claimHost(entry.host, holder, HOST_LEASE_SEC))) return { result: 'host_busy', ok: false };
+  try {
+    if (!(await claimEntry(entry, st, deps))) return { result: 'not_claimed', ok: false };
+    const { ok } = await runSource(entry, st, { ...deps, now });
+    return { result: 'ran', ok };
+  } finally {
+    await deps.store.releaseHost(entry.host, holder)
+      .catch((err) => deps.log.error({ host: entry.host, event: 'once_error', error: errorText(err) }));
+  }
 }
 
 /**
@@ -92,14 +134,16 @@ export async function tick(deps) {
   const skipped = [];
   const failed = [];
   const holder = deps.holder ?? crypto.randomUUID();
-  const errorText = (err) => String(err?.message ?? err);
   await Promise.all(byHost(due).map(async (entries) => {
     const host = entries[0].host;
-    let leased = false;
+    let leased;
     try {
       leased = await deps.store.claimHost(host, holder, HOST_LEASE_SEC);
     } catch (err) {
+      // A database error is a failure, not a skip, so `cli.js tick` exits non-zero while the database is down.
       deps.log.error({ host, event: 'tick_error', error: errorText(err) });
+      failed.push(...entries.map((e) => e.id));
+      return;
     }
     if (!leased) { skipped.push(...entries.map((e) => e.id)); return; }
     try {

@@ -26,7 +26,7 @@ Every instrument accepts `volume` (dB, −60–0, default −6), `octave` (−3�
 | `vibratoRate` | 0.5–12 | 5 | Hz |
 | `vibratoDepth` | 0–100 | 0 | cents |
 
-`harmonics` is set in the constructor only; it accepts neither `follow` nor `mod`.
+`harmonics` accepts neither `follow` nor `mod`. Set it in the constructor, or from a handler with `inst.harmonics.set([...])` ([Programs](programs#changing-harmonics)).
 
 ### `subtractive`
 | Parameter | Range | Default | Unit |
@@ -127,7 +127,7 @@ Choice parameters (`waveform`, `source`) accept `follow` with an option index bu
 |---|---|
 | `sky.group(key)` | A group |
 | `.top(n, field, order)` | The first `n` objects by `field`; `order` `'desc'` or `'asc'` |
-| `.voices(inst, { pitch, velocity, pan })` | One held note per object |
+| `.voices(inst, { pitch, velocity, pan, voiceMods })` | One held note per object; `voiceMods` maps parameters that `.mod()` accepts to per-note offsets, −1–1 |
 | `.on(kind)` | Events: `'enter'`, `'update'`, `'exit'` |
 | `.when(expr)` | Events where `expr` is true |
 | `.trigger(inst, { pitch, velocity, durationMs, maxPerSecond })` | One note per event; defaults velocity 100, 250 ms, 2 per second |
@@ -207,15 +207,17 @@ Handlers are registered in the setup; commands and `read.*` work inside handlers
 | `every(interval, fn)` | Calls `fn(t)` every 10–3,600,000 ms, or every sync value such as `'1/8'` |
 | `after(ms, fn)` | Calls `fn(t)` once, 0–3,600,000 ms later; returns a function that cancels it |
 | `onFreshness(source, fn)` | Calls `fn({ source, state })` when a source's freshness changes |
-| `follow(...groups)` | Follows groups read only with `read.*` |
+| `follow(...groups)` | Follows groups read only with `read.*`; `follow(sky.orbit(id, quantity, { timeScale }))` declares an orbit for `read.orbit` |
 | `inst.play(pitch, { velocity, pan, durationMs })` | One note; defaults velocity 100, pan 0, 250 ms (20–10,000) |
 | `inst.hold(key, pitch, { velocity, pan })` | A held note named `key` (1–64 characters) |
 | `inst.glide(key, pitch, ms)` | Slides a held note; `ms` 0–10,000, default 150 |
 | `inst.stop(key)`, `inst.stopAll()` | Releases held notes |
 | `inst.<param>.set(value, { smoothMs })`, `slot.<param>.set(...)` | Sets a numeric parameter; `smoothMs` default 250 |
+| `inst.harmonics.set(values)` | Sets an additive instrument's 8 harmonics, each 0–1, at once |
 | `slot.bypass.set(on)` | Bypasses an effect |
 | `layerHandle.set(props)` | Sets constant layer properties |
 | `read.swpc(path)`, `read.group(key)`, `read.object(id)`, `read.freshness(source)` | Current sky values |
+| `read.orbit(id, quantity, { timeScale })` | A declared orbit's current value, −1 to 1, or `null`; it changes every 500 ms |
 | `time()` | Milliseconds since the program started |
 | `random()`, `randInt(n)`, `choose(list)` | Choices seeded by `seed()`; `Math.random` is the same generator |
 
@@ -224,7 +226,7 @@ Handlers are registered in the setup; commands and `read.*` work inside handlers
 ## Escape hatches
 | Call | Effect |
 |---|---|
-| `fn('o => ...')` | An expression computed by a JavaScript function, given as a string; the string is not type-checked |
+| `fn('o => ...')` | An expression computed by a JavaScript function, given as a string; the string is not type-checked. A call that throws or runs longer than 1.5 s gives `null` |
 | `layer.shader(glsl, props)` | A fragment-shader layer |
 
 A piece using either runs in your editor only and cannot be shared. `fn` is not allowed in layer properties.
@@ -250,3 +252,4 @@ A piece using either runs in your editor only and cannot be shared. `fn` is not 
 | New notes per second from handlers | 200 |
 | Commands per round | 256 |
 | Waiting after() calls | 256 |
+| Harmonics updates per second, per instrument | 30 |

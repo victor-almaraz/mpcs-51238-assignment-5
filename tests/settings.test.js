@@ -67,3 +67,11 @@ test('stricterSafety keeps the stricter of each safety limit and ignores an inva
   assert.deepEqual(stricterSafety(DEFAULT_SETTINGS, 'junk'), structuredClone(DEFAULT_SETTINGS));
   assert.equal(stricterSafety(DEFAULT_SETTINGS, { maxMasterDb: -20 }).audio.masterDb, -20, 'masterDb never above maxMasterDb');
 });
+
+test('the default observer is one frozen constant that settings and the visuals share', async () => {
+  const { DEFAULT_OBSERVER, DEFAULT_SETTINGS, validateSettings } = await import('../src/lib/settings.js');
+  assert.deepEqual(DEFAULT_OBSERVER, { lat: 41.79, lon: -87.6 });
+  assert.ok(Object.isFrozen(DEFAULT_OBSERVER));
+  assert.deepEqual(DEFAULT_SETTINGS.data.observer, DEFAULT_OBSERVER);
+  assert.deepEqual(validateSettings({}).settings.data.observer, DEFAULT_OBSERVER);
+});

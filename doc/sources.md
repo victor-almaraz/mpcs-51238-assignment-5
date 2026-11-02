@@ -34,13 +34,13 @@ Every value the sky provides belongs to one class. The class determines which DS
 Orbital elements are the step function that sets each VLFO's rate and phase: an element update moves an orbit VLFO's phase by the correction CelesTrak publishes, without a discontinuity larger than that correction.
 
 ## CelesTrak
-- Domain: `celestrak.org` only. An HTTP 301 indicates a wrong domain or legacy URL; treat it as a failure.
-- GP data updates once every 2 hours. CelesTrak enforces one download per update for each group (enforced from 2026-03-26). A second download before the next update returns HTTP 403 with a text explanation.
+- Domain: `celestrak.org` only. An HTTP 301 indicates a wrong domain or legacy URL. The fetcher does not follow redirects, so a 301 is a non-200 response and halts the source.
+- GP data updates once every 2 hours. CelesTrak allows one download per update for each group, enforced since 2026-03-26. A second download before the next update returns HTTP 403 with a text explanation.
 - Policy `halt`: any non-200 response sets `source_status.halted = true` for that registry id. The worker makes no further requests to it until a human clears the halt (`worker.md`, Failure policies). Repeated failing requests can put the worker's IP on CelesTrak's firewall.
-- The worker persists `last_success_at` per registry id and never fetches a group before `last_success_at + interval`, including after a restart.
-- Format: OMM JSON (`FORMAT=json`). Catalog numbers assigned from 2026-07-11 have six digits (the `stations` group already contains `101031`); the TLE format cannot represent them. `NORAD_CAT_ID` arrives as a JSON number; the normalizer stores it as a decimal string.
+- The worker persists `last_success_at` per registry id in `source_status` and never fetches a group before `last_success_at + intervalSec`. Both the due check and `claim_source` enforce this, so it holds across invocations and for `cli.js --once` (`worker.md`, Invocation model).
+- Format: OMM JSON (`FORMAT=json`). Catalog numbers assigned from 2026-07-11 have six digits (the `stations` group contains `101031`); the TLE format cannot represent them. `NORAD_CAT_ID` arrives as a JSON number; the normalizer stores it as a decimal string.
 - Edge Functions have no static egress IP; the address is shared with other workloads. A download of the same group by another workload from the same address can produce a 403 for this worker, which halts the source like any other non-200 response.
-- An HTTP 200 response can carry a plain-text body such as "No GP data found". The normalizer rejects any body that is not a non-empty JSON array; an empty array would otherwise mark every object in the group as exited. `EPOCH` is parsed as UTC; a value that is not a valid timestamp is a normalize error.
+- An HTTP 200 response can carry a plain-text body such as "No GP data found". The normalizer rejects any body that is not a non-empty JSON array; an empty array would otherwise mark every object in the group as exited. `EPOCH` without a zone is read as UTC; a value that is not a valid timestamp is a normalize error. A record whose required elements (`NORAD_CAT_ID`, `EPOCH`, `MEAN_MOTION`, `ECCENTRICITY`, `INCLINATION`, `RA_OF_ASC_NODE`, `ARG_OF_PERICENTER`, `MEAN_ANOMALY`) are missing or unusable is a normalize error; optional fields that do not parse become `null`.
 - The `active` group (over 10,000 objects) is not a registry source.
 
 | Field | OMM key | Unit |
@@ -66,9 +66,9 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 `src/sky/omm.js` exports `toOmm(fields)`, which restores the OMM keys for `satellite.json2satrec`.
 
 ## NOAA SWPC
-- SWPC restructured its JSON products under Service Change Notice 26-21 (effective 2026-03-31). `products/solar-wind/*.json` returns 404. Solar wind comes from `json/rtsw/`.
+- Under Service Change Notice 26-21 (effective 2026-03-31), `products/solar-wind/*.json` returns 404. Solar wind comes from `json/rtsw/`.
 - RTSW files hold 24 hours of one-minute rows, newest first, one row per spacecraft per minute. Each row carries `source` (spacecraft) and `active` (the forecaster-selected primary). The normalizer selects the first row with `active === true` and records its `source` in `spacecraft`. The spacecraft name is data; code does not assume one.
-- Before `JSON.parse`, strip trailing `\u0000` bytes. After parsing, map `-9999` and `null` to `null`.
+- Before `JSON.parse`, the normalizers strip trailing `\u0000` bytes. After parsing, they map `-9999` and `null` to `null`.
 - The Kp file is an array of row objects. The normalizer takes the row with the latest `time_tag`.
 
 | Group | Field | Source key | Unit |
@@ -89,9 +89,9 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 ## JPL SSD/CNEOS
 - `ssd-api.jpl.nasa.gov` presents a chain that ends at Sectigo Public Server Authentication Root R46. Node.js and Deno bundle that root; the macOS `/etc/ssl/cert.pem` lacks it, so `curl` on macOS fails verification unless given a current CA bundle.
 - The SSD/CNEOS fair-use policy requires one request at a time, no unnecessary repeated requests, caching of results, and backing off on errors. Browsers may not call these APIs; only the worker does.
-- Check `signature.version` in every response. CAD documents version `1.5`. A different version logs `warn` with event `version_mismatch` and the run still proceeds; a missing field fails normalization.
-- CAD returns `fields` (column names) and `data` (rows). Zip them into objects. `count: 0` with HTTP 200 is a valid empty result.
-- CAD returns every value as a string. The normalizer converts numeric columns with `Number` and maps non-finite results to `null`. `cd` has the form `2026-Oct-31 02:35`.
+- The normalizers check `signature.version` in every response against the registry's `normalizerArgs.version` (`1.5` for CAD, `1.3` for Scout). A different version logs `warn` with event `version_mismatch` and the run proceeds; a missing `signature.version` or a missing field fails normalization.
+- CAD returns `fields` (column names) and `data` (rows). The normalizer zips them into objects. `count: 0` with HTTP 200 is a valid empty result.
+- CAD returns every value as a string. The normalizer converts numeric columns with `Number` and maps non-finite results and `-9999` to `null`. `cd` has the form `2026-Oct-31 02:35`.
 - Scout returns `signature.version` `1.3`, `count` as a string, and a `data` array of candidate objects. `neoScore`, `phaScore`, `nObs` and `rating` arrive as numbers; `H`, `arc` and `vInf` arrive as strings or `null`. The normalizer converts them to numbers. `tEphem` advances on every Scout run and is not a field, so an unchanged candidate does not produce an update.
 
 | Group | Field | Source key | Unit |
@@ -114,7 +114,7 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 | `jpl.scout` | `lastRun` | `lastRun` | |
 
 ## Launch Library 2
-- Anonymous access allows 15 requests per hour per IP. HTTP 429 carries `Retry-After`; policy `retryAfter` waits that many seconds, or 3600 s when the header is absent.
+- Anonymous access allows 15 requests per hour per IP. HTTP 429 carries `Retry-After`; policy `retryAfter` waits that many seconds, or 3600 s when the header is absent, capped at the entry's `maxBackoffSec`. Supabase Edge Functions share outbound IPs with other projects, so other tenants' requests count against the same quota and 429s occur even at one request per 600 s.
 - `mode=normal` is required: `mode=list` omits `launch_service_provider` and `pad`. A `limit=10` response is about 90 KB.
 - `pad.latitude` and `pad.longitude` arrive as numbers.
 - `LL2_BASE` is `https://lldev.thespacedevs.com/2.3.0` in development (stale data, no rate limit) and `https://ll.thespacedevs.com/2.3.0` in production.
@@ -149,15 +149,17 @@ Orbital elements are the step function that sets each VLFO's rate and phase: an 
 |---|---|
 | `id` | Registry id, unique; also the `runs.source_id` |
 | `group` | Group key written to `sky_objects.group_key` |
-| `url` | Request URL; `${LL2_BASE}` is substituted at boot |
-| `intervalSec` | Minimum seconds between attempts |
-| `timeoutMs` | Request timeout |
-| `normalizer` | Name in `worker/src/normalizers/index.js` |
+| `url` | Request URL, `https` only; `${LL2_BASE}` is substituted from the environment when the configuration loads, on each invocation |
+| `intervalSec` | Seconds between attempts, at least 60 (`worker.md`, Invocation model) |
+| `timeoutMs` | Request timeout, 1000–60000 ms |
+| `normalizer` | Name in `supabase/functions/harvest/normalizers/index.js` |
 | `normalizerArgs` | Static arguments passed to the normalizer |
 | `full` | `true` when each response lists the whole group; objects absent from it get `removed_at` |
 | `onNon200` | `halt`, `retryAfter` or `backoff` |
-| `maxBackoffSec` | Upper bound for `backoff` |
+| `maxBackoffSec` | Upper bound for the `backoff` delay. Under `retryAfter`, upper bound for the wait when greater than 0; 0 leaves the wait uncapped. Unused under `halt` |
 | `enabled` | Disabled entries are never scheduled |
+
+`registry.js` validates every entry when the configuration loads: each key in the table is required, unknown keys are rejected, and ids are unique and have the form `source.name`. The first problem fails the invocation with HTTP 500 and a message naming the entry.
 
 ## Normalization
 ```ts
@@ -173,7 +175,7 @@ type SkyObject = {
 - An object that appears in several groups (the ISS in `stations` and `visual`) is stored once per group.
 
 ## Attribution
-The page footer and console show: "Orbital data: CelesTrak. Space weather: NOAA SWPC. Close approaches and Scout: NASA/JPL CNEOS. Launches: The Space Devs, Launch Library 2."
+The footer of the landing, projects, console, settings, guide, sign-in and error pages (`src/ui/attribution.tsx`) reads: "Orbital data: CelesTrak. Space weather: NOAA SWPC. Close approaches and Scout: NASA/JPL CNEOS. Launches: The Space Devs, Launch Library 2."
 
 ## Saved responses
 `worker/test/fixtures/captures.jsonl` lists each saved response with its URL, time, status and size, and names the source of each derived fixture. Observations from two captures on 2026-10-30: five minutes apart for SWPC, JPL and LL2; 2 h 17 min apart for CelesTrak, to stay within one download per GP update:

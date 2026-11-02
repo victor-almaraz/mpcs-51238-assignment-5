@@ -19,6 +19,25 @@ export const PATH_WIDTH = 1;
 const WHITE = [1, 1, 1];
 
 /**
+ * Groups drawn at a point on Earth's surface: the fields holding latitude and
+ * longitude in degrees (doc/visuals.md, Object positions).
+ * @type {Readonly<Record<string, { lat: string, lon: string }>>}
+ */
+export const SURFACE_FIELDS = Object.freeze({ 'll2.upcoming': Object.freeze({ lat: 'padLat', lon: 'padLon' }) });
+
+/** Trail requests round the longest trail up to this many seconds. */
+export const TRAIL_QUANTUM_SEC = 60;
+/** Trails start this many seconds earlier than the longest trail, so the oldest end is covered between path updates. */
+export const TRAIL_MARGIN_SEC = 5;
+/** Samples per trail; the step is the trail length divided by this, at least MIN_TRAIL_STEP_SEC. */
+export const TRAIL_SAMPLES = 60;
+export const MIN_TRAIL_STEP_SEC = 1;
+/** Line requests round the longest `span` up to this many minutes. */
+export const SPAN_QUANTUM_MIN = 10;
+/** Lines are sampled once per minute (doc/visuals.md, Property meanings). */
+export const LINE_STEP_SEC = 60;
+
+/**
  * Where an object is drawn.
  * @param {any} obj SkyObject
  * @param {{ ids: string[], data: Float32Array, index: Map<string, number> }} positions
@@ -34,8 +53,9 @@ export function objectScreenPosition(obj, positions, projection, view, ctx) {
     if (i === undefined) return null;
     return projectRecord(projection, positions.data, i * STRIDE, view);
   }
-  if (group === 'll2.upcoming') {
-    const lat = obj.fields?.padLat, lon = obj.fields?.padLon;
+  const surface = SURFACE_FIELDS[group];
+  if (surface) {
+    const lat = obj.fields?.[surface.lat], lon = obj.fields?.[surface.lon];
     if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
     const rec = surfaceRecord(lat, lon, ctx.simMs, ctx.observer, ctx.scratch);
     return projectRecord(projection, rec, 0, view);
@@ -172,4 +192,23 @@ export function maxProp(objects, resolve, prop, quantum) {
     if (typeof v === 'number' && v > m) m = v;
   }
   return m > 0 ? Math.ceil(m / quantum) * quantum : 0;
+}
+
+/**
+ * Path request of a points layer's trails, for the longest trail `maxTrailSec` (from maxProp).
+ * @param {string} key @param {string} group @param {number} maxTrailSec
+ * @returns {import('./propagation-core.js').PathRequest}
+ */
+export function trailRequest(key, group, maxTrailSec) {
+  return { key, group, fromSec: -(maxTrailSec + TRAIL_MARGIN_SEC), toSec: 0, stepSec: Math.max(MIN_TRAIL_STEP_SEC, maxTrailSec / TRAIL_SAMPLES) };
+}
+
+/**
+ * Path request of a lines layer, for the longest `span` in minutes (from maxProp): half before and half after now.
+ * @param {string} key @param {string} group @param {number} maxSpanMin
+ * @returns {import('./propagation-core.js').PathRequest}
+ */
+export function linesRequest(key, group, maxSpanMin) {
+  const half = (maxSpanMin * 60) / 2;
+  return { key, group, fromSec: -half, toSec: half, stepSec: LINE_STEP_SEC };
 }

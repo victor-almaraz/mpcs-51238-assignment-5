@@ -94,7 +94,7 @@ test('the limit only gets stricter: 0 intervenes on one transition, values above
   assert.equal(transitionThreshold(0), 1);
   assert.equal(transitionThreshold(3), 6);
   assert.equal(transitionThreshold(10), 6);
-  assert.equal(transitionThreshold(NaN), 6);
+  assert.equal(transitionThreshold(-1), 1, 'a negative limit acts as 0');
   assert.equal(transitionThreshold(1.5), 3);
   assert.equal(transitionThreshold(2.4), 4, 'a fractional limit rounds down');
   const g = createFlashGuard({ maxFlashesPerSecond: 0 });
@@ -235,4 +235,22 @@ test('flashLimit records name what was measured', () => {
   let t = 0;
   for (let f = 0; f < FPS; f++, t += 1000 / FPS) g.frame(Math.floor(f / 6) % 2 ? white : black, t);
   assert.equal(records[0].data.measured, 'scene');
+});
+
+test('a limit that is not a finite number throws instead of loosening the guard', () => {
+  for (const bad of [NaN, Infinity, -Infinity, undefined, null, '2']) {
+    assert.throws(() => transitionThreshold(/** @type {any} */ (bad)), RangeError, String(bad));
+  }
+  assert.throws(() => createFlashGuard({ maxFlashesPerSecond: NaN }), RangeError);
+  const g = createFlashGuard({ maxFlashesPerSecond: 1 });
+  assert.throws(() => g.setMaxFlashes(NaN), RangeError);
+  assert.equal(g.threshold, 2, 'a rejected limit leaves the threshold unchanged');
+  assert.equal('reset' in g, false);
+});
+
+test('settings take the flash limit from the guard', async () => {
+  const settings = await import('../src/lib/settings.js');
+  const guard = await import('../src/visual/flash-guard.js');
+  assert.equal(settings.MAX_FLASHES_PER_SECOND, guard.MAX_FLASHES_PER_SECOND);
+  assert.equal(settings.DEFAULT_SETTINGS.visual.maxFlashesPerSecond, guard.MAX_FLASHES_PER_SECOND);
 });

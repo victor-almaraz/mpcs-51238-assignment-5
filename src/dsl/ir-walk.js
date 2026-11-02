@@ -1,6 +1,11 @@
 // Enumerates the expression positions of an IR document with their JSON Pointers and evaluation
 // contexts, and collects the groups a document references. Shared by the builder and the validator.
 
+import { isNode } from '../expr/evaluate.js';
+import { objectGroup, parseSwpcPath } from '../expr/deps.js';
+
+export { isNode, objectGroup };
+
 /**
  * @typedef {{ object: string | null, layer: boolean }} ExprContext
  * `object` is the group of the current object, or null where no current object exists.
@@ -43,6 +48,7 @@ export function forEachExprPosition(ir, visit) {
     const ctx = { object: l.group, layer: true };
     for (const [k, v] of Object.entries(l.props)) visit(v, `/layers/${i}/props/${escapePointer(k)}`, ctx);
   });
+  (ir.program?.orbits ?? []).forEach((/** @type {unknown} */ n, /** @type {number} */ i) => visit(n, `/program/orbits/${i}`, global));
 }
 
 /**
@@ -65,12 +71,6 @@ export function forEachNode(value, path, visit, maxDepth = Infinity) {
   }
 }
 
-/** @param {unknown} v @returns {v is { op: string, args: unknown[] }} */
-export function isNode(v) {
-  return typeof v === 'object' && v !== null && !Array.isArray(v)
-    && typeof (/** @type {any} */ (v).op) === 'string' && Array.isArray(/** @type {any} */ (v).args);
-}
-
 /**
  * The group an expression node refers to by name, or null.
  * @param {{ op: string, args: unknown[] }} node
@@ -79,18 +79,12 @@ export function isNode(v) {
 export function nodeGroup(node) {
   const a = node.args;
   switch (node.op) {
-    case 'swpc': return typeof a[0] === 'string' ? `swpc.${a[0].split('.')[0]}` : null;
+    case 'swpc': return parseSwpcPath(a[0])?.group ?? null;
     case 'value': return typeof a[0] === 'string' ? objectGroup(a[0]) : null;
     case 'count': case 'mean': case 'spread': return typeof a[0] === 'string' ? a[0] : null;
     case 'orbit': return typeof a[1] === 'string' ? objectGroup(a[1]) : null;
     default: return null;
   }
-}
-
-/** `celestrak.stations:25544` → `celestrak.stations`. @param {string} objectId */
-export function objectGroup(objectId) {
-  const i = objectId.indexOf(':');
-  return i < 0 ? objectId : objectId.slice(0, i);
 }
 
 /**

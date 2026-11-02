@@ -6,7 +6,9 @@ import { createSmoother } from './param.js';
 import { createTokenBucket } from './trigger.js';
 import { LIMITS } from './limits.js';
 import { numberOr, panOf, pitchOf, velocityOf } from './values.js';
-import { PROGRAM } from '../dsl/limits.js';
+import { DEFAULTS, PROGRAM, RANGES } from '../dsl/limits.js';
+import { own } from '../dsl/defs.js';
+import { DEFS } from '../dsl/load-defs.js';
 import { LAYER_DEFS } from '../visual/layer-defs.js';
 import { coerceProp } from '../visual/layer-state.js';
 
@@ -18,8 +20,6 @@ import { coerceProp } from '../visual/layer-state.js';
 const OPS = new Set(['play', 'hold', 'glide', 'stop', 'stopAll', 'set', 'layer']);
 /** Error sources that mean the VM no longer holds the program. */
 const FATAL = new Set(['setup', 'vm']);
-/** Most events queued between two batches; older ones are dropped. */
-const MAX_QUEUED = 4096;
 
 /** @param {any} o */
 const wire = (o) => ({ id: o.id, group: o.group, fields: o.fields ?? {} });
@@ -34,9 +34,12 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
  *   onProblem?: (p: RuntimeProblem) => void,
  *   onLayerValues?: () => void,
  *   newTraceId?: () => string,
- * }} opts
+ *   defs?: import('../dsl/defs.js').Defs,
+ *   orbit?: (objectId: string, quantity: string, timeScale: number) => number | null,
+ * }} opts  `defs`: normalized definition tables (default DEFS), for the parameters `set` accepts;
+ *   `orbit`: the current value of an orbit source (the propagator's latest sample)
  */
-export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock, onProblem = () => {}, onLayerValues = () => {}, newTraceId }) {
+export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock, onProblem = () => {}, onLayerValues = () => {}, newTraceId, defs = DEFS, orbit = () => null }) {
   const emit = createTracer(trace, clock.wallNow ?? Date.now);
   let traceSeq = 0;
   const nextTraceId = newTraceId ?? (() => `program-${(clock.wallNow ?? Date.now)()}-${++traceSeq}`);
@@ -59,6 +62,11 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
   const held = new Map();
   /** @type {Map<string, { sm: ReturnType<typeof createSmoother>, send: (v: number) => void, lastSent: number }>} */
   const smoothers = new Map();
+  /** List parameters (`harmonics`) by target: the value waiting to be sent, rate-limited. @type {Map<string, { pending: number[] | null, lastSent: number }>} */
+  const lists = new Map();
+  const listIntervalMs = 1000 / PROGRAM.harmonicsPerSecond;
+  /** Orbits declared with follow(sky.orbit(...)), in IR order. */
+  const orbitSpecs = (ir.program?.orbits ?? []).map((/** @type {any} */ n) => ({ objectId: n.args[1], quantity: n.args[0], timeScale: n.args[2] ?? 1 }));
   /** @type {Record<string, Record<string, unknown>>} */
   let layerValues = {};
   const bucket = createTokenBucket(PROGRAM.noteStartsPerSecond, clock.now);
@@ -74,7 +82,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
   /** @param {any} e */
   const onSky = (e) => {
     if (!running || !e?.obj || !groups.has(e.obj.group)) return;
-    if (queue.length >= MAX_QUEUED) { queue.shift(); bind('dropped', { reason: 'event queue full' }, e.traceId ?? null, 'warn'); }
+    if (queue.length >= PROGRAM.queuedEvents) { queue.shift(); bind('dropped', { reason: 'event queue full' }, e.traceId ?? null, 'warn'); }
     queue.push({ kind: e.type, obj: wire(e.obj), prev: e.prev ? wire(e.prev) : null, traceId: e.traceId ?? null, initial: e.initial === true });
   };
   /** @param {any} e */
@@ -150,10 +158,40 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
     return true;
   };
 
+  /** Current value of each declared orbit, in IR order. @returns {(number | null)[]} */
+  const orbitValues = () => orbitSpecs.map((s) => {
+    try {
+      const v = orbit(s.objectId, s.quantity, s.timeScale);
+      return typeof v === 'number' && Number.isFinite(v) ? clamp(v, -1, 1) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  /** Sends waiting list values whose interval has passed. */
+  function flushLists() {
+    const n = clock.now();
+    for (const [target, e] of lists) {
+      if (e.pending === null || n - e.lastSent < listIntervalMs) continue;
+      const dot = target.indexOf('.');
+      const value = e.pending;
+      e.pending = null;
+      e.lastSent = n;
+      try {
+        engine.get(target.slice(0, dot))?.setParam(target.slice(dot + 1), value);
+      } catch (err) {
+        bind('error', { target, message: err instanceof Error ? err.message : String(err) }, null, 'error');
+      }
+    }
+  }
+
   /** Applies one command. @param {any} cmd @param {string | null} traceId */
   function apply(cmd, traceId) {
     if (!cmd || typeof cmd !== 'object' || !OPS.has(cmd.op)) { invalid(cmd, 'unknown op', traceId); return; }
-    const t = Math.max(clock.audioTime(), t0 + numberOr(cmd.at, 0) / 1000 + PROGRAM.latencyS);
+    // A command's program time is at most the batch's `now`, so its audio time is at most the
+    // latency ahead; a later `at` from a misbehaving VM is pulled back to that.
+    const nowS = clock.audioTime();
+    const t = clamp(t0 + numberOr(cmd.at, 0) / 1000 + PROGRAM.latencyS, nowS, nowS + PROGRAM.latencyS);
     switch (cmd.op) {
       case 'play': {
         const inst = instOf(cmd, traceId);
@@ -161,7 +199,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
         if (!inst) return;
         if (pitch === null) { invalid(cmd, 'pitch', traceId); return; }
         const tag = `prog:${cmd.inst}:n${++noteSeq}`;
-        const dur = clamp(numberOr(cmd.durationMs, LIMITS.defaultDurationMs), 20, 10_000);
+        const dur = clamp(numberOr(cmd.durationMs, DEFAULTS.durationMs), RANGES.durationMs[0], RANGES.durationMs[1]);
         if (start(inst, cmd, pitch, velocityOf(cmd.velocity), t, tag, traceId)) inst.noteOff(pitch, t + dur / 1000, tag);
         return;
       }
@@ -215,8 +253,21 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
           audio('setFxBypass', { slot: id, on: cmd.value }, traceId);
           return;
         }
+        const spec = insts.has(id) ? own(defs.instruments, insts.get(id).type) : own(defs.effects, slots.get(id).type);
+        const def = own(spec?.params, param);
+        if (def?.kind === 'array' && insts.has(id)) {
+          const n = /** @type {number} */ (def.length);
+          if (!Array.isArray(cmd.value) || cmd.value.length > n || !cmd.value.every((/** @type {unknown} */ x) => typeof x === 'number' && Number.isFinite(x))) { invalid(cmd, 'value', traceId); return; }
+          let e = lists.get(target);
+          if (!e) { e = { pending: null, lastSent: -Infinity }; lists.set(target, e); }
+          e.pending = cmd.value.map((/** @type {number} */ x) => clamp(x, /** @type {number} */ (def.min), /** @type {number} */ (def.max)));
+          audio('setParam', { target, value: e.pending }, traceId);
+          flushLists();
+          return;
+        }
+        if (def?.kind !== 'number') { invalid(cmd, 'not a numeric parameter', traceId); return; }
         if (typeof cmd.value !== 'number' || !Number.isFinite(cmd.value)) { invalid(cmd, 'value', traceId); return; }
-        if (!setParam(target, cmd.value, clamp(numberOr(cmd.smoothMs, LIMITS.defaultSmoothMs), 0, 60_000), traceId)) invalid(cmd, 'instrument not running', traceId);
+        if (!setParam(target, clamp(cmd.value, def.min, def.max), clamp(numberOr(cmd.smoothMs, DEFAULTS.smoothMs), RANGES.smoothMs[0], RANGES.smoothMs[1]), traceId)) invalid(cmd, 'instrument not running', traceId);
         return;
       }
       case 'layer': {
@@ -296,6 +347,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
   function tick() {
     if (!running) return;
     stepSmoothers();
+    flushLists();
     if (inflight) return;
     inflight = true;
     const events = queue;
@@ -303,7 +355,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
     queue = [];
     fresh = [];
     const now = (clock.audioTime() - t0) * 1000;
-    vm.program({ op: 'batch', now, events, freshness }).then(handle, (err) => handle({ errors: [{ handler: 'vm', line: null, message: String(err?.message ?? err) }], commands: [], dropped: 0 }))
+    vm.program({ op: 'batch', now, events, freshness, orbits: orbitValues() }).then(handle, (err) => handle({ errors: [{ handler: 'vm', line: null, message: String(err?.message ?? err) }], commands: [], dropped: 0 }))
       .finally(() => { inflight = false; });
   }
 
@@ -317,6 +369,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
     unsub = [];
     const t = clock.audioTime();
     for (const tag of [...held.keys()]) release(tag, t, null);
+    lists.clear();
     queue = [];
     fresh = [];
     if (tellVm) vm.program({ op: 'stop' }).catch(() => {});
@@ -336,7 +389,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
       emit('RELOAD', 'program', 'start', { handlers: (ir.program?.handlers ?? []).map((/** @type {any} */ h) => h.id) }, {});
       let reply;
       try {
-        reply = await vm.program({ op: 'start', groups: [...groups], objects, freshness });
+        reply = await vm.program({ op: 'start', groups: [...groups], objects, freshness, orbits: orbitValues() });
       } catch (err) {
         reply = { errors: [{ handler: 'vm', line: null, message: String(/** @type {any} */ (err)?.message ?? err) }], commands: [], dropped: 0 };
       }

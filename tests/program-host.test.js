@@ -45,7 +45,7 @@ function scriptedVm(replies) {
 function setup(vm, source = null, opts = {}) {
   const ir = source ? build(source).ir : opts.ir;
   const engine = new FakeEngine();
-  engine.sync(ir.instruments.map((i) => ({ id: i.id, type: i.type, params: {} })));
+  engine.sync(ir.instruments.map((i) => ({ id: i.id, type: i.type, params: { ...i.params } })));
   for (const i of ir.instruments) engine.setFx(i.id, i.fx ?? []);
   const clock = createFakeClock({ start: 1000 });
   const sky = createFakeSky();
@@ -53,7 +53,7 @@ function setup(vm, source = null, opts = {}) {
   const problems = [];
   let layerPushes = 0;
   const host = createProgramHost({
-    ir, vm, engine, sky, trace, clock,
+    ir, vm, engine, sky, trace, clock, orbit: opts.orbit,
     onProblem: (p) => problems.push(p),
     onLayerValues: () => { layerPushes++; },
     newTraceId: (() => { let n = 0; return () => `timer-${++n}`; })(),
@@ -134,6 +134,38 @@ test('a VM that lost the program is reported once and stops the host', async () 
   assert.equal(s.host.running, false);
   assert.equal(s.inst().callsOf('noteOff').length, 1);
   assert.equal(s.clock.pending(), 0);
+});
+
+test('start and batch carry the declared orbits\' values in IR order', async () => {
+  const src = `const p = additive({}); follow(sky.orbit('celestrak.stations:25544', 'sunlit'), sky.orbit('celestrak.stations:25544', 'latitude', { timeScale: 60 })); every(100, () => {});`;
+  const vm = scriptedVm([]);
+  const asked = [];
+  const s = setup(vm, src, { orbit: (id, q, ts) => { asked.push([id, q, ts]); return q === 'sunlit' ? 9 : null; } });
+  await s.host.start();
+  s.clock.advance(25);
+  await flush();
+  assert.deepEqual(vm.msgs.map((m) => m.orbits), [[1, null], [1, null]]);
+  assert.deepEqual(asked.slice(0, 2), [['celestrak.stations:25544', 'sunlit', 1], ['celestrak.stations:25544', 'latitude', 60]]);
+});
+
+test('harmonics updates reach setParam at most 30 times a second, latest value first', async () => {
+  const H = [1, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12];
+  const src = `const p = additive({ harmonics: [${H}] }); every(100, () => {});`;
+  const set = (v) => cmd({ op: 'set', target: 'i0.harmonics', value: v });
+  const s = setup(scriptedVm([
+    { commands: [set([1]), set([0.5])], errors: [], dropped: 0 },
+    { commands: [set([1, 2, 3, 4, 5, 6, 7, 8, 9]), set(['x']), cmd({ op: 'set', target: 'i0.attack', value: [1] })], errors: [], dropped: 0 },
+  ]), src);
+  await s.host.start();
+  const sent = () => s.inst().callsOf('setParam').filter((c) => c[1] === 'harmonics').map((c) => c[2]);
+  assert.deepEqual(sent(), [[1]]);
+  s.clock.advance(25);
+  await flush();
+  assert.deepEqual(sent(), [[1]]);
+  s.clock.advance(25);
+  await flush();
+  assert.deepEqual(sent(), [[1], [0.5]]);
+  assert.equal(s.trace.of({ stage: 'BIND', event: 'invalid' }).length, 3);
 });
 
 test('values are clamped and invalid commands are dropped and traced', async () => {
@@ -263,4 +295,24 @@ test('the audio host starts the program on run, restarts it on reload and stops 
   safety('fault');
   assert.equal(host.program, null);
   assert.deepEqual(vm.msgs.map((m) => m.op), ['start', 'stop', 'start', 'stop', 'start', 'stop']);
+});
+
+test('a command time past the batch is pulled back to at most the latency ahead', async () => {
+  const s = setup(scriptedVm([{ commands: [cmd({ op: 'play', inst: 'i0', pitch: 60, at: 1e9 })], errors: [], dropped: 0 }]), null, { ir: IR });
+  await s.host.start();
+  const [, , , t] = s.inst().callsOf('noteOn')[0];
+  assert.ok(Math.abs(t - (s.clock.audioTime() + 0.1)) < 1e-9, String(t));
+});
+
+test('set accepts only numeric parameters of the instrument or slot type', async () => {
+  const s = setup(scriptedVm([{ commands: [
+    cmd({ op: 'set', target: 'f0.sync', value: 2 }),
+    cmd({ op: 'set', target: 'i0.nope', value: 1, smoothMs: 0 }),
+    cmd({ op: 'set', target: 'i0.index', value: 3, smoothMs: 0 }),
+    cmd({ op: 'set', target: 'f0.mix', value: 50, smoothMs: 0 }),
+  ], errors: [], dropped: 0 }]), null, { ir: IR });
+  await s.host.start();
+  assert.deepEqual(s.trace.of({ stage: 'BIND', event: 'invalid' }).map((r) => r.data.reason), ['not a numeric parameter', 'not a numeric parameter']);
+  assert.deepEqual(s.engine.calls.filter((c) => c[0] === 'setFxParam'), [['setFxParam', 'f0', 'mix', 1]], 'clamped to the range');
+  assert.deepEqual(s.inst().callsOf('setParam'), [['setParam', 'index', 3]]);
 });

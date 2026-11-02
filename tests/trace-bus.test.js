@@ -130,3 +130,36 @@ test('eventsFromTrace rebuilds the sky events from an exported trace', async () 
   const rebuilt = eventsFromTrace(parseJsonl(bus.toJsonl()));
   assert.deepEqual(rebuilt, emitted);
 });
+
+test('safeTrace never throws: a rejected record goes to console.error with its producer', async () => {
+  const { safeTrace } = await import('../src/trace/bus.js');
+  const bus = createTraceBus({ now: () => T0 });
+  const ok = safeTrace(bus.trace, 'test');
+  ok(rec());
+  assert.equal(bus.records().length, 1);
+  const errors = [];
+  const original = console.error;
+  console.error = (...a) => errors.push(a);
+  try {
+    assert.doesNotThrow(() => ok({ stage: 'NOPE' }));
+  } finally { console.error = original; }
+  assert.equal(errors.length, 1);
+  assert.match(String(errors[0][0]), /trace rejected a test record/);
+  assert.doesNotThrow(() => safeTrace(undefined, 'x')(rec()));
+});
+
+test('the sky store keeps running when its trace sink throws, and reports it', async () => {
+  const clock = createFakeClock(T0);
+  const fake = createFakeSupabase({ tables: { sky_objects: [skyRow('swpc.kp', 'now', { kp: 3 })], source_status: [] } });
+  const errors = [];
+  const original = console.error;
+  console.error = (...a) => errors.push(a);
+  try {
+    const sky = createSky({ client: fake.client, now: clock.now, timers: clock.timers, doc: null, trace: () => { throw new TypeError('sink down'); } });
+    await sky.follow(['swpc.kp']);
+    assert.equal(sky.get('swpc.kp').length, 1);
+    sky.close();
+  } finally { console.error = original; }
+  assert.ok(errors.length > 0);
+  assert.match(String(errors[0][0]), /trace rejected a sky record/);
+});

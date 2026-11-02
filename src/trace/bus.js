@@ -145,6 +145,20 @@ export function newTraceId(prefix = '') {
   return prefix + globalThis.crypto.randomUUID();
 }
 
+/**
+ * Wraps a trace function so that it never throws into its caller; a rejected
+ * record is reported on console.error with `label`. Without `fn` it does nothing.
+ * @param {((record: any) => unknown) | undefined | null} fn
+ * @param {string} label producer named in the report
+ * @returns {(record: any) => void}
+ */
+export function safeTrace(fn, label) {
+  if (!fn) return () => {};
+  return (record) => {
+    try { fn(record); } catch (err) { console.error(`trace rejected a ${label} record`, err); }
+  };
+}
+
 /** @param {TraceRecord[]} records */
 export function recordsToJsonl(records) {
   return records.map((r) => JSON.stringify(r)).join('\n') + (records.length ? '\n' : '');

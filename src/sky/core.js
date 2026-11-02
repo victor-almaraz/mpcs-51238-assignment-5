@@ -1,5 +1,6 @@
 // Shared state of the live, replay and synthetic sky (doc/sky-contract.md).
 import { loadingFreshness } from './freshness.js';
+import { safeTrace as wrapTrace } from '../trace/bus.js';
 
 /**
  * @typedef {{ id: string, source: string, group: string,
@@ -67,14 +68,8 @@ export function createCore({ trace }) {
     }
   }
 
-  /** @param {object} r */
-  function safeTrace(r) {
-    try {
-      trace(r);
-    } catch {
-      // A broken trace sink must not stop the store.
-    }
-  }
+  /** A broken trace sink must not stop the store. */
+  const safeTrace = wrapTrace(trace, 'sky');
 
   /** @param {string} group */
   function get(group) {

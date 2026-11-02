@@ -12,6 +12,7 @@ import { createTriggerBinding } from './trigger.js';
 import { createParamBinding } from './param.js';
 import { createDataSource } from './data-source.js';
 import { evaluateLayerProps } from './layers.js';
+import { DEFS } from '../dsl/load-defs.js';
 
 /**
  * @typedef {object} Clock
@@ -32,7 +33,8 @@ import { evaluateLayerProps } from './layers.js';
  * @property {{ level?: Function, spectrum?: Function, env?: (inst: string, source: string) => number | null }} [audio]
  *           audio signals for layer properties; `env` receives the voice's source tag
  * @property {(args: any[], obj: any) => unknown} [local]   latest `fn` result
- * @property {(slotType: string, name: string) => any} [fxParamDef]  effect ParamDef lookup
+ * @property {import('../dsl/defs.js').Defs} [defs]  normalized definition tables (default DEFS); effect
+ *           follows read which parameters are enums from them
  * @property {(state: import('./reactions.js').ReactionState) => void} [onReactions]
  * @property {(group: string) => string} [groupSource]     source registry id of a group
  *
@@ -46,7 +48,7 @@ import { evaluateLayerProps } from './layers.js';
  * @property {(id: string) => { slot: any, owner: string } | null} slot  IR effect slot by id
  * @property {(id: string) => any} ctxFor       expression context for a binding or source id
  * @property {any} voiceLedger
- * @property {((slotType: string, name: string) => any) | null} fxParamDef
+ * @property {import('../dsl/defs.js').Defs} defs
  */
 
 const SKY_EVENTS = ['enter', 'update', 'exit'];
@@ -64,12 +66,12 @@ export function createBindingRuntime(options) {
 
   let ir = options.ir;
   /** @type {Map<string, any>} */ let instruments = new Map();
-  /** @type {Map<string, { slot: any, owner: string }>} */ let slots = new Map();
+  /** @type {Map<string, { slot: any, owner: string, chain: any[] }>} */ let slots = new Map();
   const indexIr = () => {
     instruments = new Map(ir.instruments.map((i) => [i.id, i]));
     slots = new Map();
-    for (const i of ir.instruments) for (const s of i.fx ?? []) slots.set(s.id, { slot: s, owner: i.id });
-    for (const s of ir.master?.fx ?? []) slots.set(s.id, { slot: s, owner: 'master' });
+    const chains = [...ir.instruments.map((i) => [i.id, i.fx ?? []]), ['master', ir.master?.fx ?? []]];
+    for (const [owner, chain] of chains) for (const s of chain) slots.set(s.id, { slot: s, owner, chain });
   };
   indexIr();
 
@@ -130,7 +132,7 @@ export function createBindingRuntime(options) {
     slot: (id) => slots.get(id) ?? null,
     ctxFor,
     voiceLedger,
-    fxParamDef: options.fxParamDef ?? null,
+    defs: options.defs ?? DEFS,
   };
 
   /** @type {Map<string, any>} */ const bindings = new Map();
@@ -173,10 +175,13 @@ export function createBindingRuntime(options) {
     }
   }
 
-  /** Identity of a binding for hot reload: its IR entry and its instrument's type. */
+  /**
+   * Identity of a binding for hot reload: its IR entry and its instrument's type; for an effect
+   * follow, the slot list of its chain, because setFx on a changed chain resets the slot's values.
+   */
   const bindingKey = (b) => {
-    const target = b.slot ?? b.inst;
-    return canonicalJson({ b, type: instruments.get(target)?.type ?? slots.get(target)?.slot.type ?? null });
+    if (b.kind === 'fxParam' || b.kind === 'fxBypass') return canonicalJson({ b, chain: slots.get(b.slot)?.chain ?? null });
+    return canonicalJson({ b, type: instruments.get(b.inst)?.type ?? null });
   };
 
   function addBinding(b) {

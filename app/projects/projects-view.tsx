@@ -13,9 +13,9 @@ import { useSupabase } from '@/src/ui/app-providers';
 import { createProject } from '@/src/ui/project-actions';
 import { button, container, heading, table, textLink } from '@/src/ui/styles';
 import { SiteHeader } from '@/src/ui/site-header';
+import type { Template } from '@/src/ui/workbench';
 
 type Row = { id: string; name: string; updatedAt: string | null; starterSlug: string | null; groups: string[] };
-type Template = { slug: string; name: string; source: string; ir: unknown };
 
 const btn = button('secondary', 'sm');
 const primary = button('primary');
@@ -28,7 +28,8 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
   const [actionError, setActionError] = useState<string | null>(seedError);
   const [toast, setToast] = useState<{ row: Row; index: number } | null>(null);
   const [menu, setMenu] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  // Read after mount, so the server render and the first client render agree.
+  const [now, setNow] = useState<number | null>(null);
   const [lastRuns, setLastRuns] = useState<Record<string, number | null>>({});
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -147,8 +148,8 @@ export function ProjectsView({ rows: initial, error, seedError, templates }: { r
                   <tr key={r.id} className={table.row}>
                     <td className={table.td}><Link href={`/projects/${r.id}`} className="font-medium hover:underline">{r.name}</Link></td>
                     <td className={`${table.td} font-mono text-xs`}>{r.groups.length ? r.groups.join(', ') : 'none'}</td>
-                    <td className={`${table.td} whitespace-nowrap`} title={r.updatedAt ?? undefined}>{relativeTime(r.updatedAt, now)}</td>
-                    <td className={`${table.td} whitespace-nowrap`}>{relativeTime(lastRuns[r.id] ?? null, now)}</td>
+                    <td className={`${table.td} whitespace-nowrap`} title={r.updatedAt ?? undefined}>{now === null ? '' : relativeTime(r.updatedAt, now)}</td>
+                    <td className={`${table.td} whitespace-nowrap`}>{now === null ? '' : relativeTime(lastRuns[r.id] ?? null, now)}</td>
                     <td className={table.td}>
                       <span className="flex justify-end gap-1.5">
                         <Link className={btn} href={`/projects/${r.id}`}>Open</Link>

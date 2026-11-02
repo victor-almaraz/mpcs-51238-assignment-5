@@ -46,10 +46,18 @@ export function loadRegistry(entries, { normalizers, vars }) {
   });
 }
 
-/** `SOURCES_ENABLED` patterns: comma-separated ids, `*` matches any run of characters. */
-export function enabledMatcher(spec) {
-  if (!spec || spec.trim() === '') return () => true;
-  const res = spec.split(',').map((p) => p.trim()).filter(Boolean)
-    .map((p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
-  return (id) => res.some((re) => re.test(id));
+/**
+ * `SOURCES_ENABLED` patterns: comma-separated ids, `*` matches any run of characters.
+ * With `ids`, throws RegistryError naming every pattern that matches none of them.
+ * @param {string | undefined} spec @param {string[]} [ids] registry ids
+ */
+export function enabledMatcher(spec, ids) {
+  const patterns = (spec ?? '').split(',').map((p) => p.trim()).filter(Boolean)
+    .map((p) => ({ p, re: new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`) }));
+  if (patterns.length === 0) return () => true;
+  if (ids) {
+    const unmatched = patterns.filter(({ re }) => !ids.some((id) => re.test(id))).map(({ p }) => p);
+    if (unmatched.length) throw new RegistryError(`SOURCES_ENABLED: no registry id matches ${unmatched.join(', ')}`);
+  }
+  return (id) => patterns.some(({ re }) => re.test(id));
 }

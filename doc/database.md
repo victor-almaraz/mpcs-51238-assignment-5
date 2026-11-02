@@ -8,7 +8,7 @@ Tables, the upsert RPC, grants, row-level security (RLS), the Realtime publicati
 |---|---|---|---|
 | `sky_objects` | Worker | Everyone | Current state of every object |
 | `changes` | Worker (RPC) | Everyone | Log of enter, update and exit events; replay source |
-| `runs` | Worker | Everyone | One row per fetch |
+| `runs` | Worker; `claim_source` | Everyone | One row per run; `claim_source` adds one when it halts a source |
 | `source_status` | Worker | Everyone | Schedule state and last outcome per registry id |
 | `source_samples` | Worker | Everyone | Last raw response per registry id |
 | `host_leases` | Worker (RPC) | Nobody | One lease per source host, so overlapping invocations never send two requests to one host |
@@ -359,7 +359,7 @@ If any one is missing, the channel subscribes without error and receives nothing
 Delivery rules:
 - Clients subscribe with the filter `group_key=in.(g1,g2,...)` (up to 100 values).
 - `DELETE` events are not filtered by RLS. The schema never deletes sky rows that clients watch; it sets `removed_at`, which arrives as an `UPDATE`.
-- `source_status` is not in the publication. The page reads it by REST every 30 s (`sky-contract.md`).
+- `source_status` is not in the publication. The sky store reads it by REST every 30 s (`STATUS_POLL_MS` in `src/sky/freshness.js`; `sky-contract.md`).
 
 ## Retention
 ```sql
@@ -403,11 +403,11 @@ Realtime counts one message per change per subscribed client.
 | Stream | Changes per month | Messages per client-month |
 |---|---|---|
 | `swpc.kp`, `swpc.wind`, `swpc.mag` (1 per minute each) | 129,600 | 129,600 |
-| `celestrak.stations` and `celestrak.gps-ops` (about 61 objects, 12 updates per day) | about 22,000 | about 22,000 |
+| `celestrak.stations` and `celestrak.gps-ops` (52 objects, at most one update per 7500 s each) | at most about 18,000 | at most about 18,000 |
 | `jpl.*`, `ll2.upcoming` | under 2,000 | under 2,000 |
-| Total, client following every group above | | about 154,000 |
+| Total, client following every group above | | about 150,000 |
 
-The 2,000,000-message Free quota covers about 13 continuously open client-months. Debris groups add roughly 12 messages per object per day per client; a group of 1,000 objects adds about 360,000 messages per client-month. The page closes its Realtime channel 60 s after the tab becomes hidden and resubscribes, with a fresh select, when it becomes visible.
+The 2,000,000-message Free quota covers about 13 continuously open client-months. Each further CelesTrak group adds at most 11.5 messages per object per day per client: `celestrak.visual` (156 objects) adds up to about 54,000 and `celestrak.cosmos-2251-debris` (585 objects) up to about 202,000 messages per client-month. Object counts are those of the saved responses (`sources.md`, Saved responses). The page closes its Realtime channel 60 s after the tab becomes hidden and resubscribes, with a fresh select, when it becomes visible.
 
 ## Sources
 - Supabase docs, Postgres Changes: https://supabase.com/docs/guides/realtime/postgres-changes

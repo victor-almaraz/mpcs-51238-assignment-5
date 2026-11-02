@@ -2,7 +2,8 @@
 
 // Settings screen (doc/ui.md, Settings): a searchable list grouped by category and an editable
 // settings.json view. Both edit one object, validated with validateSettings on every change;
-// warnings are shown. Valid changes save to user_settings 1 s after the last edit.
+// warnings are shown. Valid changes save to user_settings 1 s after the last edit, or at once
+// when the view unmounts with a change still waiting.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UserProfile } from '@clerk/nextjs';
@@ -28,6 +29,11 @@ export function SettingsView() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirty = useRef(false);
+  // The value waiting for the 1 s delay, saved at once when the view unmounts. `save` lives in the
+  // app providers, which outlast this view, so the write completes after navigation.
+  const pending = useRef<{ value: any } | null>(null);
+  const saveRef = useRef(save);
+  useEffect(() => { saveRef.current = save; }, [save]);
 
   useEffect(() => {
     if (dirty.current) return;
@@ -35,13 +41,21 @@ export function SettingsView() {
     setText(settingsJson(settings));
     setWarnings(loadWarnings);
   }, [settings, loadWarnings]);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+    const p = pending.current;
+    pending.current = null;
+    if (p) saveRef.current(p.value).catch(() => {});
+  }, []);
 
   const schedule = (next: any) => {
     dirty.current = true;
     setStatus('unsaved');
+    pending.current = { value: next };
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
+      timer.current = null;
+      pending.current = null;
       setStatus('saving');
       try {
         await save(next);

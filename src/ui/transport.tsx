@@ -52,7 +52,7 @@ function StartNotice({ onStart, onCancel }: { onStart: () => void; onCancel: () 
         <div className="flex justify-end gap-2">
           <button type="button" className={btn} onClick={onCancel}>Cancel</button>
           {/* The click on this button is the gesture that starts audio. */}
-          <button ref={ref} type="button" className="rounded-sm bg-accent px-3 py-1 text-xs text-bg" onClick={onStart}>Start Sound</button>
+          <button ref={ref} type="button" className={button('primary', 'sm')} onClick={onStart}>Start Sound</button>
         </div>
       </div>
     </div>
@@ -97,8 +97,8 @@ function Meter({ session }: { session: PieceSession | null }) {
   );
 }
 
-export function Transport({ session, state, onRun, canRun, runHint, compact = false, maxDb = 0, startDb = -12 }: {
-  session: PieceSession | null; state: SessionState; onRun: () => void; canRun: boolean; runHint?: string | null; compact?: boolean;
+export function Transport({ session, state, onRun, canRun, runHint, maxDb = 0, startDb = -12 }: {
+  session: PieceSession | null; state: SessionState; onRun: () => void; canRun: boolean; runHint?: string | null;
   maxDb?: number; startDb?: number;
 }) {
   const [db, setDb] = useState(startDb);
@@ -115,17 +115,15 @@ export function Transport({ session, state, onRun, canRun, runHint, compact = fa
       {muted
         ? <button type="button" className={btn} onClick={(e) => session?.reset(e.detail)} title="Single click to end the mute"><Icon as={RotateCcw} size={12} />Reset</button>
         : <button type="button" className={btn} onClick={() => session?.panic()} disabled={!state.ready} title="Panic (Escape twice)"><Icon as={OctagonX} size={12} />Panic</button>}
-      {!compact && (
-        <label className="flex items-center gap-1 text-xs">
-          <span>{muted ? 'Muted' : 'Master'}</span>
-          <input
-            type="range" min={-60} max={maxDb} step={1} value={db}
-            aria-label="Master volume" aria-valuetext={`${db} dB`}
-            onChange={(e) => { const v = Number(e.target.value); setDb(v); session?.moveVolume(v); }}
-          />
-          <span className="w-12 tabular-nums">{db} dB</span>
-        </label>
-      )}
+      <label className="flex items-center gap-1 text-xs">
+        <span>{muted ? 'Muted' : 'Master'}</span>
+        <input
+          type="range" min={-60} max={maxDb} step={1} value={db}
+          aria-label="Master volume" aria-valuetext={`${db} dB`}
+          onChange={(e) => { const v = Number(e.target.value); setDb(v); session?.moveVolume(v); }}
+        />
+        <span className="w-12 tabular-nums">{db} dB</span>
+      </label>
       <Meter session={session} />
       {session?.master?.reduced && <span className="text-xs text-warn" title="The safety limiter worklet is unavailable; the fallback stage caps the master at −6 dB">Reduced safety mode</span>}
       {dialog}

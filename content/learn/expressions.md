@@ -18,7 +18,7 @@ Sphärenmusik evaluates an expression again whenever its data changes. An expres
 ## Sources
 | Source | Value |
 |---|---|
-| `field(name)` | A field of the current object: the object a voice, trigger or layer is drawing |
+| `field(name)` | A field of the current object: the object a voice or trigger plays, or a layer draws |
 | `num(x)`, or a number literal | A constant |
 | `rand(lo, hi)` | A number in `[lo, hi)`, fixed per object; set by the piece's `seed()` |
 | `sky.swpc(path)` | A space-weather value, for example `sky.swpc('wind.speed')` |

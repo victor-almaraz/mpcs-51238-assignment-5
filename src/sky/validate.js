@@ -32,7 +32,7 @@ export function fieldsError(f) {
   for (const [k, v] of Object.entries(f)) {
     if (v === null || typeof v === 'string' || typeof v === 'boolean') continue;
     if (typeof v === 'number' && Number.isFinite(v)) continue;
-    return `field ${k} has invalid value ${JSON.stringify(v)}`;
+    return `field ${k} has invalid value ${typeof v === 'number' ? String(v) : JSON.stringify(v) ?? typeof v}; it must be a finite number, string, boolean or null`;
   }
   return null;
 }

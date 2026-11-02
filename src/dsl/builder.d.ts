@@ -110,6 +110,11 @@ interface ModParam extends NumParam {
   /** Adds a modulation route from an LFO or a −1..1 expression. */
   mod(source: Lfo | NumExpr<GlobalCtx>, opts: ModOptions): void;
 }
+/** A list parameter such as additive harmonics. */
+interface ListParam {
+  /** Program output, inside handlers only: sets the whole list at once, without smoothing. */
+  set(values: readonly number[]): void;
+}
 interface BypassParam {
   /** Bypasses the effect while value is true. */
   follow(value: Cond<GlobalCtx>): void;
@@ -148,6 +153,8 @@ interface OrbitOptions {
   /** 1–1000; multiplies elapsed time. Default 1. */
   timeScale?: number;
 }
+/** sky.orbit(...): a VLFO that follow() can declare for read.orbit. */
+type OrbitExpr = NumExpr & { readonly __orbit: true };
 
 type Curve = 'lin' | 'log' | 'exp';
 type OrbitQuantity = 'latitude' | 'phaseSin' | 'phaseCos' | 'altitude' | 'longitude' | 'sunlit' | 'elevation';
@@ -388,7 +395,7 @@ interface Sky {
   /** One field of one object. */
   value<G extends GroupKey, K extends FieldName<G>>(objectId: ObjectId<G>, field: K): FieldExpr<Fields<G>[K], never>;
   /** A VLFO from one named object's orbit, −1 to 1. */
-  orbit(objectId: ObjectId<OrbitGroupKey>, quantity: OrbitQuantity, opts?: OrbitOptions): NumExpr;
+  orbit(objectId: ObjectId<OrbitGroupKey>, quantity: OrbitQuantity, opts?: OrbitOptions): OrbitExpr;
 }
 
 interface SubtractiveOptions {
@@ -488,7 +495,7 @@ interface AdditiveOptions {
   octave?: number;
   /** −100–100. Default 0. */
   cents?: number;
-  /** 8 values, each 0–1. Default [1, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12]. Constructor only. */
+  /** 8 values, each 0–1. Default [1, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12]. Constructor, or set() in a handler. */
   harmonics?: [number, number, number, number, number, number, number, number];
   /** 0.002–2 s. Default 0.02. */
   attack?: number;
@@ -507,6 +514,8 @@ interface AdditiveHandle extends Playable {
   readonly __instrument: 'additive';
   /** Sets the insert chain, in order; calling it again replaces the chain. */
   fx(...slots: Effect[]): void;
+  /** 8 values, each 0–1. Default [1, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12]. Constructor, or set() in a handler. */
+  readonly harmonics: ListParam;
   /** 0.002–2 s. Default 0.02. */
   readonly attack: ModParam;
   /** 0.01–4 s. Default 0.5. */
@@ -1050,6 +1059,8 @@ interface Read {
   group<G extends GroupKey>(key: G): readonly SkyRecord<G>[];
   object<G extends GroupKey>(id: ObjectId<G>): SkyRecord<G> | null;
   freshness(source: SourceId | GroupKey): FreshState;
+  /** An orbit declared with follow(sky.orbit(...)), −1 to 1, or null before the first sample. */
+  orbit(objectId: ObjectId<OrbitGroupKey>, quantity: OrbitQuantity, opts?: OrbitOptions): number | null;
 }
 /** Calls fn for each event of kind in group while the piece plays. Setup only. */
 declare function on<G extends GroupKey>(group: G, kind: EventKind | '*', fn: (o: SkyRecord<G>, e: SkyChange<G>) => void): void;
@@ -1059,8 +1070,8 @@ declare function every(interval: number | SyncName, fn: (t: number) => void): vo
 declare function after(ms: number, fn: (t: number) => void): () => void;
 /** Calls fn when the freshness of source changes. Setup only. */
 declare function onFreshness(source: SourceId | GroupKey | '*', fn: (f: { readonly source: string; readonly state: FreshState }) => void): void;
-/** Follows groups that the script reads with read.* but names nowhere else. Setup only. */
-declare function follow(...groups: GroupKey[]): void;
+/** Follows groups that the script reads with read.* but names nowhere else, and declares sky.orbit(...) VLFOs for read.orbit. Setup only. */
+declare function follow(...groups: (GroupKey | OrbitExpr)[]): void;
 declare const read: Read;
 /** Milliseconds since the program started. */
 declare function time(): number;

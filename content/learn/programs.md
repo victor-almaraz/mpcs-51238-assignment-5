@@ -5,13 +5,13 @@ order: 5
 
 # Programs
 
-A script is a program. Its top-level code, the **setup**, runs when you press Run or save: it creates instruments, effects and layers. **Handlers** keep running while the piece plays. They are functions that Sphärenmusik calls when sky data changes or a timer fires. Variables that the setup declares keep their values between calls, so a piece can remember what happened and decide what comes next.
+A script is a program. Its top-level code, the **setup**, runs when the piece is built (when the editor opens it and each time you save): it creates instruments, effects and layers. **Handlers** keep running while the piece plays. They are functions that Sphärenmusik calls when sky data changes or a timer fires. Variables that the setup declares keep their values between calls, so a piece can remember what happened and decide what comes next.
 
 Use bindings ([Sound](sound)) when each object maps straight onto a note or a parameter. Use handlers when the music has a state of its own: a chord progression, a counter, a melody that walks.
 
 ## A first handler
 ```ts piece
-const bell = fm({ volume: -9, ratio: 3.5, index: 5, indexDecay: 1.5 });
+const bell = fm({ volume: -6, ratio: 3.5, index: 5, indexDecay: 1.5 });
 let count = 0;
 
 on('jpl.scout', 'enter', (o) => {
@@ -25,10 +25,10 @@ on('jpl.scout', 'enter', (o) => {
 When the piece starts, every object already in the group arrives once as an `enter`, with `e.initial` set to `true`:
 
 ```ts piece
-const pad = additive({ volume: -12, attack: 2, release: 4 });
+const pad = additive({ volume: -6, attack: 2, release: 4 });
 
 on('celestrak.stations', 'enter', (o, e) => {
-  pad.hold(o.id, 48 + (Number(o.meanMotion) % 24), { velocity: e.initial ? 50 : 80 });
+  pad.hold(o.id, 48 + (Number(o.meanMotion) % 24), { velocity: e.initial ? 70 : 100 });
 });
 on('celestrak.stations', 'exit', (o) => pad.stop(o.id));
 ```
@@ -39,7 +39,7 @@ on('celestrak.stations', 'exit', (o) => pad.stop(o.id));
 ```ts piece
 tempo(96);
 scale('D', 'dorian');
-const pluckey = pluck({ volume: -9, decay: 3 });
+const pluckey = pluck({ volume: -6, decay: 3 });
 const chord = [0, 3, 7, 10];
 let root = 50;
 let step = 0;
@@ -68,23 +68,48 @@ Inside a handler, instruments, parameters and layers take commands:
 | `inst.cutoff.set(value, { smoothMs })` | Sets a parameter |
 | `delayFx.bypass.set(true)` | Bypasses an effect |
 | `glyphs.set({ color: '#ff8800' })` | Sets a layer's properties; `layer.*(...)` returns the layer |
+| `pad.harmonics.set([1, 0.5, 0, 0.25])` | Sets an additive instrument's harmonics |
 
 Commands work only inside handlers. In the setup they stop the build with `io_outside_handler`.
 
 ## Reading live values
-`read.swpc(path)`, `read.group(key)`, `read.object(id)` and `read.freshness(source)` return the current sky inside a handler. A piece reads only groups it follows: groups named in `on`, bindings, layers and `sky.swpc`, plus any listed with `follow(...)`:
+`read.swpc(path)`, `read.group(key)`, `read.object(id)` and `read.freshness(source)` return the current sky inside a handler. A piece reads only groups it follows: groups named in `on`, bindings, layers and expressions such as `sky.swpc`, plus any listed with `follow(...)`. `read.swpc` or `read.group` on any other group throws an error that names the missing `follow`:
 
 ```ts piece
-const drone = subtractive({ volume: -12, attack: 2, release: 3, cutoff: 800 });
+const drone = subtractive({ volume: -6, attack: 2, release: 3, cutoff: 800 });
 follow('swpc.wind', 'swpc.kp');
 
-on('swpc.wind', 'update', () => {
+on('swpc.wind', '*', () => {
   const speed = Number(read.swpc('wind.speed') ?? 400);
   const kp = Number(read.swpc('kp.kp') ?? 0);
   drone.hold('drone', kp >= 5 ? 31 : 36);
   drone.cutoff.set(200 + speed * 4, { smoothMs: 4000 });
 });
 ```
+
+## Reading an orbit
+`read.orbit(id, quantity)` reads a satellite's orbit as a value from −1 to 1, like `sky.orbit` ([Effects and modulation](effects-and-modulation#orbits-as-very-slow-lfos)), but as a number your code can work with. Declare each orbit in the setup with `follow(sky.orbit(...))`; the value changes every 500 ms and is `null` until the first one arrives.
+
+## Changing harmonics
+`harmonics` cannot follow an expression, because it is a list. A handler can compute the list instead. Here the ISS's latitude moves a peak up and down the eight harmonics, like a slow vowel:
+
+```ts piece
+const iss = 'celestrak.stations:25544';
+const fast = { timeScale: 60 };          // one orbit in about 90 seconds
+follow(sky.orbit(iss, 'latitude', fast));
+
+const pad = additive({ volume: -6, attack: 2, release: 4 });
+let x = 0;
+
+after(0, () => pad.hold('drone', 45));
+every(50, () => {
+  x += ((read.orbit(iss, 'latitude', fast) ?? 0) - x) * 0.1;   // smooth the 500 ms steps
+  const peak = 1 + (x + 1) * 3.5;                                // harmonic 1 to 8
+  pad.harmonics.set([1, 2, 3, 4, 5, 6, 7, 8].map((k) => Math.exp(-((k - peak) ** 2) / 2)));
+});
+```
+
+Each `set` replaces the wave of the sounding notes at once. Small steps, as here, sound smooth; a piece sends at most 30 a second to each instrument.
 
 ## Chance that repeats
 `random()`, `randInt(n)` and `choose(list)` make choices seeded by `seed(n)`. The same seed and the same sky make the same choices, so a piece can be replayed exactly.

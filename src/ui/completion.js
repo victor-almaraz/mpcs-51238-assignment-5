@@ -13,7 +13,7 @@ export const MEMBERS = Object.freeze({
   sky: ['group', 'swpc', 'value', 'orbit'],
   view: ['projection', 'background'],
   audio: ['level', 'spectrum', 'voice'],
-  read: ['swpc', 'group', 'object', 'freshness'],
+  read: ['swpc', 'group', 'object', 'freshness', 'orbit'],
 });
 
 export const ORBIT_QUANTITIES = Object.freeze(['latitude', 'phaseSin', 'phaseCos', 'altitude', 'longitude', 'sunlit', 'elevation']);

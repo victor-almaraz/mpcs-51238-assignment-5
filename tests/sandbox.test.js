@@ -97,3 +97,39 @@ test('the build timeout starts when the worker is ready, not when it is created'
   assert.deepEqual(r2.problems.map((p) => p.code), ['runtime_error']);
   assert.match(r2.problems[0].message, /did not start/);
 });
+
+/** A worker that never replies to fn calls; records terminate() and exposes onerror. */
+function silentWorker(log) {
+  return () => {
+    const w = {
+      onmessage: null, onerror: null,
+      postMessage(m) { log.push(m.fn ? 'fn' : 'other'); },
+      terminate() { log.push('terminate'); },
+    };
+    log.workers = [...(log.workers ?? []), w];
+    return w;
+  };
+}
+
+test('an fn call without a reply times out: the worker restarts and every pending call resolves null', async () => {
+  const log = [];
+  const sb = createSandbox({ createWorker: silentWorker(log), timeoutMs: 30 });
+  const t0 = Date.now();
+  const [a, b] = await Promise.all([sb.evalFn('o => 1', {}), sb.evalFn('o => 2', {})]);
+  assert.deepEqual([a, b], [null, null]);
+  assert.ok(Date.now() - t0 < 1000);
+  assert.deepEqual([...log], ['fn', 'fn', 'terminate']);
+  sb.dispose();
+});
+
+test('a worker error resolves pending fn calls with null; replies other than values become null', async () => {
+  const log = [];
+  const sb = createSandbox({ createWorker: silentWorker(log), timeoutMs: 10_000 });
+  const p = sb.evalFn('o => 1', {});
+  log.workers[0].onerror({ message: 'boom' });
+  assert.equal(await p, null);
+  const q = sb.evalFn('o => 1', {});
+  log.workers[0].onmessage({ data: { fn: { id: 2, value: { not: 'a value' } } } });
+  assert.equal(await q, null);
+  sb.dispose();
+});

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { buildConfig, secretKeyFrom } from '../../supabase/functions/harvest/config.js';
+import { parseRetryAfter } from '../../supabase/functions/harvest/fetch.js';
 import { canonicalJson, hashFields } from '../../supabase/functions/harvest/hash.js';
 import { normalizers } from '../../supabase/functions/harvest/normalizers/index.js';
 import { enabledMatcher, loadRegistry, RegistryError } from '../../supabase/functions/harvest/registry.js';
@@ -72,6 +73,30 @@ test('config reads the injected secret keys and validates the contact', () => {
   assert.throws(() => buildConfig({ ...env, WORKER_CONTACT: 'Sphärenmusik' }, sources), /ASCII/);
   assert.throws(() => buildConfig({ ...env, LL2_BASE: '' }, sources), /missing environment variable: LL2_BASE/);
   assert.throws(() => buildConfig({ ...env, LOG_LEVEL: 'loud' }, sources), /LOG_LEVEL/);
+});
+
+test('a SOURCES_ENABLED pattern that matches no registry id is a config error naming it', () => {
+  const env = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_y', WORKER_CONTACT: 'me@example.edu', LL2_BASE: vars.LL2_BASE };
+  assert.throws(
+    () => buildConfig({ ...env, SOURCES_ENABLED: 'swpc.*, swcp.kp ,nope.*' }, sources),
+    (err) => err instanceof RegistryError && err.message === 'SOURCES_ENABLED: no registry id matches swcp.kp, nope.*',
+  );
+  const { isEnabled } = buildConfig({ ...env, SOURCES_ENABLED: 'swpc.*,celestrak.stations' }, sources);
+  assert.equal(isEnabled('swpc.kp'), true);
+  assert.equal(isEnabled('jpl.cad'), false);
+  assert.equal(buildConfig({ ...env, SOURCES_ENABLED: ' ' }, sources).isEnabled('jpl.cad'), true);
+});
+
+test('parseRetryAfter reads delta-seconds and HTTP dates', () => {
+  const now = at('2026-10-30T03:00:00Z');
+  assert.equal(parseRetryAfter('1200', now), 1200);
+  assert.equal(parseRetryAfter(' 30 ', now), 30);
+  assert.equal(parseRetryAfter('Fri, 30 Oct 2026 03:10:00 GMT', now), 600);
+  assert.equal(parseRetryAfter('Fri, 30 Oct 2026 03:00:00 GMT', now + 500), 0, 'a date a fraction of a second away rounds up to 0, not negative');
+  assert.equal(parseRetryAfter('Thu, 29 Oct 2026 03:00:00 GMT', now), 0, 'a past date waits 0 s');
+  assert.equal(parseRetryAfter('soon', now), null);
+  assert.equal(parseRetryAfter('', now), null);
+  assert.equal(parseRetryAfter(null, now), null);
 });
 
 test('malformed SUPABASE_SECRET_KEYS is reported as invalid JSON, not as missing', () => {

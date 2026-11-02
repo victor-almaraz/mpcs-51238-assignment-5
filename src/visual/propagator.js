@@ -5,6 +5,7 @@
 import { SampleBuffer } from './positions.js';
 import { orbitKey, STRIDE } from './propagation-core.js';
 import { hasOrbit } from '../sky/groups.js';
+import { safeTrace } from '../trace/bus.js';
 
 const FLUSH_MS = 50;
 
@@ -15,13 +16,18 @@ function defaultWorker() {
 
 /**
  * @param {{
- *   createWorker?: () => { postMessage(msg: any, transfer?: any[]): void, terminate(): void, onmessage: ((e: { data: any }) => void) | null },
+ *   createWorker?: () => { postMessage(msg: any, transfer?: any[]): void, terminate(): void, onmessage: ((e: { data: any }) => void) | null, onerror?: ((e: any) => void) | null },
  *   trace?: (record: any) => void,
  *   now?: () => number,
  *   setTimer?: (fn: () => void, ms: number) => any,
+ *   clearTimer?: (handle: any) => void,
  * }} [options]
  */
-export function createPropagator({ createWorker = defaultWorker, trace = () => {}, now = Date.now, setTimer = (fn, ms) => setTimeout(fn, ms) } = {}) {
+export function createPropagator({
+  createWorker = defaultWorker, trace = () => {}, now = Date.now,
+  setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = (h) => clearTimeout(h),
+} = {}) {
+  const traceSafe = safeTrace(trace, 'propagator');
   const buffer = new SampleBuffer();
   /** @type {Map<string, any>} */
   const paths = new Map();
@@ -39,14 +45,18 @@ export function createPropagator({ createWorker = defaultWorker, trace = () => {
   let worker = null;
   let running = false;
   let flushPending = false;
+  /** @type {any} handle of the pending flush timer */
+  let flushTimer = null;
+  let disposed = false;
   /** @type {Map<string, any>} latest configuration message per type, replayed when the worker starts */
   const config = new Map();
   let failCount = 0;
 
   function ensureWorker() {
-    if (worker) return worker;
+    if (worker || disposed) return worker;
     worker = createWorker();
     worker.onmessage = (e) => onMessage(e.data);
+    worker.onerror = (e) => emit({ stage: 'VISUAL', component: 'sgp4', event: 'workerError', level: 'error', data: { message: String(e?.message ?? e ?? 'worker error') } });
     for (const msg of config.values()) worker.postMessage(msg);
     return worker;
   }
@@ -67,27 +77,31 @@ export function createPropagator({ createWorker = defaultWorker, trace = () => {
     } else if (msg?.type === 'paths') {
       paths.set(msg.key, { ids: msg.ids, steps: msg.steps, stepSec: msg.stepSec, fromSec: msg.fromSec, wallMs: msg.wallMs, simMs: msg.simMs, data: msg.data, stride: STRIDE });
     } else if (msg?.type === 'trace' && msg.record) {
-      const r = msg.record;
-      try {
-        trace({ t: new Date(now()).toISOString(), traceId: r.traceId ?? `sgp4-${++failCount}`, stage: r.stage, component: r.component, event: r.event, level: r.level, data: r.data ?? {} });
-      } catch (err) { console.error('trace rejected a propagator record', err); }
+      emit(msg.record);
     }
   }
 
+  /** @param {any} r record without `t`; a missing traceId gets one */
+  function emit(r) {
+    traceSafe({ t: new Date(now()).toISOString(), traceId: r.traceId ?? `sgp4-${++failCount}`, stage: r.stage, component: r.component, event: r.event, level: r.level, data: r.data ?? {} });
+  }
+
   function scheduleFlush() {
-    if (flushPending) return;
+    if (flushPending || disposed) return;
     flushPending = true;
-    setTimer(flush, FLUSH_MS);
+    const handle = setTimer(flush, FLUSH_MS);
+    if (flushPending) flushTimer = handle; // a synchronous timer has already flushed
   }
 
   function flush() {
     flushPending = false;
-    if (!sky || !groups.length) return;
+    flushTimer = null;
+    if (disposed || !sky || !groups.length) return;
     const objects = [];
     for (const g of groups) {
       for (const o of sky.get(g) ?? []) objects.push({ id: o.id, group: o.group, fields: o.fields, traceId: traceIds.get(o.id) });
     }
-    ensureWorker().postMessage({ type: 'objects', objects });
+    ensureWorker()?.postMessage({ type: 'objects', objects });
     if (!running) { worker?.postMessage({ type: 'start' }); running = true; }
   }
 
@@ -102,6 +116,7 @@ export function createPropagator({ createWorker = defaultWorker, trace = () => {
   return {
     /** @param {any} store Sky (doc/sky-contract.md) */
     follow(store) {
+      if (disposed) return;
       for (const u of unsub) u();
       sky = store;
       unsub = ['enter', 'update', 'exit'].map((type) => store.on(type, onSkyEvent));
@@ -132,6 +147,11 @@ export function createPropagator({ createWorker = defaultWorker, trace = () => {
     /** @param {(sample: any) => void} fn */
     onSample(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     dispose() {
+      disposed = true;
+      if (flushPending) clearTimer(flushTimer);
+      flushPending = false;
+      flushTimer = null;
+      sky = null;
       for (const u of unsub) u();
       unsub = [];
       listeners.clear();

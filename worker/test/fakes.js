@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { truncateSample } from '../../supabase/functions/harvest/store.js';
 
 export const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -71,9 +72,16 @@ export function fakeStore({ now = Date.now } = {}) {
       return out;
     },
     async saveSample(sourceId, fetchedAt, httpStatus, body) {
-      // Like Postgres text: a NUL byte is rejected.
-      if (body.includes('\u0000')) throw new Error('upsert source_samples: unsupported Unicode escape sequence');
-      samples.set(sourceId, { fetchedAt, httpStatus, body: body.slice(0, 65536) });
+      const stored = truncateSample(body);
+      // Like Postgres text: a NUL byte or a lone surrogate is rejected.
+      if (stored.includes('\u0000') || !stored.isWellFormed()) throw new Error('upsert source_samples: unsupported Unicode escape sequence');
+      samples.set(sourceId, { fetchedAt, httpStatus, body: stored });
+    },
+    async clearHalt(sourceId) {
+      const st = status.get(sourceId);
+      if (!st) return false;
+      Object.assign(st, { halted: false, failures: 0, next_attempt_at: null, in_flight_at: null });
+      return true;
     },
     async insertRun(run) {
       runs.push(run);

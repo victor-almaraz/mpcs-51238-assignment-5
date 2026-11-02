@@ -18,11 +18,11 @@ Index and reading order for the Sphärenmusik docs. Each doc opens with a Scope 
 | `console.md` | Trace records, panels, export |
 | `ui.md` | Routes, screens, states, shortcuts, settings |
 | `guide.md` | The `/learn` user guide page: content, rendering, Try mode, consistency tests |
-| `testing.md` | Automated tests and manual checklist |
-| `deployment.md` | Services, environment variables, free-tier limits |
+| `testing.md` | Test commands, automated test inventory, SQL tests, manual checklist |
+| `deployment.md` | Services, environment variables, setup steps, free-tier limits, usage alerts |
 
 ## Audio engine docs
-`audio/` holds the engine reference: `audio-engine-core.md`, `audio-safety.md`, `audioworklet.md`, `recording.md`, `patch-format.md`, the `synthesis-*.md` files, `effects.md` (effect kernels and chains, from assignment 3) and `modulation.md` (LFOs and data modulation). Those docs describe the engine's internal rules and bind the user's code. They reference MIDI, live-input and layout docs from assignment 2; MIDI files, live input and the synth rack UI are outside this project.
+`audio/` holds the engine reference: `audio-engine-core.md`, `audio-safety.md`, `audioworklet.md`, `recording.md`, `patch-format.md`, the `synthesis-*.md` files, `effects.md` (effect kernels and chains) and `modulation.md` (LFOs and data modulation). Those docs describe the engine's internal rules and bind the user's code. Their references to MIDI, live-input and layout docs point to assignment 2; MIDI files, live input and the synth rack UI are outside this project.
 
 ## User guide
 `content/learn/` holds the user guide: Markdown pages for people learning the piece script, rendered at `/learn` (`guide.md`). The guide is product content; these docs are for implementers.

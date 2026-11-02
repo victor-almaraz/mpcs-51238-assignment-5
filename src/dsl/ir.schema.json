@@ -34,7 +34,8 @@
       "type": "object", "additionalProperties": false, "required": ["handlers", "follow"],
       "properties": {
         "handlers": { "type": "array", "items": { "$ref": "#/$defs/handler" } },
-        "follow": { "type": "array", "items": { "type": "string" } }
+        "follow": { "type": "array", "items": { "type": "string" } },
+        "orbits": { "type": "array", "items": { "$ref": "#/$defs/expr" } }
       }
     }
   },

@@ -6,6 +6,7 @@ import schema from './ir.schema.json' with { type: 'json' };
 import { checkSchema } from './schema-check.js';
 import { own } from './defs.js';
 import { problem } from './problem-codes.js';
+import { parseSwpcPath } from '../expr/deps.js';
 import { collectGroups, escapePointer, forEachExprPosition, forEachNode, isNode, objectGroup } from './ir-walk.js';
 import {
   COLOR_HEX, CURRENT_IR_VERSION, CURVES, EVENT_KINDS, HANDLER_EVENTS, HANDLER_KINDS, LFO_SHAPES, LIMITS, NOTE_ROOT,
@@ -300,7 +301,10 @@ class Checker {
         }
         this.constRange(b.pitch, RANGES.pitch, `${p}/pitch`, 'pitch');
         this.constRange(b.velocity, RANGES.velocity, `${p}/velocity`, 'velocity');
-        if (b.kind === 'voices') this.constRange(b.pan, RANGES.pan, `${p}/pan`, 'pan');
+        if (b.kind === 'voices') {
+          this.constRange(b.pan, RANGES.pan, `${p}/pan`, 'pan');
+          this.voiceMods(b, inst, p);
+        }
       } else if (b.kind === 'param' || b.kind === 'fxParam') {
         const owner = b.kind === 'param' ? b.inst : b.slot;
         if (b.kind === 'param' && !this.insts.has(owner)) this.add('ir_reference', `${p}/inst`, `No instrument ${owner}`);
@@ -313,6 +317,21 @@ class Checker {
         this.add('slot_unplaced', `${p}/slot`, `Effect ${b.slot} is in no chain; pass it to inst.fx(...) or master.fx(...)`);
       }
     });
+  }
+
+  /**
+   * `voiceMods` names are modulatable parameters of the instrument; constant values lie in −1 to 1.
+   * @param {any} b @param {any} inst @param {string} p
+   */
+  voiceMods(b, inst, p) {
+    const spec = inst ? own(this.defs.instruments, inst.type) : undefined;
+    for (const [name, v] of Object.entries(b.voiceMods)) {
+      const pp = `${p}/voiceMods/${escapePointer(name)}`;
+      if (spec && !own(spec.params, name)?.modulatable) {
+        this.add('unknown_option', pp, `voiceMods: ${name} is not a modulatable parameter of ${inst.type}`);
+      }
+      this.constRange(v, RANGES.voiceMod, pp, `voiceMods.${name}`);
+    }
   }
 
   /** @param {unknown} v @param {readonly number[]} range @param {string} path @param {string} name */
@@ -415,6 +434,9 @@ class Checker {
       }
     });
     pr.follow.forEach((/** @type {string} */ g, /** @type {number} */ i) => this.group(g, `/program/follow/${i}`));
+    (pr.orbits ?? []).forEach((/** @type {any} */ n, /** @type {number} */ i) => {
+      if (n?.op !== 'orbit' || typeof n.args?.[1] !== 'string') this.add('ir_schema', `/program/orbits/${i}`, 'A program orbit must be sky.orbit(objectId, quantity)');
+    });
   }
 
   /** @param {string} key @param {string} path @returns {boolean} */
@@ -477,9 +499,9 @@ class Checker {
         if (ctx.object !== null) this.fieldName(ctx.object, a[0], `${p}/args/0`);
         break;
       case 'swpc': {
-        const m = /^([A-Za-z0-9-]+)\.([A-Za-z0-9_]+)$/.exec(a[0]);
-        if (!m) { this.add('unknown_group', `${p}/args/0`, `sky.swpc path ${a[0]} must look like 'kp.kp'`); break; }
-        if (this.group(`swpc.${m[1]}`, `${p}/args/0`)) this.fieldName(`swpc.${m[1]}`, m[2], `${p}/args/0`);
+        const sp = parseSwpcPath(a[0]);
+        if (!sp) { this.add('unknown_group', `${p}/args/0`, `sky.swpc path ${a[0]} must look like 'kp.kp'`); break; }
+        if (this.group(sp.group, `${p}/args/0`)) this.fieldName(sp.group, sp.field, `${p}/args/0`);
         break;
       }
       case 'value': {

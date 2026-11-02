@@ -3,15 +3,12 @@
 // IR kinds (src/dsl/ir.schema.json):
 // - `param` { inst, param, expr, smoothMs }: calls `engine.get(inst).setParam`.
 // - `fxParam` { slot, param, expr, smoothMs }: calls `engine.setFxParam(slot, param, value)`.
-//   Enum parameters (by the injected `fxParamDef`) receive the rounded option index, unsmoothed.
+//   Enum parameters (by the definition tables, `env.defs`) receive the rounded option index, unsmoothed.
 // - `fxBypass` { slot, expr }: calls `engine.setFxBypass(slot, on)` when the boolean changes.
-// A `param` binding whose `inst` is a slot id is treated as `fxParam` (or `fxBypass` when
-// `param` is `bypass`).
 
 import { evaluate } from '../expr/evaluate.js';
 import { collectDeps } from '../expr/deps.js';
-import { LIMITS } from './limits.js';
-import { numberOr } from './values.js';
+import { own } from '../dsl/defs.js';
 
 /**
  * One-pole smoother with time constant `smoothMs / 3`: 95% of a step after `smoothMs`. It snaps
@@ -59,16 +56,16 @@ export function createParamBinding(b, env) {
   const ctx = env.ctxFor(b.id);
   const component = `bind.${b.id}`;
   const deps = collectDeps(b.expr);
-  const targetId = b.slot ?? b.inst;
-  const param = b.kind === 'fxBypass' ? 'bypass' : b.param;
-  const slotInfo = env.slot(targetId);
-  const instIr = slotInfo ? null : env.instrument(targetId);
-  if (!slotInfo && !instIr) throw new Error(`Binding ${b.id}: ${targetId} is neither an instrument nor an effect slot`);
-  if (b.kind !== 'param' && !slotInfo) throw new Error(`Binding ${b.id}: effect slot ${targetId} is not in the IR`);
-  const kind = slotInfo ? (param === 'bypass' ? 'bypass' : 'fx') : 'inst';
-  const def = kind === 'fx' && env.fxParamDef ? env.fxParamDef(slotInfo.slot.type, param) : null;
-  const enumOptions = def && (def.scale === 'enum' || Array.isArray(def.options)) ? (def.options ?? []) : null;
-  const smoother = createSmoother(numberOr(b.smoothMs, LIMITS.defaultSmoothMs));
+  const kind = b.kind === 'param' ? 'inst' : b.kind === 'fxBypass' ? 'bypass' : 'fx';
+  const targetId = kind === 'inst' ? b.inst : b.slot;
+  const param = kind === 'bypass' ? 'bypass' : b.param;
+  const slotInfo = kind === 'inst' ? null : env.slot(targetId);
+  if (kind === 'inst' && !env.instrument(targetId)) throw new Error(`Binding ${b.id}: instrument ${targetId} is not in the IR`);
+  if (kind !== 'inst' && !slotInfo) throw new Error(`Binding ${b.id}: effect slot ${targetId} is not in the IR`);
+  const def = kind === 'fx' ? own(own(env.defs.effects, slotInfo.slot.type)?.params, param) : undefined;
+  const enumOptions = def?.kind === 'enum' ? /** @type {string[]} */ (def.options) : null;
+  // Validated IR: smoothMs 0–60,000 is present on param and fxParam bindings.
+  const smoother = createSmoother(kind === 'bypass' ? 0 : b.smoothMs);
 
   let requested = /** @type {number | null} */ (null);
   let traceId = /** @type {string | null} */ (null);

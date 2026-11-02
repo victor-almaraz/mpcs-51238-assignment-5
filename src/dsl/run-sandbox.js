@@ -24,6 +24,7 @@ export const STARTUP_TIMEOUT_MS = 15_000;
  */
 
 /**
+ * `timeoutMs` bounds one build and one `fn` call; `programTimeoutMs` one program message.
  * @param {{ createWorker?: () => WorkerLike, timeoutMs?: number, startupMs?: number, programTimeoutMs?: number }} [opts]
  */
 export function createSandbox({
@@ -33,6 +34,8 @@ export function createSandbox({
   let worker = null;
   /** Resolves true when the current worker has posted `ready`, false when it failed to load. @type {Promise<boolean>} */
   let ready = Promise.resolve(true);
+  /** Settles `ready` of the current worker. @type {(ok: boolean) => void} */
+  let markReady = () => {};
   /** @type {Promise<unknown>} */
   let queue = Promise.resolve();
   /** @type {Map<number, (v: { value?: unknown, error?: string }) => void>} */
@@ -47,7 +50,6 @@ export function createSandbox({
   const ensure = () => {
     if (worker) return worker;
     const w = createWorker();
-    /** @type {(ok: boolean) => void} */ let markReady = () => {};
     ready = new Promise((resolve) => { markReady = resolve; });
     w.onmessage = (e) => {
       const d = e.data;
@@ -59,8 +61,9 @@ export function createSandbox({
       }
       if (d && typeof d === 'object' && d.fn) {
         const r = fnWaiters.get(d.fn.id);
+        if (!r) return;
         fnWaiters.delete(d.fn.id);
-        r?.(d.fn);
+        r(d.fn);
       } else if (buildWaiter) {
         const r = buildWaiter;
         buildWaiter = null;
@@ -69,22 +72,31 @@ export function createSandbox({
     };
     w.onerror = (e) => {
       markReady(false);
-      const pr = programWaiter;
-      programWaiter = null;
-      pr?.resolve({ commands: [], errors: [{ handler: 'vm', line: null, message: `The sandbox failed: ${e?.message ?? 'unknown error'}` }], dropped: 0 });
-      const r = buildWaiter;
-      buildWaiter = null;
-      r?.({ ir: null, problems: [problem('runtime_error', '', `The sandbox failed: ${e?.message ?? 'unknown error'}`)] });
+      failPending(`The sandbox failed: ${e?.message ?? 'unknown error'}`);
     };
     worker = w;
     return w;
   };
 
+  /** Resolves every pending build, program message and `fn` call with an error; each clears its timer. @param {string} message */
+  const failPending = (message) => {
+    const pr = programWaiter;
+    programWaiter = null;
+    pr?.resolve({ commands: [], errors: [{ handler: 'vm', line: null, message }], dropped: 0 });
+    const r = buildWaiter;
+    buildWaiter = null;
+    r?.({ ir: null, problems: [problem('runtime_error', '', message)] });
+    const fns = [...fnWaiters.values()];
+    fnWaiters.clear();
+    for (const f of fns) f({ error: message });
+  };
+
+  /** Terminates the worker. Pending replies resolve first, so no stale timer outlives it. */
   const reset = () => {
     worker?.terminate();
     worker = null;
-    for (const r of fnWaiters.values()) r({ error: 'sandbox restarted' });
-    fnWaiters.clear();
+    markReady(false);
+    failPending('The script sandbox restarted');
   };
 
   /**
@@ -126,12 +138,18 @@ export function createSandbox({
   /**
    * Evaluates an `fn` expression of a local-only piece in the sandbox.
    * @param {string} source @param {unknown} arg
-   * @returns {Promise<unknown>} the value, or null when the function throws
+   * @returns {Promise<number | string | boolean | null>} the value, or null when the function throws, returns
+   *   another kind of value, or gives no reply within `timeoutMs` (which terminates the worker)
    */
   function evalFn(source, arg) {
     const id = ++fnId;
     return new Promise((resolve) => {
-      fnWaiters.set(id, (r) => resolve(r.error === undefined ? r.value : null));
+      const timer = setTimeout(() => {
+        if (!fnWaiters.delete(id)) return;
+        reset();
+        resolve(null);
+      }, timeoutMs);
+      fnWaiters.set(id, (r) => { clearTimeout(timer); resolve(r?.error === undefined ? fnValue(r?.value) : null); });
       ensure().postMessage({ fn: { id, source, arg } });
     });
   }
@@ -164,6 +182,12 @@ export function createSandbox({
   }
 
   return { build, evalFn, program, dispose: reset };
+}
+
+/** A finite number, text or boolean from the worker; anything else is null. @param {unknown} v */
+function fnValue(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  return typeof v === 'string' || typeof v === 'boolean' ? v : null;
 }
 
 /** @param {any} r */

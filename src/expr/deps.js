@@ -3,24 +3,38 @@
 import { isNode } from './evaluate.js';
 
 /**
- * Group of an object id `<group>:<key>`. Group keys contain no `:`.
+ * Group of an object id `<group>:<key>`, such as `celestrak.stations:25544` → `celestrak.stations`.
+ * Group keys contain no `:`.
  * @param {string} objectId
  * @returns {string}
  */
-export function groupOfObject(objectId) {
+export function objectGroup(objectId) {
   const i = objectId.indexOf(':');
   return i < 0 ? objectId : objectId.slice(0, i);
 }
 
+/** An SWPC path `<product>.<field>`: `kp.kp`, `wind.speed`, `mag.bz`. */
+const SWPC_PATH = /^([A-Za-z0-9-]+)\.([A-Za-z0-9_]+)$/;
+
 /**
- * Group and field of an SWPC path `kp.kp`, `wind.speed`, `mag.bz`.
+ * Group and field of an SWPC path, or null when `path` is not one.
+ * @param {unknown} path
+ * @returns {{ group: string, field: string } | null}
+ */
+export function parseSwpcPath(path) {
+  const m = typeof path === 'string' ? SWPC_PATH.exec(path) : null;
+  return m ? { group: `swpc.${m[1]}`, field: m[2] } : null;
+}
+
+/**
+ * Group and field of an SWPC path; throws when `path` is not one.
  * @param {string} path
  * @returns {{ group: string, field: string }}
  */
 export function swpcPath(path) {
-  const i = path.indexOf('.');
-  if (i < 0) throw new Error(`Invalid SWPC path "${path}"; expected <product>.<field>`);
-  return { group: `swpc.${path.slice(0, i)}`, field: path.slice(i + 1) };
+  const r = parseSwpcPath(path);
+  if (!r) throw new Error(`Invalid SWPC path "${path}"; expected <product>.<field>`);
+  return r;
 }
 
 /**
@@ -50,7 +64,7 @@ export function collectDeps(node, deps = {
     case 'field': deps.current = true; deps.fields.add(String(a[0])); break;
     case 'rand': deps.current = true; break;
     case 'swpc': deps.swpc = true; deps.groups.add(swpcPath(String(a[0])).group); break;
-    case 'value': deps.groups.add(groupOfObject(String(a[0]))); break;
+    case 'value': deps.groups.add(objectGroup(String(a[0]))); break;
     case 'count': case 'mean': case 'spread': deps.groups.add(String(a[0])); break;
     case 'orbit':
       deps.orbit = true;

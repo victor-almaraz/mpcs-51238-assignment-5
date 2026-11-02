@@ -2,7 +2,7 @@
 // `spread`. Reads the live objects of a group from the sky store and caches each result until
 // an event arrives in that group.
 
-import { groupOfObject, swpcPath } from '../expr/deps.js';
+import { objectGroup, swpcPath } from '../expr/deps.js';
 
 /**
  * @param {{ get(group: string): { id: string, fields: Record<string, unknown> }[] }} sky
@@ -32,7 +32,7 @@ export function createSkyResolvers(sky) {
     },
     /** @param {string} objectId @param {string} field */
     value(objectId, field) {
-      const group = groupOfObject(objectId);
+      const group = objectGroup(objectId);
       return cached(group, `value:${objectId}\u0000${field}`, () => {
         const o = sky.get(group).find((x) => x.id === objectId);
         return o ? (o.fields?.[field] ?? null) : null;

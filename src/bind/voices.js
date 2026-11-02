@@ -4,7 +4,7 @@ import { evaluate } from '../expr/evaluate.js';
 import { collectDeps } from '../expr/deps.js';
 import { selectObjects } from './select.js';
 import { LIMITS, voiceCap } from './limits.js';
-import { pitchOf, velocityOf, panOf } from './values.js';
+import { pitchOf, velocityOf, panOf, voiceModOf } from './values.js';
 
 /**
  * @typedef {object} Voice
@@ -58,8 +58,8 @@ export function createVoicesBinding(b, env) {
       /** @type {Record<string, number>} */
       const mods = {};
       for (const [name, e] of voiceModExprs) {
-        const x = evaluate(e, v.obj, ctx);
-        if (typeof x === 'number') mods[name] = x;
+        const x = voiceModOf(evaluate(e, v.obj, ctx));
+        if (x !== null) mods[name] = x;
       }
       if (Object.keys(mods).length) {
         i.setVoiceMod(v.tag, mods);

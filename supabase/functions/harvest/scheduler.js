@@ -1,5 +1,5 @@
 /** Seconds of cron jitter tolerated so that 60 s sources run on every one-minute tick. */
-export const TICK_SLACK_SEC = 15;
+const TICK_SLACK_SEC = 15;
 
 const ms = (t) => (t ? Date.parse(t) : null);
 
@@ -53,6 +53,7 @@ export function onFailure(entry, st, now, { retryAfterSec = null } = {}) {
     row.halted = true;
   } else if (entry.onNon200 === 'retryAfter') {
     waitSec = retryAfterSec ?? 3600;
+    if (entry.maxBackoffSec > 0) waitSec = Math.min(waitSec, entry.maxBackoffSec);
   } else {
     waitSec = Math.min(entry.intervalSec * 2 ** failures, entry.maxBackoffSec);
   }

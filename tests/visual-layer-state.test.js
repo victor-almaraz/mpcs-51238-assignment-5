@@ -87,6 +87,27 @@ test('reduced motion forces trail to 0 and the flash hold keeps colours', () => 
   assert.equal(r.last.size, 0);
 });
 
+test('forgetObject drops one object in every layer, so the memo does not grow as objects come and go', () => {
+  const a = /** @type {any} */ (normalizeLayer({ id: 'l0', type: 'points', group: 'g', props: { size: kp } }));
+  const b = /** @type {any} */ (normalizeLayer({ id: 'l1', type: 'points', group: 'g', props: { size: kp } }));
+  const r = new PropResolver();
+  for (let i = 0; i < 100; i++) {
+    const id = `g:${i}`;
+    for (const l of [a, b]) r.resolve(l, id, { pushed: { [l.id]: { size: { [id]: 4 } } } });
+    if (i > 0) r.forgetObject(`g:${i - 1}`);
+  }
+  assert.equal(r.last.size, 2, 'only the last object is remembered, once per layer');
+  assert.equal(r.byObject.size, 1);
+  r.forgetObject('g:unknown');
+  r.forget('l0');
+  assert.equal(r.last.size, 1);
+  assert.equal(r.byObject.get('g:99')?.size, 1, 'forget(layer) also cleans the object index');
+  r.resolve(a, null, { pushed: { l0: { size: 3 } } });
+  r.forget();
+  assert.equal(r.last.size, 0);
+  assert.equal(r.byObject.size, 0);
+});
+
 test('ValueGate passes changes at most once per second while active', () => {
   const g = new ValueGate(1000);
   assert.equal(g.offer('a', 0, true), 'a');

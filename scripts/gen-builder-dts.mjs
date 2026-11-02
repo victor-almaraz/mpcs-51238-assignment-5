@@ -13,17 +13,17 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diag, loadDefs } from './lib/defs.mjs';
-import { parseArgs, writeOrCheck } from './lib/cli.mjs';
+import { loadDefs } from './lib/defs.mjs';
+import { diag, parseArgs, writeOrCheck } from './lib/cli.mjs';
 import { generateBuilderDts } from '../src/dsl/gen-dts.js';
 import { libClosure } from '../src/dsl/typecheck.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const argv = process.argv.slice(2);
-const { check } = parseArgs(argv, { check: 'boolean', defs: 'list' }, 'node scripts/gen-builder-dts.mjs [--defs <module>]... [--check]', 'gen_builder_dts');
+const args = parseArgs(process.argv.slice(2), { check: 'boolean', defs: 'list' }, 'node scripts/gen-builder-dts.mjs [--defs <module>]... [--check]', 'gen_builder_dts');
+const { check } = args;
 
 try {
-  const defs = await loadDefs(ROOT, argv);
+  const defs = await loadDefs(ROOT, args.defs);
   const dts = generateBuilderDts(defs);
   const tsLib = dirname(createRequire(import.meta.url).resolve('typescript/lib/typescript.js'));
   const libs = libClosure((name) => readFileSync(join(tsLib, name), 'utf8'));

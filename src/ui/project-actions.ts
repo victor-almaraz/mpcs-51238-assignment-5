@@ -1,17 +1,27 @@
 // Project writes from the browser through the Clerk-authenticated client; RLS limits each
 // statement to the owner (doc/database.md, Grants and RLS).
-import { syncSubscriptions } from '@/src/ui/subscriptions.js';
+import { syncSubscriptions } from './subscriptions.js';
 
-export type NewProject = { name: string; source: string; ir: any | null; starterSlug?: string | null };
+export type NewProject = { name: string; source: string; ir: any | null };
 
-/** Inserts a project and its subscriptions; returns the new id. */
+/**
+ * Inserts a project and its subscriptions; returns the new id. When the subscriptions cannot be
+ * written, the new row is deleted again, so a retry reuses the name (doc/ui.md, Projects).
+ */
 export async function createProject(client: any, p: NewProject): Promise<string> {
   const { data, error } = await client.from('projects')
     .insert({ name: p.name, source: p.source, ir: p.ir, local_only: !!p.ir?.localOnly })
     .select('id').single();
   if (error) throw new Error(`The project could not be created: ${error.message}`);
   const id = String(data.id);
-  if (p.ir && Array.isArray(p.ir.groups) && p.ir.groups.length) await syncSubscriptions(client, id, p.ir.groups);
+  if (p.ir && Array.isArray(p.ir.groups) && p.ir.groups.length) {
+    try {
+      await syncSubscriptions(client, id, p.ir.groups);
+    } catch (err) {
+      await client.from('projects').delete().eq('id', id);
+      throw new Error(`The project could not be created: ${(err as Error).message}`);
+    }
+  }
   return id;
 }
 

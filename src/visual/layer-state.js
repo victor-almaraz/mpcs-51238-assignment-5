@@ -151,6 +151,8 @@ export class PropResolver {
   constructor() {
     /** @type {Map<string, number | string>} */
     this.last = new Map();
+    /** @type {Map<string, Set<string>>} memo keys of `last` per object id */
+    this.byObject = new Map();
   }
 
   /**
@@ -180,17 +182,38 @@ export class PropResolver {
       if (v === undefined) v = pick(pushed, layer.id, name, objectId, pdef);
       if (v === undefined) v = this.last.get(memo);
       if (v === undefined) v = pdef.default;
-      else this.last.set(memo, v);
+      else this.remember(memo, objectId, v);
       out[name] = v;
     }
     return out;
   }
 
+  /** @param {string} memo @param {string | null} objectId @param {number | string} v */
+  remember(memo, objectId, v) {
+    this.last.set(memo, v);
+    if (objectId === null) return;
+    let keys = this.byObject.get(objectId);
+    if (!keys) { keys = new Set(); this.byObject.set(objectId, keys); }
+    keys.add(memo);
+  }
+
   /** Forgets remembered values of one layer, or of all layers. @param {string} [layerId] */
   forget(layerId) {
-    if (layerId === undefined) { this.last.clear(); return; }
+    if (layerId === undefined) { this.last.clear(); this.byObject.clear(); return; }
     const prefix = `${layerId}\u0000`;
     for (const k of this.last.keys()) if (k.startsWith(prefix)) this.last.delete(k);
+    for (const [id, keys] of this.byObject) {
+      for (const k of keys) if (k.startsWith(prefix)) keys.delete(k);
+      if (!keys.size) this.byObject.delete(id);
+    }
+  }
+
+  /** Forgets remembered values of one object in every layer, after its `exit`. @param {string} objectId */
+  forgetObject(objectId) {
+    const keys = this.byObject.get(objectId);
+    if (!keys) return;
+    for (const k of keys) this.last.delete(k);
+    this.byObject.delete(objectId);
   }
 }
 

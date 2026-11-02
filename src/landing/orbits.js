@@ -1,7 +1,6 @@
 // Ground tracks for the landing page's orbit map (doc/ui.md, Landing).
-import { degreesLat, degreesLong, eciToGeodetic, gstime, json2satrec, propagate } from 'satellite.js';
-import { toOmm } from '../sky/omm.js';
-import { sunDirection } from '../sky/orbit.js';
+import { degreesLat, degreesLong, gstime } from 'satellite.js';
+import { createOrbit, propagateAt, sunDirection } from '../sky/orbit.js';
 
 export const STEP_MS = 2000;
 export const TRAIL_MINUTES = 45;
@@ -11,7 +10,7 @@ export function satrecs(objects) {
   const out = [];
   for (const o of objects) {
     try {
-      out.push({ id: o.id, name: String(o.fields.name ?? o.id), satrec: json2satrec(toOmm(o.fields)) });
+      out.push({ id: o.id, name: String(o.fields.name ?? o.id), satrec: createOrbit(o.fields).satrec });
     } catch {
       // omitted: invalid elements
     }
@@ -21,11 +20,10 @@ export function satrecs(objects) {
 
 /** { lat, lon } in degrees, or null when propagation fails. */
 export function subPoint(satrec, date) {
-  const pv = propagate(satrec, date);
-  if (!pv || !pv.position || typeof pv.position === 'boolean') return null;
-  const g = eciToGeodetic(pv.position, gstime(date));
-  const lat = degreesLat(g.latitude);
-  const lon = degreesLong(g.longitude);
+  const st = propagateAt(satrec, date.getTime());
+  if (!st.ok) return null;
+  const lat = degreesLat(st.geodetic.latitude);
+  const lon = degreesLong(st.geodetic.longitude);
   return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 }
 

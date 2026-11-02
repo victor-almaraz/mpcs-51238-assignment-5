@@ -35,6 +35,40 @@ const JD_J2000 = 2451545.0;
  */
 
 /**
+ * One SGP4 step: inertial position and velocity, sidereal time and the
+ * geodetic sub-point. A propagation that throws or returns no finite state
+ * is `{ ok: false, error }` with the satrec error code (-1 when none).
+ * @param {any} satrec from json2satrec
+ * @param {number} ms propagation time, ms since epoch
+ * @returns {{ ok: true, eci: Vec3, velocity: Vec3, gmst: number, geodetic: { latitude: number, longitude: number, height: number } }
+ *         | { ok: false, error: number }}
+ */
+export function propagateAt(satrec, ms) {
+  const date = new Date(ms);
+  let pv = null;
+  try { pv = propagate(satrec, date); } catch { pv = null; }
+  const r = pv && pv.position;
+  const v = pv && pv.velocity;
+  if (!r || !v || typeof r !== 'object' || typeof v !== 'object' || !finite3(r) || !finite3(v)) return { ok: false, error: satrec.error || -1 };
+  const gmst = gstime(date);
+  return { ok: true, eci: r, velocity: v, gmst, geodetic: eciToGeodetic(r, gmst) };
+}
+
+/**
+ * Azimuth and elevation (radians) of an inertial position from an observer at height 0.
+ * @param {Observer} observer degrees
+ * @param {Vec3} eci km
+ * @param {number} gmst rad
+ */
+export function lookAngles(observer, eci, gmst) {
+  const look = ecfToLookAngles(
+    { latitude: degreesToRadians(observer.lat), longitude: degreesToRadians(observer.lon), height: 0 },
+    eciToEcf(eci, gmst),
+  );
+  return { azimuth: look.azimuth, elevation: look.elevation };
+}
+
+/**
  * Builds a propagator for one celestrak.* object.
  * @param {Record<string, number | string | boolean | null>} fields normalized fields
  * @throws {import('./omm.js').OmmError} when required elements are missing
@@ -59,14 +93,9 @@ export function createOrbit(fields) {
      * @returns {OrbitSample}
      */
     sample(ms, observer) {
-      const date = new Date(ms);
-      const pv = propagate(satrec, date);
-      const r = pv && pv.position;
-      const v = pv && pv.velocity;
-      if (!r || !v || !finite3(r) || !finite3(v)) return { ok: false, error: satrec.error || -1 };
-
-      const gmst = gstime(date);
-      const gd = eciToGeodetic(r, gmst);
+      const st = propagateAt(satrec, ms);
+      if (!st.ok) return st;
+      const { eci: r, velocity: v, gmst, geodetic: gd } = st;
       const latDeg = gd.latitude / DEG;
       const lonDeg = gd.longitude / DEG;
 
@@ -77,11 +106,7 @@ export function createOrbit(fields) {
       /** @type {number | null} */
       let elevation = null;
       if (observer && Number.isFinite(observer.lat) && Number.isFinite(observer.lon)) {
-        const look = ecfToLookAngles(
-          { latitude: degreesToRadians(observer.lat), longitude: degreesToRadians(observer.lon), height: 0 },
-          eciToEcf(r, gmst),
-        );
-        elevation = clamp1(look.elevation / DEG / 90);
+        elevation = clamp1(lookAngles(observer, r, gmst).elevation / DEG / 90);
       }
 
       return {

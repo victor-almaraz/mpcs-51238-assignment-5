@@ -263,6 +263,7 @@ export function createAudioHost(options) {
       },
       onProblem: options.onProgramProblem,
       onLayerValues: options.onLayerValues,
+      orbit: options.orbit,
     });
     program.start().catch((err) => {
       emit('BIND', 'program', 'error', { message: err instanceof Error ? err.message : String(err) }, { level: 'error' });

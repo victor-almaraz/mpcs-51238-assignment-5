@@ -67,7 +67,7 @@ Audio signals are drawn when you hear the sound, corrected for output latency. T
 - With reduced motion enabled in the operating system or in Settings, trails, pulses, fades, aurora drift and camera movement are off, and data changes the picture at most once per second.
 
 ## Custom shaders
-`layer.shader(glsl, props)` draws a fragment shader. A piece with a shader runs in your editor only: it cannot be saved as shareable or shared. The flash limit applies to shader output.
+`layer.shader(glsl, props)` draws a fragment shader. A piece with a shader is local-only: it runs in your editor and cannot be shared, and **Problems** shows a `local_only` warning. The flash limit applies to shader output.
 
 The shader is GLSL ES 3.00 source that defines one function:
 
