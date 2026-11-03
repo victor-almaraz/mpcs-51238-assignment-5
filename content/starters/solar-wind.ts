@@ -12,4 +12,4 @@ drone.cutoff.follow(sky.swpc('wind.speed').map(300, 800, 200, 3000, 'log'), { sm
 drone.cutoff.mod(lfo({ shape: 'sine', rate: 0.05 }), { depth: 0.06 });
 
 view.projection('map');
-layer.aurora({ intensity: sky.swpc('kp.kp').map(2, 9, 0.1, 1) });
+layer.aurora({ intensity: sky.swpc('kp.kp').map(0, 9, 0.3, 1) }); // visible when quiet, brighter in storms

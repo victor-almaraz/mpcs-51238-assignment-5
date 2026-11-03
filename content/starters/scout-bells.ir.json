@@ -37,47 +37,7 @@
   },
   "lfos": [],
   "mods": [],
-  "bindings": [
-    {
-      "id": "b0",
-      "kind": "trigger",
-      "inst": "i0",
-      "group": "jpl.scout",
-      "select": null,
-      "event": "enter",
-      "when": null,
-      "pitch": {
-        "op": "quantize",
-        "args": [
-          {
-            "op": "rand",
-            "args": [
-              72,
-              88
-            ]
-          }
-        ]
-      },
-      "velocity": {
-        "op": "map",
-        "args": [
-          {
-            "op": "field",
-            "args": [
-              "neoScore"
-            ]
-          },
-          0,
-          100,
-          40,
-          110,
-          "lin"
-        ]
-      },
-      "durationMs": 250,
-      "maxPerSecond": 1
-    }
-  ],
+  "bindings": [],
   "reactions": [],
   "view": {
     "projection": "orbital",
@@ -86,20 +46,62 @@
   "layers": [
     {
       "id": "l0",
-      "type": "glyph",
+      "type": "rings",
       "group": "jpl.scout",
       "select": null,
       "props": {
-        "char": "+",
-        "size": 16,
+        "radius": {
+          "op": "add",
+          "args": [
+            {
+              "op": "map",
+              "args": [
+                {
+                  "op": "field",
+                  "args": [
+                    "neoScore"
+                  ]
+                },
+                0,
+                100,
+                340,
+                240,
+                "lin"
+              ]
+            },
+            {
+              "op": "rand",
+              "args": [
+                -12,
+                12
+              ]
+            }
+          ]
+        },
         "color": "#90cdf4",
-        "fade": 20,
-        "opacity": 1
+        "opacity": 0.5,
+        "width": 1
       }
     }
   ],
   "groups": [
     "jpl.scout"
   ],
-  "localOnly": false
+  "localOnly": false,
+  "program": {
+    "handlers": [
+      {
+        "id": "h0",
+        "kind": "on",
+        "group": "jpl.scout",
+        "event": "enter"
+      },
+      {
+        "id": "h1",
+        "kind": "every",
+        "intervalMs": 1500
+      }
+    ],
+    "follow": []
+  }
 }

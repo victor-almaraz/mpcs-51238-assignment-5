@@ -1,11 +1,13 @@
 // Real DSL output through the audio host and binding runtime, with fakes: the piece-dsl.md
 // example and every starter build, run, react, reload and stop without a disabled binding.
+// Programs run in an in-process VM, the runner the sandbox worker uses.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { build, codeBlocks } from './fixtures/dsl/load.js';
 import { createAudioHost } from '../src/audio-host/index.js';
+import { createRunner } from '../src/dsl/program.js';
 import { FakeEngine, FakeInstrument, createFakeClock, createFakeSky, createTraceSink, skyObj } from './fakes.js';
 
 const root = new URL('../', import.meta.url);
@@ -31,6 +33,27 @@ function populate(sky) {
   }
   for (let i = 0; i < 8; i++) sky.put(skyObj('jpl.cad', `A${i}`, { des: `A${i}`, distLD: 1 + i, vRel: 5 + 3 * i, h: 22 }));
   for (let i = 0; i < 30; i++) sky.put(skyObj('celestrak.cosmos-2251-debris', String(30000 + i), { meanMotion: 14 + i / 100 }));
+  for (const [k, score] of [['P21aaaa', 20], ['P21bbbb', null]]) sky.put(skyObj('jpl.scout', k, { objectName: k, neoScore: score }));
+}
+
+/** An in-process VM for `source`: each start builds it again, as the sandbox does. */
+function localVm(source) {
+  let runner = null;
+  return {
+    async program(m) {
+      if (m.op === 'start') { runner = createRunner(build(source).program); return runner.start(m); }
+      if (m.op === 'batch') return runner.batch(m);
+      return runner.stop();
+    },
+  };
+}
+
+/** Advances the fake clock in 25 ms steps, letting program replies (promises) settle between steps. */
+async function advance(clock, ms) {
+  for (let t = 0; t < ms; t += 25) {
+    clock.advance(Math.min(25, ms - t));
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  }
 }
 
 async function exercise(name, source) {
@@ -44,9 +67,11 @@ async function exercise(name, source) {
   const host = createAudioHost({
     engineModule: engineModule(clock), sky, trace, timers: clock, now: clock.now, wallNow: clock.wallNow,
     orbit: (id, q) => (q === 'sunlit' ? 1 : 0.5),
+    vm: localVm(source),
+    onProgramProblem: (p) => assert.fail(`${name}: ${p.code} ${p.message}`),
   });
   await host.run(r.ir);
-  clock.advance(1000);
+  await advance(clock, 1000);
   sky.update('swpc.kp:planetary', { kp: 7 });
   sky.update('swpc.wind:l1', { speed: 700 });
   sky.enter(skyObj('jpl.scout', 'P21kQ3x', { objectName: 'P21kQ3x', neoScore: 90 }));
@@ -54,11 +79,11 @@ async function exercise(name, source) {
   sky.enter(skyObj('ll2.upcoming', 'L1', { name: 'L1', status: 'Go', padLat: 28, padLon: -80 }));
   sky.update('ll2.upcoming:L1', { status: 'In Flight' });
   host.orbitTick();
-  clock.advance(3000);
+  await advance(clock, 3000);
   sky.setFreshness('swpc.wind', 'stale');
   sky.setFreshness('swpc.kp', 'down');
   host.reload(r.ir);
-  clock.advance(500);
+  await advance(clock, 500);
   sky.setFreshness('swpc.wind', 'fresh');
   sky.setFreshness('swpc.kp', 'fresh');
   const errs = trace.records.filter((x) => x.level === 'error');
@@ -85,3 +110,9 @@ for (const file of readdirSync(new URL('content/starters/', root)).filter((f) =>
     await exercise(file, readFileSync(new URL(`content/starters/${file}`, root), 'utf8'));
   });
 }
+
+test('Scout bells rings the candidates already listed, starting at Run', async () => {
+  const { trace } = await exercise('scout-bells.ts', readFileSync(new URL('content/starters/scout-bells.ts', root), 'utf8'));
+  const bells = trace.records.filter((r) => r.stage === 'AUDIO' && r.event === 'noteOn' && r.component === 'program');
+  assert.ok(bells.length >= 2, `bells: ${bells.length}`); // a listed candidate at Run, then the new one
+});
