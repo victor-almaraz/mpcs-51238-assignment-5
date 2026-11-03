@@ -197,6 +197,11 @@ Actions: `detuneCents`, `mute`, `only`, `desaturate`. See [Live data states](liv
 | | `colormap` | `night`, `ember`, `ice` | `night` |
 | `aurora` | `intensity` | 0–1 | 0 |
 | | `drift` | 0–1 | 0.2 |
+| `grid` | `cols` | 1–32 | 16 |
+| | `rows` | 1–32 | 16 |
+| | `gap` | 0–8 px | 2 |
+| | `background` | colour | `#000000` |
+| | `cells` | up to 1024 colours | `[]` |
 
 ## Program
 Handlers are registered in the setup; commands and `read.*` work inside handlers only ([Programs](programs)).

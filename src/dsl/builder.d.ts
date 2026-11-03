@@ -989,6 +989,33 @@ interface AuroraLayer {
   /** Program output, inside handlers only: sets constant property values. */
   set(props: AuroraLayerValues): void;
 }
+interface GridLayerProps<C extends Ctx> {
+  /** 0–1. Default 1. */
+  opacity?: Num<C>;
+  /** 1–32. Default 16. */
+  cols?: Num<C>;
+  /** 1–32. Default 16. */
+  rows?: Num<C>;
+  /** 0–8 px. Default 2. */
+  gap?: Num<C>;
+  /** Default '#000000'. */
+  background?: ColorLike<C>;
+  /** Up to 1024 colours, row by row from the top left; constants only. Default []. */
+  cells?: readonly Hex[];
+}
+/** Constant values of a grid layer, for set() in handlers. */
+interface GridLayerValues {
+  opacity?: number;
+  cols?: number;
+  rows?: number;
+  gap?: number;
+  background?: Hex;
+  cells?: readonly Hex[];
+}
+interface GridLayer {
+  /** Program output, inside handlers only: sets constant property values. */
+  set(props: GridLayerValues): void;
+}
 interface Layers {
   points<G extends GroupKey>(group: Group<G>, props: PointsLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => PointsLayerProps<LayerCtx>)): PointsLayer;
   rings<G extends GroupKey>(group: Group<G>, props: RingsLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => RingsLayerProps<LayerCtx>)): RingsLayer;
@@ -996,6 +1023,7 @@ interface Layers {
   glyph<G extends GroupKey>(group: Group<G>, props: GlyphLayerProps<LayerCtx> | ((o: ObjectProxy<G>) => GlyphLayerProps<LayerCtx>)): GlyphLayer;
   field(props: FieldLayerProps<ScreenCtx>): FieldLayer;
   aurora(props: AuroraLayerProps<ScreenCtx>): AuroraLayer;
+  grid(props: GridLayerProps<ScreenCtx>): GridLayer;
   /** A fragment-shader layer. The piece becomes local-only. */
   shader(glsl: string, props?: Record<string, Num<ScreenCtx> | SpectrumExpr>): void;
 }

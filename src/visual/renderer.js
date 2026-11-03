@@ -166,6 +166,8 @@ class Renderer {
     this.lastEventMs = new Map();
     /** @type {Map<string, number>} aurora drift phase per layer */
     this.auroraPhase = new Map();
+    /** @type {Map<string, { tex: WebGLTexture, key: string }>} grid cell textures per layer */
+    this.gridTex = new Map();
     this.pathKey = '';
     this.fitKm = fitRadiusKm([]);
     this.lastFitAt = -Infinity;
@@ -292,6 +294,8 @@ class Renderer {
     for (const v of Object.values(this.vao ?? {})) gl.deleteVertexArray(v);
     for (const t of [...(this.targets ?? []), this.guardTarget, this.boxTarget]) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
     gl.deleteTexture(this.atlas);
+    for (const g of this.gridTex.values()) gl.deleteTexture(g.tex);
+    this.gridTex.clear();
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 
@@ -321,6 +325,7 @@ class Renderer {
       segment: this.program(S.SEGMENT_VS, S.SEGMENT_FS),
       field: this.program(S.FULLSCREEN_VS, S.FIELD_FS),
       aurora: this.program(S.FULLSCREEN_VS, S.AURORA_FS),
+      grid: this.program(S.FULLSCREEN_VS, S.GRID_FS),
       composite: this.program(S.FULLSCREEN_VS, S.COMPOSITE_FS),
       copy: this.program(S.FULLSCREEN_VS, S.COPY_FS),
       guardBox: this.program(S.FULLSCREEN_VS, S.GUARD_BOX_FS),
@@ -578,6 +583,8 @@ class Renderer {
         this.drawField(resolve(null), w, h);
       } else if (layer.type === 'aurora') {
         this.drawAurora(resolve(null), projection, w, h, perfMs, dt, reduced, layer.id);
+      } else if (layer.type === 'grid') {
+        this.drawGrid(layer.id, resolve(null), w, h);
       } else if (layer.type === 'shader') {
         this.drawUser(layer, resolve(null), w, h, perfMs);
       }
@@ -754,6 +761,54 @@ class Renderer {
     this.u2(prog, 'uRes', w, h);
     this.u1(prog, 'uPhase', phase);
     this.u1(prog, 'uIntensity', p.intensity);
+    this.u1(prog, 'uOpacity', p.opacity);
+    this.fullscreen();
+  }
+
+  /**
+   * Square cells in the largest centred area that fits in 92% of the canvas; cell colours go to a
+   * cols × rows texture, uploaded only when they change.
+   * @param {string} id @param {Record<string, any>} p @param {number} w @param {number} h
+   */
+  drawGrid(id, p, w, h) {
+    if (!(p.opacity > 0)) return;
+    const gl = this.gl;
+    const cols = Math.max(1, Math.round(p.cols));
+    const rows = Math.max(1, Math.round(p.rows));
+    const cells = Array.isArray(p.cells) ? p.cells : [];
+    let g = this.gridTex.get(id);
+    if (!g) {
+      const tex = /** @type {WebGLTexture} */ (gl.createTexture());
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      g = { tex, key: '' };
+      this.gridTex.set(id, g);
+    }
+    const key = `${cols}x${rows}:${cells.join(',')}`;
+    if (key !== g.key) {
+      g.key = key;
+      const data = new Uint8Array(cols * rows * 4);
+      for (let i = 0; i < cols * rows; i++) {
+        const rgb = parseHex(cells[i]);
+        if (!rgb) continue; // alpha 0: the cell shows the background
+        data.set([Math.round(rgb[0] * 255), Math.round(rgb[1] * 255), Math.round(rgb[2] * 255), 255], i * 4);
+      }
+      gl.bindTexture(gl.TEXTURE_2D, g.tex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    }
+    const cell = Math.floor(Math.min((w * 0.92) / cols, (h * 0.92) / rows));
+    if (cell < 1) return;
+    const aw = cell * cols, ah = cell * rows;
+    const prog = this.prog.grid;
+    gl.useProgram(prog);
+    this.bindTex(prog, 'uCells', g.tex, 0);
+    this.u2(prog, 'uRes', w, h);
+    gl.uniform4f(gl.getUniformLocation(prog, 'uArea'), Math.round((w - aw) / 2), Math.round((h - ah) / 2), aw, ah);
+    this.u2(prog, 'uGrid', cols, rows);
+    this.u1(prog, 'uGap', Math.min(p.gap * this.settings.pixelRatio, cell / 2));
+    const bg = parseHex(p.background) ?? [0, 0, 0];
+    gl.uniform3f(gl.getUniformLocation(prog, 'uBackground'), bg[0], bg[1], bg[2]);
     this.u1(prog, 'uOpacity', p.opacity);
     this.fullscreen();
   }

@@ -14,6 +14,7 @@
  *     | { type: 'color',  default }            // '#rrggbb'
  *     | { type: 'char',   default }            // one character
  *     | { type: 'enum',   options, default }
+ *     | { type: 'colors', max, default }       // list of '#rrggbb', at most `max`; constant or set from a handler
  *
  * `unit` is 'px', 's' or 'min'. `reducedMotion` is the value forced while
  * reduced motion is active.
@@ -21,7 +22,8 @@
  * @typedef {{ type: 'number', min: number, max: number, default: number, unit?: string, reducedMotion?: number }
  *   | { type: 'color', default: string }
  *   | { type: 'char', default: string }
- *   | { type: 'enum', options: readonly string[], default: string }} PropDef
+ *   | { type: 'enum', options: readonly string[], default: string }
+ *   | { type: 'colors', max: number, default: readonly string[] }} PropDef
  * @typedef {{ group: boolean, localOnly: boolean, props: Record<string, PropDef> }} LayerDef
  */
 
@@ -87,6 +89,18 @@ export const LAYER_DEFS = deepFreeze({
       opacity,
       intensity: { type: 'number', min: 0, max: 1, default: 0 },
       drift: { type: 'number', min: 0, max: 1, default: 0.2, reducedMotion: 0 },
+    },
+  },
+  grid: {
+    group: false,
+    localOnly: false,
+    props: {
+      opacity,
+      cols: { type: 'number', min: 1, max: 32, default: 16 },
+      rows: { type: 'number', min: 1, max: 32, default: 16 },
+      gap: { type: 'number', min: 0, max: 8, default: 2, unit: 'px' },
+      background: { type: 'color', default: '#000000' },
+      cells: { type: 'colors', max: 1024, default: [] },
     },
   },
   shader: {

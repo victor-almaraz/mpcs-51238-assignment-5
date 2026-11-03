@@ -136,6 +136,33 @@ void main() {
 }`;
 
 /** Aurora band. uMode: 0 orbital (top), 1 map (±65°), 2 sky (northern horizon). */
+/** `grid` layer (doc/visuals.md, Property meanings): one cell colour per texel of uCells. */
+export const GRID_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform vec4 uArea;      // grid area: x, y (top-left origin), width, height, in device pixels
+uniform vec2 uGrid;      // cols, rows
+uniform float uGap;      // device pixels
+uniform vec3 uBackground;
+uniform float uOpacity;
+uniform sampler2D uCells; // cols × rows, row 0 at the top; alpha 0 marks a cell without a colour
+out vec4 outColor;
+void main() {
+  vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y); // top-left origin
+  vec2 p = px - uArea.xy;
+  if (p.x < 0.0 || p.y < 0.0 || p.x >= uArea.z || p.y >= uArea.w) { outColor = vec4(0.0); return; }
+  vec2 size = uArea.zw / uGrid;
+  vec2 cell = min(floor(p / size), uGrid - 1.0);
+  vec2 local = p - cell * size;
+  float inset = uGap * 0.5;
+  vec3 col = uBackground;
+  if (local.x >= inset && local.y >= inset && local.x < size.x - inset && local.y < size.y - inset) {
+    vec4 c = texelFetch(uCells, ivec2(cell), 0);
+    col = mix(uBackground, c.rgb, c.a);
+  }
+  outColor = vec4(col * uOpacity, uOpacity);
+}`;
+
 export const AURORA_FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes;

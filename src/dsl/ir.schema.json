@@ -206,7 +206,7 @@
         "group": { "type": ["string", "null"] },
         "select": { "$ref": "#/$defs/select" },
         "glsl": { "type": "string" },
-        "props": { "type": "object", "additionalProperties": { "$ref": "#/$defs/value" } }
+        "props": { "type": "object", "additionalProperties": { "anyOf": [{ "$ref": "#/$defs/value" }, { "type": "array", "items": { "type": "string" } }] } }
       }
     }
   }

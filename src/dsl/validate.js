@@ -391,6 +391,11 @@ class Checker {
         const pp = `${p}/props/${escapePointer(name)}`;
         const def = own(spec.props, name);
         if (!def) { this.add('unknown_option', pp, `layer.${l.type} has no property ${name}`); continue; }
+        if (def.type === 'colors') {
+          if (!Array.isArray(v) || v.length > /** @type {number} */ (def.maxLength)) this.add('ir_schema', pp, `${name} must be a list of at most ${def.maxLength} colours`);
+          else v.forEach((c, i) => { if (typeof c !== 'string' || !COLOR_HEX.test(c)) this.add('ir_schema', `${pp}/${i}`, "A colour must look like '#rrggbb'"); });
+          continue;
+        }
         if (isNode(v)) continue;
         if (def.type === 'number') {
           if (typeof v !== 'number') this.add('ir_schema', pp, `${name} must be a number or an expression`);

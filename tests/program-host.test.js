@@ -168,6 +168,13 @@ test('harmonics updates reach setParam at most 30 times a second, latest value f
   assert.equal(s.trace.of({ stage: 'BIND', event: 'invalid' }).length, 3);
 });
 
+test('a grid cells list is coerced at the boundary', async () => {
+  const ir = { ...IR, layers: [{ id: 'l0', type: 'grid', group: null, props: { cells: [] } }] };
+  const s = setup(scriptedVm([{ commands: [cmd({ op: 'layer', layer: 'l0', props: { cells: ['#ABCDEF', 'nope', '#000000'] } })], errors: [], dropped: 0 }]), null, { ir });
+  await s.host.start();
+  assert.deepEqual(s.host.layerValues(), { l0: { cells: ['#abcdef', null, '#000000'] } });
+});
+
 test('values are clamped and invalid commands are dropped and traced', async () => {
   const vm = scriptedVm([{ commands: [
     cmd({ op: 'play', inst: 'i0', pitch: 500, velocity: 0, pan: 9, durationMs: 1 }),

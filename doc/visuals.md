@@ -17,13 +17,14 @@ Draw the IR's layers each frame from sky data and audio signals, within the visu
 | `layer.glyph(group, props)` | One character per object |
 | `layer.field(props)` | Full-screen gradient or noise |
 | `layer.aurora(props)` | Full-screen aurora curtain |
+| `layer.grid(props)` | A grid of coloured squares, one colour per cell |
 | `layer.shader(glsl, props)` | Fragment shader; local-only |
 | `color(hex)` | Colour expression; `.mix(other, t)` blends toward `other` (a hex string or colour expression) by `t`, a number or expression clamped to 0–1 |
 | `audio.level(inst)` | RMS level of the instrument output, 0–1 |
 | `audio.spectrum(inst, bands)` | Array of `bands` (4–32) band levels, 0–1 |
 | `audio.voice(inst).env()` | Envelope value of the voice bound to the current object, 0–1 |
 
-Every layer constructor except `layer.shader` returns a layer handle. Inside a program's handlers, `handle.set(props)` sets constant property values (`piece-dsl.md`, Program). The session pushes them with the sky-driven values through `setLayerValues`; a pushed value overrides the layer's constant, and the flash guard holds colours and opacities as it does for expression-driven ones.
+Every layer constructor except `layer.shader` returns a layer handle. Inside a program's handlers, `handle.set(props)` sets constant property values (`piece-dsl.md`, Program). The session pushes them with the sky-driven values through `setLayerValues`; a pushed value overrides the layer's constant, and the flash guard holds colours, colour lists (`grid` `cells`) and opacities as it does for expression-driven ones.
 
 `audio.voice(inst).env()` is computed from the voice's envelope model (`envValueAt` in the engine) and needs no analyser; it reads the voice of the first `voices` binding on `inst` that sounds for the current object, and is `null` when none does. `audio.level` and `audio.spectrum` read an `AnalyserNode` tapped on the instrument output.
 
@@ -67,8 +68,13 @@ Properties and ranges live in `src/visual/layer-defs.js`, which drives validatio
 | `field` | `colormap` | enum | `night`, `ember`, `ice` | `night` |
 | `aurora` | `intensity` | number | 0–1 | 0 |
 | `aurora` | `drift` | number | 0–1 | 0.2 |
+| `grid` | `cols` | number | 1–32 | 16 |
+| `grid` | `rows` | number | 1–32 | 16 |
+| `grid` | `gap` | number (px) | 0–8 | 2 |
+| `grid` | `background` | colour | | `#000000` |
+| `grid` | `cells` | colour list | up to 1024 | `[]` |
 
-Every property accepts a constant or an expression. Expressions in layer properties are evaluated per object per frame, so `fn` is not allowed there. `shader` layers have only `opacity`.
+Every property accepts a constant or an expression, except colour lists, which are constants or values set from a handler. Expressions in layer properties are evaluated per object per frame, so `fn` is not allowed there. `shader` layers have only `opacity`.
 
 Property meanings:
 - `size`, `radius`, `width` are CSS pixels; the renderer multiplies them by its pixel ratio.
@@ -77,6 +83,8 @@ Property meanings:
 - `fade`: with `fade` above 0, a glyph's opacity falls linearly from 1 to 0 over `fade` seconds after its object's last `enter` or `update` event. With 0 the glyph does not fade.
 - `field`: a vertical gradient from the colormap, from `colormap(value / 2)` at the bottom edge to `colormap(value)` at the top edge, with static low-frequency noise of ±0.03.
 - `aurora`: a curtain with a sharp, bright, wavy lower edge, a glow that fades over about 10° of latitude toward the pole, and fine vertical rays, green at the edge and violet above it. In `map` there is one curtain per hemisphere, with its lower edge near 60° latitude; in `orbital` the curtain rises from 22% below the top of the canvas; in `sky` it rises from near the northern horizon. `intensity` scales its brightness; `drift` sets how fast the edge and the rays drift along the band, 0 to 0.05 cycles per second. At full drift, the fastest term (the edge's second wave, 1.7 × the drift rate) changes a point of the picture about 0.085 times per second, far below the flash limit.
+
+- `grid`: `cols` × `rows` square cells, rounded to whole numbers, filling the largest centred area that fits in 92% of the canvas. `background` fills that whole area, gaps included, so the projection's decorations do not show through. `cells` holds one `#rrggbb` colour per cell, row by row from the top left; a missing entry, or one that is not a colour, shows `background`. Entries past `cols × rows` are ignored. `gap` is the space between cells.
 
 | Colormap | Stops (0, 0.5, 1) |
 |---|---|
@@ -212,7 +220,7 @@ The renderer enforces these limits on its final output, for every layer includin
 Guard algorithm (`src/visual/flash-guard.js`):
 1. Every frame, measure two images at 64×48: the output (after the limit) and the scene (before it). Each cell is the mean of linear RGB over its part of the canvas, and every canvas pixel counts: a box pass averages whole pixels into a 512×384 grid (8×8 boxes per cell), and the cell pass averages its 64 boxes weighted by their pixel counts. One `readPixels` returns both grids (64×96).
 2. Per cell, count general-flash and red-flash transitions over the last 1 s. A general transition is a change of relative luminance of at least 0.1 from the last extreme in the opposite direction, where the darker of the two values is below 0.8. A red transition is a change of u′v′ chromaticity above 0.2 from the last reference where either state is saturated red; black has the chromaticity of D65 white. Two transitions are one flash.
-3. Slide a 21×16-cell window (the 10° field, 11.1% of the grid) over the grid. A cell flashes too often when its transitions in the last 1 s reach twice the flash limit, rounded down (at least 1). If such cells cover 25% or more of any window, for general or for red flashes, in the output or in the scene, the guard intervenes: it limits the change of every pixel's linear RGB values to 0.5 per second, counting at most 1/30 s per frame (under 1% per frame at 60 Hz, so no change faster than 3 flashes per second reaches 10%), and holds the colours and opacities of every layer, and the background, whose colour or opacity is an expression.
+3. Slide a 21×16-cell window (the 10° field, 11.1% of the grid) over the grid. A cell flashes too often when its transitions in the last 1 s reach twice the flash limit, rounded down (at least 1). If such cells cover 25% or more of any window, for general or for red flashes, in the output or in the scene, the guard intervenes: it limits the change of every pixel's linear RGB values to 0.5 per second, counting at most 1/30 s per frame (under 1% per frame at 60 Hz, so no change faster than 3 flashes per second reaches 10%), and holds the colours, colour lists and opacities of every layer, and the background, whose colour or opacity is an expression.
 4. The intervention lasts until, in both the output and the scene, no window has cells with at least half of that transition count covering more than half of that area. Measuring the scene keeps the guard engaged while the scene underneath still strobes. After the intervention ends, the change limit stays on for 2 s, long enough for any pixel to reach the scene at 0.5 per second, so the held colours and the background return gradually instead of in one frame.
    - The two output targets hold 32-bit floats (`EXT_color_buffer_float`), so storage rounding never adds to a limited step. Without the extension they are 8-bit, and each limited step rounds toward the previous frame; a slow change can then stall while the guard intervenes, which is stricter.
    - A canvas resize copies the last output into the new targets, so the limit continues across a resize.

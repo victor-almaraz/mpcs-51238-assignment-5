@@ -87,6 +87,20 @@ test('reduced motion forces trail to 0 and the flash hold keeps colours', () => 
   assert.equal(r.last.size, 0);
 });
 
+test('grid cells: a colour list is coerced, pushed from a handler and held by the flash guard', () => {
+  const G = LAYER_DEFS.grid.props;
+  assert.deepEqual(coerceProp(G.cells, ['#AABBCC', 'red', 7]), ['#aabbcc', null, null]);
+  assert.equal(coerceProp(G.cells, '#aabbcc'), undefined);
+  assert.equal(coerceProp(G.cells, Array(2000).fill('#000000')).length, 1024);
+  const l = /** @type {any} */ (normalizeLayer({ id: 'l0', type: 'grid', group: null, props: { cells: ['#111111'] } }));
+  assert.deepEqual(l.constants.cells, ['#111111']);
+  const r = new PropResolver();
+  assert.deepEqual(r.resolve(l, null, {}).cells, ['#111111'], 'the constant until a handler sets it');
+  assert.deepEqual(r.resolve(l, null, { pushed: { l0: { cells: ['#222222', '#333333'] } } }).cells, ['#222222', '#333333']);
+  const held = r.resolve(l, null, { pushed: { l0: { cells: ['#ffffff'], background: '#ffffff' } }, holdColors: true });
+  assert.deepEqual(held.cells, ['#222222', '#333333'], 'cells are held while the guard intervenes');
+});
+
 test('forgetObject drops one object in every layer, so the memo does not grow as objects come and go', () => {
   const a = /** @type {any} */ (normalizeLayer({ id: 'l0', type: 'points', group: 'g', props: { size: kp } }));
   const b = /** @type {any} */ (normalizeLayer({ id: 'l1', type: 'points', group: 'g', props: { size: kp } }));

@@ -24,6 +24,7 @@ A piece draws its picture with a **view** and **layers**. Layer properties accep
 | `layer.glyph(group, props)` | A character per object, for example `+` |
 | `layer.field(props)` | A full-screen gradient |
 | `layer.aurora(props)` | An aurora curtain with a bright lower edge and fine rays, across the whole view |
+| `layer.grid(props)` | A grid of coloured squares; set `cells` from a handler to change them ([Programs](programs)) |
 
 ```ts piece
 const pad = additive({ volume: -6, attack: 1.5, release: 4 });

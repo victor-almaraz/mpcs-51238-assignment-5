@@ -9,7 +9,7 @@ import { canonicalJson } from '../bind/canonical.js';
 
 const AUDIO_OPS = new Set(['level', 'spectrum', 'env']);
 /** Properties held while the flash guard intervenes. */
-export const HELD_PROPS = Object.freeze(['color', 'opacity']);
+export const HELD_PROPS = Object.freeze(['color', 'opacity', 'background', 'cells']);
 
 /**
  * @param {unknown} v
@@ -37,10 +37,14 @@ export { canonicalJson } from '../bind/canonical.js';
  * that cannot be used, so the caller keeps the previous value.
  * @param {import('./layer-defs.js').PropDef} def
  * @param {unknown} value
- * @returns {number | string | undefined}
+ * @returns {number | string | (string | null)[] | undefined}
  */
 export function coerceProp(def, value) {
   switch (def.type) {
+    case 'colors':
+      // Entries that are not colours become null, which the renderer draws as the background.
+      if (!Array.isArray(value)) return undefined;
+      return value.slice(0, def.max).map((c) => (isHexColor(c) ? /** @type {string} */ (c).toLowerCase() : null));
     case 'number': {
       if (typeof value === 'boolean') value = value ? 1 : 0;
       if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;

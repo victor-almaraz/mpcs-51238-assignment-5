@@ -207,6 +207,20 @@ test('hold, glide, stop, set and layer commands', () => {
   ]);
 });
 
+test('grid.set sends a colour list; the constructor takes a constant list', () => {
+  const { ir, runner } = vm(`
+    const grid = layer.grid({ cols: 2, rows: 2, cells: ['#000000', '#ffffff'] });
+    on('jpl.scout', 'enter', () => grid.set({ cells: ['#ff0000', '#00ff00', '#0000ff', '#ffffff'] }));
+    on('jpl.scout', 'enter', () => grid.set({ cells: ['red'] }));
+  `);
+  assert.deepEqual(ir.layers[0].props.cells, ['#000000', '#ffffff']);
+  runner.start({ groups: ['jpl.scout'], objects: [] });
+  const r = runner.batch({ now: 1, events: [enter(scout('A'))] });
+  assert.deepEqual(r.commands.map((c) => c.props), [{ cells: ['#ff0000', '#00ff00', '#0000ff', '#ffffff'] }]);
+  assert.match(r.errors[0].message, /entry 0 must look like '#rrggbb'/);
+  assert.deepEqual(codes(build(`layer.grid({ cells: sky.swpc('kp.kp') });`)), ['runtime_error ']);
+});
+
 test('the validator rejects too many handlers', () => {
   const r = build(Array.from({ length: 65 }, () => `every(100, () => {});`).join('\n'));
   assert.ok(codes(r).includes('limit_handlers /program/handlers/64'));
