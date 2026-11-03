@@ -3732,8 +3732,12 @@ function structuredCloneJson(v) {
 
 /** Program limits (doc/piece-dsl.md, Program, Errors and limits). */
  const PROGRAM = Object.freeze({
-  /** Longest wait for a reply to a program message, ms. */
+  /** Longest wait for a reply to a batch, ms. A start reruns setup and has the build limit (LIMITS.timeoutMs). */
   batchTimeoutMs: 250,
+  /** A program the watchdog stopped starts again after restartDelayMs, at most `restarts` times per restartWindowMs. */
+  restartDelayMs: 1000,
+  restarts: 3,
+  restartWindowMs: 60000,
   commandsPerBatch: 256,
   pendingTimers: 256,
   /** Timer calls the VM makes in one batch before it yields. */

@@ -304,6 +304,32 @@ test('the audio host starts the program on run, restarts it on reload and stops 
   assert.deepEqual(vm.msgs.map((m) => m.op), ['start', 'stop', 'start', 'stop', 'start', 'stop']);
 });
 
+test('the audio host restarts a program the watchdog stopped, and gives up after 3 restarts within a minute', async () => {
+  const src = `const bell = fm({}); every(100, () => bell.play(60));`;
+  const ir = build(src).ir;
+  const clock = createFakeClock();
+  const ctx = { get currentTime() { return clock.audioTime(); }, state: 'running' };
+  const engineModule = { ensureRunning: async () => ctx, buildMasterBus: async () => ({ setHandler() {} }), Engine: class extends FakeEngine {} };
+  const local = localVm(src);
+  const vm = { msgs: local.msgs, program: (m) => (m.op === 'batch' ? (local.msgs.push(m), Promise.resolve({ timeout: true })) : local.program(m)) };
+  const problems = [];
+  const notices = [];
+  const trace = createTraceSink();
+  const { createAudioHost } = await import('../src/audio-host/index.js');
+  const host = createAudioHost({ engineModule, sky: createFakeSky(), trace, timers: clock, now: clock.now, wallNow: clock.wallNow, vm, onProgramProblem: (p) => problems.push(p), notify: (n) => notices.push(n) });
+  await host.run(ir);
+  for (let i = 0; i < 240; i++) { clock.advance(25); await flush(); }
+  assert.equal(vm.msgs.filter((m) => m.op === 'start').length, 4, 'the first start and 3 restarts');
+  assert.deepEqual(notices.filter((n) => n.kind === 'programRestart').length, 3);
+  assert.equal(trace.of({ stage: 'RELOAD', event: 'programRestart' }).length, 3);
+  assert.deepEqual(problems.map((p) => p.code), ['handler_timeout'], 'reported once, when it gives up');
+  assert.equal(host.program, null);
+  await host.run(ir);
+  await flush();
+  assert.equal(vm.msgs.filter((m) => m.op === 'start').length, 5, 'Run starts it again');
+  host.stop();
+});
+
 test('a command time past the batch is pulled back to at most the latency ahead', async () => {
   const s = setup(scriptedVm([{ commands: [cmd({ op: 'play', inst: 'i0', pitch: 60, at: 1e9 })], errors: [], dropped: 0 }]), null, { ir: IR });
   await s.host.start();

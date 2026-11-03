@@ -171,6 +171,7 @@ test('limits in reference.md match the validator and engine constants', () => {
     'Script run time': `${LIMITS.timeoutMs / 1000} s`,
     Handlers: `${LIMITS.handlers}`,
     'Handler run time per round': `${PROGRAM.batchTimeoutMs} ms`,
+    'Program restarts after a timeout': `${PROGRAM.restarts} a minute`,
     'New notes per second from handlers': `${PROGRAM.noteStartsPerSecond}`,
     'Commands per round': `${PROGRAM.commandsPerBatch}`,
     'Waiting after() calls': `${PROGRAM.pendingTimers}`,

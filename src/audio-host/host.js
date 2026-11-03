@@ -4,6 +4,7 @@
 
 import { createBindingRuntime } from '../bind/runtime.js';
 import { createProgramHost } from '../bind/program.js';
+import { PROGRAM } from '../dsl/limits.js';
 import { buildModConfig } from '../bind/mod-config.js';
 import { canonicalJson } from '../bind/canonical.js';
 import { createTracer } from '../bind/tracer.js';
@@ -30,7 +31,7 @@ export const NOTICES = Object.freeze({
  * @property {() => Promise<void>} [closeContext]  closes the context for Restart Audio
  *
  * @typedef {object} Notice
- * @property {'fault' | 'duck' | 'fxFault' | 'engineFault' | 'safetyError'} kind
+ * @property {'fault' | 'duck' | 'fxFault' | 'engineFault' | 'safetyError' | 'programRestart'} kind
  * @property {'assertive' | 'polite'} live   live region (doc/audio/audio-safety.md, Safety UI)
  * @property {string} message
  *
@@ -246,12 +247,46 @@ export function createAudioHost(options) {
   }
 
   function stopProgram() {
+    cancelRestart();
     if (program) program.stop();
     program = null;
   }
 
-  /** Starts the piece's program when it registers handlers (doc/bindings.md, Program host). */
-  function startProgram(pieceIr) {
+  // Restart (doc/bindings.md, Program host): a program that stopped itself starts again, so a
+  // piece keeps playing until the user stops it; a program that keeps stopping gives up.
+  /** @type {number[]} */ let restarts = [];
+  let restartTimer = null;
+  function cancelRestart() {
+    if (restartTimer !== null) (timers.clearTimeout ?? globalThis.clearTimeout)(restartTimer);
+    restartTimer = null;
+  }
+  /** @param {any} pieceIr @param {{ code: string, line: number | null, message: string }} p */
+  function programStopped(pieceIr, p) {
+    program = null;
+    const t = now();
+    restarts = restarts.filter((x) => t - x < PROGRAM.restartWindowMs);
+    if (restarts.length >= PROGRAM.restarts) {
+      emit('RELOAD', 'program', 'programGaveUp', { reason: p.code, restarts: restarts.length }, { level: 'error' });
+      options.onProgramProblem?.(p);
+      return;
+    }
+    restarts.push(t);
+    emit('RELOAD', 'program', 'programRestart', { reason: p.code, message: p.message, restarts: restarts.length }, { level: 'warn' });
+    notify({ kind: 'programRestart', live: 'polite', message: `The program stopped and restarts in ${PROGRAM.restartDelayMs / 1000} s: ${p.message}` });
+    cancelRestart();
+    restartTimer = (timers.setTimeout ?? globalThis.setTimeout)(() => {
+      restartTimer = null;
+      if (runtime && engine && ir === pieceIr && !program) startProgram(pieceIr, { restart: true });
+    }, PROGRAM.restartDelayMs);
+  }
+
+  /**
+   * Starts the piece's program when it registers handlers (doc/bindings.md, Program host). A start
+   * that is not a restart (Run, a save) resets the restart count.
+   * @param {any} pieceIr @param {{ restart?: boolean }} [o]
+   */
+  function startProgram(pieceIr, { restart = false } = {}) {
+    if (!restart) restarts = [];
     if (!options.vm || !(pieceIr.program?.handlers?.length) || !engine) return;
     program = createProgramHost({
       ir: pieceIr, vm: options.vm, engine, sky, trace,
@@ -262,6 +297,7 @@ export function createAudioHost(options) {
         clearInterval: (id) => timers.clearInterval(id),
       },
       onProblem: options.onProgramProblem,
+      onStopped: (p) => programStopped(pieceIr, p),
       onLayerValues: options.onLayerValues,
       orbit: options.orbit,
     });

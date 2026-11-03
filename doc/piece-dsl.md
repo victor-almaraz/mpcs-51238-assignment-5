@@ -299,7 +299,7 @@ A `null` pitch plays nothing, as in expressions. Any other value of the wrong ki
 | Rule | Effect |
 |---|---|
 | A handler throws | That handler is disabled until the next Run. Problems shows `handler_error` with the line. |
-| One batch of handler calls runs longer than 250 ms | The VM is stopped, the program's notes are released, and Problems shows `handler_timeout`. The bindings keep playing. |
+| One batch of handler calls runs longer than 250 ms | The VM is stopped and the program's notes are released; the program starts again from setup 1 s later. After 3 such stops within 60 s it stays stopped and Problems shows `handler_timeout`. The bindings keep playing. |
 | More than 64 handlers | Build error `limit_handlers` |
 | More than 256 pending `after` calls | The `after` call throws |
 | More than 1024 timer calls due in one batch | The remaining calls run in the next batch |
@@ -520,7 +520,7 @@ Every node is `{ "op": string, "args": array }`. Arguments are numbers, strings,
 | `orbit_no_object` | error | `orbit(...)` where no current object exists; use `sky.orbit(...)` |
 | `io_outside_handler` | error | Setup calls an output method or `read.*`; these work only inside handlers |
 | `handler_error` | error | A handler threw while the piece played; the handler is disabled until the next Run |
-| `handler_timeout` | error | One batch of handler calls ran longer than 250 ms; the program stopped |
+| `handler_timeout` | error | Handler calls ran longer than 250 ms in one batch three times within 60 s; the program stopped |
 | `limit_<item>` | error | A count limit in the table above is exceeded; `<item>` is `instruments`, `bindings`, `voices`, `slots`, `reverbs`, `lfos`, `retrigger_lfos`, `routes`, `routes_per_target`, `layers`, `orbit_sources`, `handlers`, `source` |
 | `ir_too_large` | error | Serialized IR above 256 KB |
 | `ir_version_unsupported` | error | `irVersion` above the current version |
@@ -569,7 +569,8 @@ The worker keeps the source and handlers of its last build without errors. Build
 - `orbits` in `start` and `batch` holds the current value of each entry of `program.orbits`, in order: a number from −1 to 1 or `null`. `read.orbit` returns the latest one.
 - A command is `{ op, at, trace, src, ...args }`. `op` is `play`, `hold`, `glide`, `stop`, `stopAll`, `set` or `layer`; `at` is the handler's program time, `trace` the event's trace id (`null` for timers), `src` the handler id. At most 256 per batch; `dropped` counts the rest.
 - An error is `{ handler, line, message }`. The VM disables that handler. An error from `setup` or `vm` (the kept build failed, or the worker holds no running program) means the program is gone; the page reports it once and stops the program.
-- The page waits up to 250 ms for each `program` reply. Past that it terminates the worker and reports `handler_timeout` (`bindings.md`, Program host). The next build starts a new worker.
+- The page waits up to 250 ms for each `batch` reply and up to 1500 ms for a `start` reply, which reruns setup like a build. Past that it terminates the worker (`bindings.md`, Program host, Watchdog and Restart).
+- `createSandbox` remembers the source and definitions of the last build without errors. When a `start` reaches a worker that does not hold them (a new worker after a timeout or a crash), it sends that build first, under the 1500 ms build limit, so a program can restart without a new save.
 - A build or `fn` call that times out also terminates the worker, which stops a running program.
 
 ## Hot reload
@@ -611,7 +612,6 @@ The build scripts (`scripts/gen-builder-dts.mjs`, `scripts/build-starters.mjs`) 
 The editor's completion, hover and inline problems come from the type-check worker (`ui.md`). Until the worker has loaded, completion reads `PARAM_DEFS`, the effect registry, `layer-defs.js` and `groups.json` directly. The user guide (`guide.md`) teaches the API to people.
 
 ## Limitations
-- Setup reruns under the 250 ms program watchdog when a program starts, while a build has 1500 ms. A setup that runs longer than 250 ms builds, but its program stops with `handler_timeout`.
 - Hot reload restarts a program from setup, so the program's variables do not survive a reload.
 - A browser that does not apply the `/dsl-sandbox.js` response CSP to the worker leaves the global deletions in the worker as the only network barrier.
 

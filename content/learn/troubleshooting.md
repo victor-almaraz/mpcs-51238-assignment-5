@@ -43,7 +43,7 @@ Most groups change every few minutes to hours ([Sky data](sky-data)). Use **Repl
 | `orbit_no_object` | `orbit(...)` outside a voice, trigger or layer | Use `sky.orbit(objectId, quantity)` |
 | `io_outside_handler` | The setup calls `play`, `hold`, `set`, `read.*` or another command | Move the call into a handler such as `on(...)` or `every(...)` ([Programs](programs)) |
 | `handler_error` | A handler threw an error while the piece played | Read the message and the line; the handler stays off until the next Run or save |
-| `handler_timeout` | Handlers ran longer than 250 ms in one round | Remove loops that do not end; the program restarts on the next Run or save |
+| `handler_timeout` | Handlers ran longer than 250 ms in one round, three times within a minute | Remove loops that do not end; the program restarts on the next Run or save |
 | `limit_<item>` | A limit is exceeded, for example `limit_reverbs` | See Limits in the [Reference](reference) |
 | `ir_too_large` | The compiled piece exceeds 256 KB | Use fewer layers or bindings |
 | `ir_version_unsupported` | The piece was saved by a newer version of Sphärenmusik | Reload the page to load the current version |

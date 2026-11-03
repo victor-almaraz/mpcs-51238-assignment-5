@@ -254,6 +254,7 @@ A piece using either runs in your editor only and cannot be shared. `fn` is not 
 | Script run time | 1.5 s |
 | Handlers | 64 |
 | Handler run time per round | 250 ms |
+| Program restarts after a timeout | 3 a minute |
 | New notes per second from handlers | 200 |
 | Commands per round | 256 |
 | Waiting after() calls | 256 |

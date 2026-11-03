@@ -39,6 +39,7 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
   const [chrome, setChrome] = useState(false);
   const [overlay, setOverlay] = useState({ console: false, voices: false, status: !kiosk });
   const [begun, setBegun] = useState(false);
+  const [fullScreen, setFullScreen] = useState(false);
   const records = useTraceRecords(!overlay.console);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The pointer is over the chrome, or focus is inside it: it stays. */
@@ -91,6 +92,20 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
     };
   }, [kiosk, reveal]);
   const hold = (key: 'hover' | 'focus', on: boolean) => { holding.current[key] = on; if (!on) reveal(); };
+  // Keyboard focus keeps the chrome, and so does the start notice; focus left on a button by a
+  // click does not, or the chrome would never hide after Run (doc/ui.md, Running).
+  const keepsChrome = (el: Element | null) => !!el && (el.matches(':focus-visible') || !!el.closest('[role="alertdialog"]'));
+
+  // Full screen (doc/ui.md, Running): the browser's full-screen mode for the whole page.
+  useEffect(() => {
+    const on = () => setFullScreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', on);
+    return () => document.removeEventListener('fullscreenchange', on);
+  }, []);
+  const toggleFullScreen = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen?.().catch(() => {});
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -104,11 +119,12 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
       if (k === 'c') setOverlay((o) => ({ ...o, console: !o.console }));
       else if (k === 'n') setOverlay((o) => ({ ...o, voices: !o.voices }));
       else if (k === 's') setOverlay((o) => ({ ...o, status: !o.status }));
+      else if (k === 'f' && !kiosk) toggleFullScreen();
       else if (k === 'e' && backHref && !kiosk) router.push(backHref);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [backHref, kiosk, router, session]);
+  }, [backHref, kiosk, router, session, toggleFullScreen]);
 
   const followedSources = state.followed.map((g) => sourceOf(g) ?? g);
   const canRun = !!session?.ir && state.ready && !problem;
@@ -125,7 +141,7 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
           <button
             type="button"
             disabled={!canRun}
-            onClick={() => { setBegun(true); run(); }}
+            onClick={() => { setBegun(true); run(); toggleFullScreen(); }}
             className="cursor-none rounded-sm border border-line bg-black/70 px-6 py-4 text-center text-fg"
           >
             <span className="block text-lg">{canRun ? 'Begin Listening' : 'Loading…'}</span>
@@ -138,7 +154,7 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
       {!kiosk && (
         <div
           onPointerEnter={() => hold('hover', true)} onPointerLeave={() => hold('hover', false)}
-          onFocus={() => { hold('focus', true); reveal(); }}
+          onFocus={(e) => { if (keepsChrome(e.target as Element)) hold('focus', true); reveal(); }}
           onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) hold('focus', false); }}
           className={`absolute inset-x-0 top-0 flex flex-wrap items-center gap-3 bg-black/70 px-3 py-2 transition-opacity ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
         >
@@ -147,15 +163,21 @@ export function RunView({ ir, source = null, name, projectId = null, backHref = 
           <h1 className="text-xs font-medium">{name}</h1>
           <Transport session={session} state={state} onRun={run} canRun={canRun} maxDb={settings.audio.maxMasterDb} startDb={settings.audio.masterDb} />
           <span className="flex-1" />
-          <span className="text-xs">Esc panic · C console · N voices · S status{backHref ? ' · E editor' : ''}</span>
+          <span className="text-xs">Esc panic · F full screen · C console · N voices · S status{backHref ? ' · E editor' : ''}</span>
+          <button type="button" className={button('ghost', 'sm')} onClick={toggleFullScreen} aria-pressed={fullScreen}>
+            {fullScreen ? 'Exit Full Screen' : 'Full Screen'}
+          </button>
           {backHref && <Link href={backHref} className={button('ghost', 'sm')}>Editor</Link>}
           {links}
         </div>
       )}
 
-      {(problem || state.notices.length > 0 || state.error) && (
+      {(problem || state.notices.length > 0 || state.error || state.runtimeProblems.length > 0) && (
         <div className="absolute inset-x-0 top-12 mx-auto w-fit max-w-xl bg-black/80 p-2">
           {problem && <p role="alert" className="text-xs text-error">This piece cannot run: {problem}</p>}
+          {state.runtimeProblems.slice(-3).map((p, i) => (
+            <p key={i} role="alert" className="text-xs text-error">{p.line ? `Line ${p.line}: ` : ''}{p.message} ({p.code})</p>
+          ))}
           <Notices session={session} state={state} />
         </div>
       )}

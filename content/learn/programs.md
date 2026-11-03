@@ -118,7 +118,7 @@ Each `set` replaces the wave of the sounding notes at once. Small steps, as here
 
 ## When a handler fails
 - A handler that throws stops; the rest of the piece keeps playing. **Problems** shows `handler_error` with the line.
-- A handler that runs too long (250 ms for one round of calls) stops the whole program and releases its notes. **Problems** shows `handler_timeout`.
+- A handler that runs too long (250 ms for one round of calls) stops the whole program and releases its notes. The program starts again from the setup a second later, so the piece keeps playing; after three such stops within a minute it stays stopped and **Problems** shows `handler_timeout`.
 - Every save restarts the program from the setup, so variables start over.
 
 A piece plays at most 200 new notes a second from its handlers; more are dropped. See the [Reference](reference) for every limit.

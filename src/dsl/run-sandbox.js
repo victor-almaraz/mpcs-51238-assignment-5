@@ -46,6 +46,11 @@ export function createSandbox({
   /** @type {{ id: number, resolve: (reply: any) => void } | null} */
   let programWaiter = null;
   let programId = 0;
+  /** The last build without errors, so a new worker can be given the program again (doc/piece-dsl.md, VM). */
+  /** @type {{ source: string, defs: any } | null} */
+  let good = null;
+  /** The current worker holds `good` as its kept build. */
+  let holdsGood = false;
 
   const ensure = () => {
     if (worker) return worker;
@@ -95,9 +100,40 @@ export function createSandbox({
   const reset = () => {
     worker?.terminate();
     worker = null;
+    holdsGood = false;
     markReady(false);
     failPending('The script sandbox restarted');
   };
+
+  /** Waits for the current worker to start; false (and the worker is reset) when it does not. */
+  const started = async () => {
+    let startTimer;
+    const ok = await Promise.race([ready, new Promise((r) => { startTimer = setTimeout(() => r(false), startupMs); })]);
+    clearTimeout(startTimer);
+    if (!ok) reset();
+    return ok;
+  };
+
+  /**
+   * Posts one build to `w` and waits up to `timeoutMs` for its reply. A build without errors
+   * becomes the one a new worker is given before a program starts.
+   * @param {WorkerLike} w @param {string} source @param {any} defs @param {any} [snapshot]
+   * @returns {Promise<{ ir: any | null, problems: Problem[] }>}
+   */
+  const postBuild = (w, source, defs, snapshot) => new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      buildWaiter = null;
+      reset();
+      resolve({ ir: null, problems: [problem('timeout', '', `The script ran longer than ${timeoutMs / 1000} s`)] });
+    }, timeoutMs);
+    buildWaiter = (reply) => {
+      clearTimeout(timer);
+      if (!isReply(reply)) { resolve({ ir: null, problems: [problem('runtime_error', '', 'The sandbox sent an invalid reply')] }); return; }
+      if (reply.ir && !reply.problems.some((p) => p.severity === 'error')) { good = { source, defs }; holdsGood = w === worker; }
+      resolve(reply);
+    };
+    w.postMessage({ source, defs, snapshot });
+  });
 
   /**
    * Builds one script. Builds run one at a time in call order.
@@ -109,27 +145,9 @@ export function createSandbox({
   function build(source, defs, { snapshot } = {}) {
     const run = async () => {
       const w = ensure();
-      let startTimer;
-      const started = await Promise.race([ready, new Promise((r) => { startTimer = setTimeout(() => r(false), startupMs); })]);
-      clearTimeout(startTimer);
-      if (!started) {
-        reset();
-        return { ir: null, problems: [problem('runtime_error', '', 'The script sandbox did not start')] };
-      }
-      return post(w);
+      if (!(await started())) return { ir: null, problems: [problem('runtime_error', '', 'The script sandbox did not start')] };
+      return postBuild(w, source, defs, snapshot);
     };
-    const post = (/** @type {WorkerLike} */ w) => new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        buildWaiter = null;
-        reset();
-        resolve({ ir: null, problems: [problem('timeout', '', `The script ran longer than ${timeoutMs / 1000} s`)] });
-      }, timeoutMs);
-      buildWaiter = (reply) => {
-        clearTimeout(timer);
-        resolve(isReply(reply) ? reply : { ir: null, problems: [problem('runtime_error', '', 'The sandbox sent an invalid reply')] });
-      };
-      w.postMessage({ source, defs, snapshot });
-    });
     const p = queue.then(run, run);
     queue = p;
     return /** @type {Promise<{ ir: any | null, problems: Problem[] }>} */ (p);
@@ -154,24 +172,35 @@ export function createSandbox({
     });
   }
 
+  /** @param {string} message */
+  const vmError = (message) => ({ commands: [], errors: [{ handler: 'vm', line: null, message }], dropped: 0 });
+
   /**
    * Sends one program message (`start`, `batch` or `stop`) to the worker that holds the program.
-   * Without a reply within `programTimeoutMs` it terminates the worker and resolves `{ timeout: true }`.
+   * A `start` on a worker without the last good build (a new worker after a timeout or a crash)
+   * sends that build first. Without a reply within `programTimeoutMs` (a batch) or `timeoutMs`
+   * (a start, which reruns setup) it terminates the worker and resolves `{ timeout: true }`.
    * @param {Record<string, unknown> & { op: string }} msg
    * @returns {Promise<ProgramReply | { timeout: true }>}
    */
   function program(msg) {
     const run = async () => {
-      if (!worker) return { commands: [], errors: [{ handler: 'vm', line: null, message: 'The script sandbox is not running; save to build the piece again' }], dropped: 0 };
-      const w = worker;
-      if (!(await ready)) return { commands: [], errors: [{ handler: 'vm', line: null, message: 'The script sandbox did not start' }], dropped: 0 };
+      const start = msg.op === 'start';
+      if (!worker && !(start && good)) return vmError('The script sandbox is not running; save to build the piece again');
+      const w = ensure();
+      if (!(await started())) return vmError('The script sandbox did not start');
+      if (start && !holdsGood && good) {
+        const b = await postBuild(w, good.source, good.defs);
+        if (!b.ir || b.problems.some((p) => p.severity === 'error')) return vmError(`The piece did not build again: ${b.problems[0]?.message ?? 'no result'}`);
+      }
+      if (w !== worker) return vmError('The script sandbox restarted');
       return new Promise((resolve) => {
         const id = ++programId;
         const timer = setTimeout(() => {
           programWaiter = null;
           reset();
           resolve({ timeout: true });
-        }, programTimeoutMs);
+        }, start ? timeoutMs : programTimeoutMs);
         programWaiter = { id, resolve: (/** @type {any} */ r) => { clearTimeout(timer); resolve(isProgramReply(r) ? r : { commands: [], errors: [{ handler: 'vm', line: null, message: 'The sandbox sent an invalid reply' }], dropped: 0 }); } };
         w.postMessage({ program: { ...msg, id } });
       });

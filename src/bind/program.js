@@ -36,10 +36,13 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
  *   newTraceId?: () => string,
  *   defs?: import('../dsl/defs.js').Defs,
  *   orbit?: (objectId: string, quantity: string, timeScale: number) => number | null,
+ *   onStopped?: (p: RuntimeProblem) => void,
  * }} opts  `defs`: normalized definition tables (default DEFS), for the parameters `set` accepts;
- *   `orbit`: the current value of an orbit source (the propagator's latest sample)
+ *   `orbit`: the current value of an orbit source (the propagator's latest sample);
+ *   `onStopped`: called with the reason when the host stops itself (the watchdog, or a VM that
+ *   lost the program), after its notes are released; the default reports it with `onProblem`
  */
-export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock, onProblem = () => {}, onLayerValues = () => {}, newTraceId, defs = DEFS, orbit = () => null }) {
+export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock, onProblem = () => {}, onLayerValues = () => {}, newTraceId, defs = DEFS, orbit = () => null, onStopped = onProblem }) {
   const emit = createTracer(trace, clock.wallNow ?? Date.now);
   let traceSeq = 0;
   const nextTraceId = newTraceId ?? (() => `program-${(clock.wallNow ?? Date.now)()}-${++traceSeq}`);
@@ -295,18 +298,20 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
     if (!running) return;
     if (!reply || reply.timeout) {
       emit('SAFETY', 'program', 'programTimeout', { timeoutMs: PROGRAM.batchTimeoutMs }, { level: 'error' });
-      onProblem({ code: 'handler_timeout', line: null, message: `The program's handlers ran longer than ${PROGRAM.batchTimeoutMs} ms; the program stopped. Save or press Run to start it again.` });
       halt(false);
+      onStopped({ code: 'handler_timeout', line: null, message: `The program's handlers ran longer than ${PROGRAM.batchTimeoutMs} ms; the program stopped. Save or press Run to start it again.` });
       return;
     }
-    let lost = false;
+    /** @type {RuntimeProblem | null} */
+    let lost = null;
     for (const e of Array.isArray(reply.errors) ? reply.errors : []) {
       const message = `${String(e?.message ?? 'error')}`;
+      const p = /** @type {RuntimeProblem} */ ({ code: 'handler_error', line: Number.isInteger(e?.line) ? e.line : null, message });
       bind('handlerError', { handler: String(e?.handler ?? ''), line: e?.line ?? null, message }, null, 'error');
-      onProblem({ code: 'handler_error', line: Number.isInteger(e?.line) ? e.line : null, message });
-      if (FATAL.has(e?.handler)) lost = true;
+      if (FATAL.has(e?.handler)) lost ??= p;
+      else onProblem(p);
     }
-    if (lost) { halt(false); return; }
+    if (lost) { halt(false); onStopped(lost); return; }
     const commands = Array.isArray(reply.commands) ? reply.commands : [];
     const dropped = numberOr(reply.dropped, 0) + Math.max(0, commands.length - PROGRAM.commandsPerBatch);
     if (dropped > 0) bind('dropped', { count: dropped, reason: 'commands per batch' }, null, 'warn');
