@@ -114,6 +114,40 @@ every(50, () => {
 
 Each `set` replaces the wave of the sounding notes at once. Small steps, as here, sound smooth; a piece sends at most 30 a second to each instrument.
 
+## Panning held notes
+`inst.pan(key, pan)` moves a note that is already sounding, from −1 (left) to 1 (right). Call it from a timer to make the stereo position follow live data; here a drone sweeps from side to side as the ISS goes around its orbit:
+
+```ts piece
+const iss = 'celestrak.stations:25544';
+const fast = { timeScale: 60 };          // one orbit in about 90 seconds
+follow(sky.orbit(iss, 'phaseCos', fast));
+
+const pad = additive({ volume: -6, attack: 2, release: 4 });
+after(0, () => pad.hold('drone', 50));
+every(250, () => pad.pan('drone', 0.8 * (read.orbit(iss, 'phaseCos', fast) ?? 0)));
+```
+
+A note played with `play` takes its pan when it starts: pass `{ pan }` there instead.
+
+## Painting a grid
+`layer.grid(props)` draws a grid of squares or circles. A handler sets every cell at once: `cells` is a list of colours and `sizes` a list of sizes from 0 to 1, row by row from the top left. Here each bell note moves one random circle to its next colour and makes it larger:
+
+```ts piece
+const bell = fm({ volume: -6, ratio: 3.5, index: 4, indexDecay: 1 });
+const grid = layer.grid({ cols: 8, rows: 8, gap: 4, shape: 'circle' });
+const colors: Hex[] = ['#f6e05e', '#63b3ed', '#f56565'];
+const place = Array(64).fill(0);         // each circle's colour, 0 to 2
+
+every(500, () => {
+  const i = randInt(64);
+  place[i] = (place[i] + 1) % colors.length;
+  bell.play(60 + place[i] * 4, { durationMs: 300 });
+  grid.set({ cells: place.map((c) => colors[c]), sizes: place.map((c) => 0.4 + c * 0.25) });
+});
+```
+
+Each `set` sends the whole grid, so send it when something changed, a few times a second at most.
+
 ## Chance that repeats
 `random()`, `randInt(n)` and `choose(list)` make choices seeded by `seed(n)`. The same seed and the same sky make the same choices, so a piece can be replayed exactly.
 

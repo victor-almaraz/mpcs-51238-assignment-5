@@ -202,6 +202,9 @@ pad.vibratoDepth.follow(sky.orbit('celestrak.stations:25544', 'latitude').map(-1
 A function passed to `voices`, `when`, `trigger` or a layer constructor receives the group's object proxy `o`:
 
 ```ts
+const swell = subtractive({ volume: -6, waveform: 'triangle', attack: 2, release: 4 });
+const string = pluck({ volume: -6, decay: 6 });
+
 sky.group('jpl.cad').top(6, 'distLD', 'asc').voices(swell, (o) => ({
   pitch:    o.vRel.map(0, 15, 36, 60).quantize(),
   velocity: o.distLD.map(0.5, 10, 100, 20),
