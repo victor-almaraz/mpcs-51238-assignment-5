@@ -24,6 +24,8 @@ import { canonicalJson } from '../bind/canonical.js';
 export const LAYER_VALUES_MS = 250;
 /** Most device pixels the editor preview draws (doc/visuals.md, Renderer). */
 export const PREVIEW_MAX_PIXELS = 1_500_000;
+/** Most frames the renderer draws per second, so the main thread keeps time for audio (doc/visuals.md, Renderer). */
+export const MAX_FPS = 30;
 
 /**
  * @typedef {'stopped' | 'starting' | 'playing' | 'muted' | 'fault'} AudioState
@@ -320,6 +322,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
         pixelRatio: pixelRatioFor({ installation, previewScale: cfg.visual.previewScale, devicePixelRatio: globalThis.devicePixelRatio ?? 1 }),
         // The editor preview has a pixel budget; run and installation mode draw at full resolution (doc/visuals.md, Renderer).
         maxPixels: installation ? Infinity : PREVIEW_MAX_PIXELS,
+        maxFps: MAX_FPS,
         reducedMotion: cfg.visual.reducedMotion,
         maxFlashesPerSecond: cfg.visual.maxFlashesPerSecond,
         observer: cfg.data.observer,

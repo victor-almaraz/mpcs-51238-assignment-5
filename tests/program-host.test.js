@@ -7,6 +7,7 @@ import { FakeEngine, createFakeClock, createFakeSky, createTraceSink, skyObj } f
 import { build } from './fixtures/dsl/load.js';
 import { createRunner } from '../src/dsl/program.js';
 import { createProgramHost } from '../src/bind/program.js';
+import { PROGRAM } from '../src/dsl/limits.js';
 
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
@@ -78,7 +79,7 @@ test('an event reaches the engine as tagged notes carrying its trace id', async 
   s.sky.enter(skyObj('jpl.scout', 'A', { objectName: 'A', neoScore: 64 }), 'ev-1');
   s.clock.advance(25);
   await flush();
-  const t = 1.0 + 0.025 + 0.1; // batch time 25 ms, plus the 100 ms latency
+  const t = 1.0 + 0.025 + PROGRAM.latencyS; // batch time 25 ms, plus the latency
   assert.deepEqual(s.inst('i0').callsOf('noteOn'), [['noteOn', 64, 90, t, 'prog:i0:n1']]);
   assert.deepEqual(s.inst('i0').callsOf('noteOff'), [['noteOff', 64, t + 0.4, 'prog:i0:n1']]);
   assert.deepEqual(s.inst('i1').callsOf('noteOn'), [['noteOn', 60, 100, t, 'prog:i1:k:A']]);
@@ -200,9 +201,10 @@ test('values are clamped and invalid commands are dropped and traced', async () 
   const s = setup(vm, null, { ir: IR });
   await s.host.start();
   const i = s.inst();
-  assert.deepEqual(i.callsOf('noteOn'), [['noteOn', 127, 1, 1.1, 'prog:i0:n1']]);
+  const t = 1 + PROGRAM.latencyS; // started at audio time 1, command at 0
+  assert.deepEqual(i.callsOf('noteOn'), [['noteOn', 127, 1, t, 'prog:i0:n1']]);
   assert.deepEqual(i.callsOf('setVoicePan'), [['setVoicePan', 'prog:i0:n1', 1]]);
-  assert.deepEqual(i.callsOf('noteOff'), [['noteOff', 127, 1.1 + 0.02, 'prog:i0:n1']]);
+  assert.deepEqual(i.callsOf('noteOff'), [['noteOff', 127, t + 0.02, 'prog:i0:n1']]);
   assert.equal(s.trace.of({ stage: 'BIND', event: 'invalid' }).length, 3);
 });
 
@@ -349,7 +351,7 @@ test('a command time past the batch is pulled back to at most the latency ahead'
   const s = setup(scriptedVm([{ commands: [cmd({ op: 'play', inst: 'i0', pitch: 60, at: 1e9 })], errors: [], dropped: 0 }]), null, { ir: IR });
   await s.host.start();
   const [, , , t] = s.inst().callsOf('noteOn')[0];
-  assert.ok(Math.abs(t - (s.clock.audioTime() + 0.1)) < 1e-9, String(t));
+  assert.ok(Math.abs(t - (s.clock.audioTime() + PROGRAM.latencyS)) < 1e-9, String(t));
 });
 
 test('set accepts only numeric parameters of the instrument or slot type', async () => {

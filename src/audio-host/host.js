@@ -11,7 +11,8 @@ import { createTracer } from '../bind/tracer.js';
 import { irToWidgets, chainsOf, slotsOf, changedIds } from './widgets.js';
 
 export const PUMP_MS = 25;
-export const LOOKAHEAD_S = 0.1;
+/** Audio scheduled ahead of the context clock; it rides out main-thread stalls up to this long. */
+export const LOOKAHEAD_S = 0.25;
 /** Delay between fading out a replaced engine and disposing it (audio-engine-core.md, Teardown). */
 export const ENGINE_SWAP_MS = 50;
 

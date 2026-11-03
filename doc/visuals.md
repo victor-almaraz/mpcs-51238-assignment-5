@@ -111,6 +111,7 @@ The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group
 - Without WebGL2, the preview shows `Visuals unavailable (WebGL2)` and a static text summary with one line per followed group (object count and freshness), and the status bar shows `Visuals unavailable (WebGL2)`.
 - Run mode and installation mode render at the device pixel ratio, at most 2. The editor preview renders at that ratio times `visual.previewScale` (0.25–1, default 1), lowered further when needed so the canvas has at most 1.5 million device pixels (`pixelRatioFor`, `src/visual/motion.js`; `maxPixels` in the renderer). Every pass, the flash guard's included, costs time per pixel, and the guard's readback waits for the GPU on the main thread.
 - A canvas with no layout size (its pane hidden) draws no frames until it has one again.
+- The renderer draws at most 30 frames per second (`maxFps`). Each frame's flash-guard readback waits for the GPU on the main thread, so a lower rate leaves the page's audio scheduling more time; the guard works at any frame rate.
 - Each frame draws the scene into an offscreen texture, then a composite pass applies `desaturate` and the flash guard's limit and writes the canvas. `desaturate` changes at most 1.0 per second, with or without reduced motion.
 
 ### Interface

@@ -25,13 +25,13 @@ Every other module receives the engine, the sky store, the clock and the `trace(
 ## Audio host
 `src/audio-host/` starts the engine and keeps it in sync with the IR. Its lifecycle matches assignment 2's `src/state/session.js`:
 1. On the Run click, call `ensureRunning()` synchronously inside the gesture handler, then `buildMasterBus(ctx, { realtime: true, masterGain: 0 })`.
-2. Create `new Engine(ctx, bus, { seed, realtime: true, lookahead: () => 0.1, ks: bus.worklets.ks, onFault, onError })`.
+2. Create `new Engine(ctx, bus, { seed, realtime: true, lookahead: () => 0.25, ks: bus.worklets.ks, onFault, onError })`.
 3. Register `bus.setHandler` for safety events and show them as specified in `audio/audio-safety.md`. The callback receives `{ type }` with `type` `'fault'`, `'duck'` or `'error'` (`src/audio/master-bus.js`). Each is traced at stage `SAFETY`, component `master-bus`.
    - `fault`: the host stops the bindings and the program, calls `engine.releaseAll(t)` and `engine.rebuild()`, and shows "Audio fault — output muted and reset". Nothing restarts until the next Run.
    - `error` (the safety stage failed): the host stops the bindings and the program, releases every voice and shows "Audio stopped — the safety stage failed. Restart audio to continue." `run` then throws until Restart Audio.
    - `duck`: the host shows "Level reduced — sustained loud output".
    - Without `bus.setHandler`, the host traces `SAFETY` / `noHandler` at level `warn`.
-4. Call `engine.pump(ctx.currentTime + 0.1)` every 25 ms (granular schedules grains ahead). A pump that throws is traced `SAFETY` / `error` once until a pump succeeds again.
+4. Call `engine.pump(ctx.currentTime + 0.25)` every 25 ms (granular schedules grains ahead). The 0.25 s lookahead lets audio scheduled ahead ride out a main-thread stall of up to a quarter second, for example while another process takes the CPU. A pump that throws is traced `SAFETY` / `error` once until a pump succeeds again.
    - A realtime bus starts with `masterGain` at 0. The host calls `bus.fadeIn(level)` once the engine exists and after every resume of the context (a Run that resumes a suspended context, or a `statechange` back to `running`), with `level` from its `masterLevel` option (`src/audio-host/master.js`); `null` while muted after Panic skips the fade.
    - A seed change replaces the engine: the host calls `releaseAll(t)` and `fadeOutAll(t)` on the old engine, disposes it 50 ms later, then constructs the new one on the same bus.
    - Teardown (`host.dispose()`, when the page leaves or for Restart Audio) does the same: `releaseAll(t)`, `fadeOutAll(t)`, then `dispose()` 50 ms later, so leaving a playing piece never clicks.
@@ -59,7 +59,7 @@ The master level, master fade-in, safety limiter and duck are engine behavior. E
 
 1. **Start.** Records the audio time `t0`, emits `RELOAD` / `start` (component `program`) with the handler ids, sends `start` with the IR's groups, their current objects from `sky.get` and every source's freshness from `sky.sources`, and applies the reply.
 2. **Batches.** Subscribes to `enter`, `update`, `exit` and `freshness` events, keeps the change events of the IR's groups, and queues them as plain objects. Every 25 ms, when no batch is outstanding, it sends one `batch` with `now = (audioTime − t0) × 1000`, the queued events and the value of each declared orbit (`orbit(objectId, quantity, timeScale)`, the propagator's latest sample), then applies the reply. Events that arrive while a batch is outstanding go into the next one. At most 4096 events wait; past that the oldest is dropped and traced `BIND` / `dropped`.
-3. **Scheduling.** A command's audio time is `t0 + at / 1000 + 0.1`, or the current audio time when that has passed. It is at most 0.1 s after the current audio time: `at` never exceeds the batch's `now`, and a later `at` is pulled back.
+3. **Scheduling.** A command's audio time is `t0 + at / 1000 + 0.25`, or the current audio time when that has passed. It is at most 0.25 s after the current audio time: `at` never exceeds the batch's `now`, and a later `at` is pulled back.
 4. **Stop.** Unsubscribes, stops the batches, releases every held note at the current audio time and sends `stop`. Stop, Panic, a safety `fault`, a safety `error` and a hot reload stop the program host. So does a reply with an error from handler `setup` or `vm`, which means the VM does not hold the program; the host reports that error as `handler_error` and sends no further batches.
 
 Every command is checked again at this boundary, whatever the VM sent:

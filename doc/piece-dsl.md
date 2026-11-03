@@ -280,7 +280,7 @@ Output methods are valid inside handlers only. In setup they throw, and the buil
 | `slot.bypass.set(on)` | Bypasses an effect slot |
 | `layerHandle.set(props)` | Sets constant layer properties; every `layer.*(...)` constructor except `layer.shader` returns the handle. An unknown property or an expression value throws. |
 
-A `null` pitch plays nothing, as in expressions. Any other value of the wrong kind throws a `TypeError`. `inst.<param>.set` accepts numeric parameters only. Commands take effect 100 ms after the handler's time, so timer handlers keep steady timing.
+A `null` pitch plays nothing, as in expressions. Any other value of the wrong kind throws a `TypeError`. `inst.<param>.set` accepts numeric parameters only. Commands take effect 250 ms after the handler's time, so timer handlers keep steady timing even when the page stalls briefly.
 
 ### Input
 | Call | Returns |

@@ -42,8 +42,8 @@ export const PROGRAM = Object.freeze({
   glideMs: [0, 10_000],
   keyChars: 64,
   defaultGlideMs: 150,
-  /** Delay between a command's program time and its audio time, s. */
-  latencyS: 0.1,
+  /** Delay between a command's program time and its audio time, s; equal to the audio host's lookahead. */
+  latencyS: 0.25,
   /** Period of the page's batch loop, ms. */
   batchMs: 25,
   noteStartsPerSecond: 200,

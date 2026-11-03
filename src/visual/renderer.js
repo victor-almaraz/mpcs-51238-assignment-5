@@ -33,6 +33,7 @@ const MAX_ERROR_MESSAGES = 32;
  *   trace?: (record: any) => void,
  *   pixelRatio?: number,
  *   maxPixels?: number,
+ *   maxFps?: number,
  *   reducedMotion?: 'system' | 'on',
  *   maxFlashesPerSecond?: number,
  *   observer?: { lat: number, lon: number },
@@ -150,6 +151,8 @@ class Renderer {
       pixelRatio: clampPixelRatio(o.pixelRatio ?? 1),
       /** Most device pixels the canvas may have; the ratio is lowered to fit. */
       maxPixels: Number.isFinite(o.maxPixels) && /** @type {number} */ (o.maxPixels) > 0 ? /** @type {number} */ (o.maxPixels) : Infinity,
+      /** Most frames drawn per second; animation frames in between are skipped. */
+      maxFps: Number.isFinite(o.maxFps) && /** @type {number} */ (o.maxFps) > 0 ? /** @type {number} */ (o.maxFps) : Infinity,
       reducedMotion: o.reducedMotion ?? 'system',
       maxFlashesPerSecond: o.maxFlashesPerSecond ?? MAX_FLASHES_PER_SECOND,
       observer: o.observer ?? { ...DEFAULT_OBSERVER },
@@ -274,6 +277,8 @@ class Renderer {
     this.lastFrameAt = 0;
     const loop = (/** @type {number} */ t) => {
       if (!this.running) return;
+      // Frame cap (doc/visuals.md, Renderer): skip animation frames that come too soon.
+      if (this.lastFrameAt && t - this.lastFrameAt < 1000 / this.settings.maxFps - 2) { this.rafId = this.raf(loop); return; }
       try { this.frame(t); } catch (err) {
         this.frameError(err instanceof Error ? err.message : String(err), this.now());
       }

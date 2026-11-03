@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAudioHost, irToWidgets, NOTICES } from '../src/audio-host/index.js';
+import { createAudioHost, irToWidgets, NOTICES, LOOKAHEAD_S } from '../src/audio-host/index.js';
 import { FakeEngine, createFakeClock, createFakeSky, createTraceSink, skyObj } from './fakes.js';
 
 const kp = { op: 'swpc', args: ['kp.kp'] };
@@ -90,7 +90,7 @@ test('run: ensureRunning synchronously, then master bus, engine, sync, tempo, fx
   assert.equal(e.args.ctx, s.ctx);
   assert.equal(e.args.opts.seed, 7);
   assert.equal(e.args.opts.realtime, true);
-  assert.equal(e.args.opts.lookahead(), 0.1);
+  assert.equal(e.args.opts.lookahead(), LOOKAHEAD_S);
   assert.equal(e.args.opts.ks, 'ks-node');
   assert.equal(typeof e.args.opts.onFault, 'function');
   assert.equal(typeof e.args.opts.onError, 'function');
@@ -105,7 +105,7 @@ test('run: ensureRunning synchronously, then master bus, engine, sync, tempo, fx
   assert.equal(e.get('i0').callsOf('noteOn').length, 1, 'bindings started');
 });
 
-test('pump: engine.pump(ctx.currentTime + 0.1) every 25 ms', async () => {
+test('pump: engine.pump(ctx.currentTime + LOOKAHEAD_S) every 25 ms', async () => {
   const s = setup();
   await s.host.run(baseIr());
   const e = s.engine();
@@ -113,7 +113,7 @@ test('pump: engine.pump(ctx.currentTime + 0.1) every 25 ms', async () => {
   s.clock.advance(100);
   const pumps = e.callsOf('pump');
   assert.equal(pumps.length, 4);
-  assert.ok(Math.abs(pumps[0][1] - (s.clock.audioTime() - 0.075 + 0.1)) < 1e-9);
+  assert.ok(Math.abs(pumps[0][1] - (s.clock.audioTime() - 0.075 + LOOKAHEAD_S)) < 1e-9);
 });
 
 test('fxFault: SAFETY trace and one notice per fault; the slot is un-bypassed on the next reload', async () => {
