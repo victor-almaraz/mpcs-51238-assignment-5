@@ -12,10 +12,10 @@ AudioContext lifecycle, engine construction, the widget interface, voices, envel
 ```ts
 // src/audio/context.js — imported only from client components
 let ctx: AudioContext | null = null;
-export function ensureRunning(): Promise<AudioContext> {
+export function ensureRunning({ latencyHint = 'interactive' } = {}): Promise<AudioContext> {
   if (!ctx) {
     if ('audioSession' in navigator) (navigator as any).audioSession.type = 'playback'; // iOS 17+: bypass ringer switch
-    ctx = new AudioContext({ latencyHint: 'interactive' });
+    ctx = new AudioContext({ latencyHint });
   }
   const resumed = ctx.state !== 'running' ? ctx.resume() : Promise.resolve(); // called synchronously in the gesture
   return resumed.then(() => ctx);
@@ -55,7 +55,7 @@ voice → widget.output (volume × mute/solo × polyGain) → [insert chain] →
 - `seed` initializes every `mulberry32` PRNG (`src/audio/random.js`) used by instruments. Audio code does not call `Math.random()`.
 - Per-voice headroom: velocity gain ≤ 0.3 before widget volume.
 - The engine caps each widget's `volumeDb` at 0 dB itself (non-numbers count as Off), so no caller can boost an instrument above unity.
-- `latencyHint` is `'interactive'` (the default). `'playback'` increases output latency in exchange for fewer dropouts, which delays live parameter changes and live input.
+- `latencyHint` is `'interactive'` by default; `ensureRunning({ latencyHint })` chooses another value. `'playback'` increases output latency in exchange for fewer dropouts, which delays live parameter changes and live input. The hint applies when the context is created; a call that finds the context already open keeps its hint until `closeContext()`.
 
 ## Common widget interface
 ```ts

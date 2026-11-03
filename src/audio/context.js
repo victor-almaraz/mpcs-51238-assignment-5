@@ -18,15 +18,17 @@ export function audioSessionSupported() {
 
 /**
  * Creates the context on first call and resumes it. resume() runs synchronously, before any
- * await, so it keeps user activation. → Promise<AudioContext> resolving after resume.
+ * await, so it keeps user activation. latencyHint applies only when the context is created.
+ * @param {{ latencyHint?: AudioContextLatencyCategory | number }} [opts]
+ * → Promise<AudioContext> resolving after resume.
  */
-export function ensureRunning() {
+export function ensureRunning({ latencyHint = 'interactive' } = {}) {
   try {
     if (!ctx) {
       if (audioSessionSupported()) {
         try { navigator.audioSession.type = 'playback'; } catch { /* unsupported value */ }
       }
-      const c = new AudioContext({ latencyHint: 'interactive' });
+      const c = new AudioContext({ latencyHint });
       c.addEventListener('statechange', () => { if (ctx === c) notify(c.state); });
       ctx = c;
     }

@@ -17,14 +17,14 @@ Apply each IR binding and data-driven modulation source to sky events, and each 
 | `src/expr/` (`index.js`) | `evaluate(node, obj, ctx)`, `map`, `octaveInto`, `hexColor`, `mixColor`, `collectDeps(node)`, `objectGroup`, `parseSwpcPath`, `swpcPath`, `sourceClass`, `quantize`, `rootPitchClass`, `rand01`, `hash32` |
 | `src/bind/` (`index.js`) | `createBindingRuntime(options)`, `buildModConfig(ir)`, `postedValue`, `computeReactionState(...)`, `evaluateLayerProps(...)`, `selectObjects`, `createTokenBucket`, `createSmoother`, `canonicalJson`, `LIMITS`, `voiceCap` |
 | `src/bind/program.js` | `createProgramHost(options)` |
-| `src/audio-host/` (`index.js`) | `createAudioHost(options)`, `NOTICES`, `PUMP_MS`, `LOOKAHEAD_S`, `irToWidgets(ir, reactions, followed)`, `chainsOf`, `slotsOf`, `changedIds`, `createMasterControls(host)` |
+| `src/audio-host/` (`index.js`) | `createAudioHost(options)`, `NOTICES`, `PUMP_MS`, `LOOKAHEAD_S`, `LATENCY_HINT`, `irToWidgets(ir, reactions, followed)`, `chainsOf`, `slotsOf`, `changedIds`, `createMasterControls(host)` |
 | `src/audio-host/engine-imports.js` | The only module that imports the user's engine: `ensureRunning`, `closeContext`, `buildMasterBus`, `Engine` |
 
 Every other module receives the engine, the sky store, the clock and the `trace(record)` function by injection, so tests run with the fakes in `tests/fakes.js`.
 
 ## Audio host
 `src/audio-host/` starts the engine and keeps it in sync with the IR. Its lifecycle matches assignment 2's `src/state/session.js`:
-1. On the Run click, call `ensureRunning()` synchronously inside the gesture handler, then `buildMasterBus(ctx, { realtime: true, masterGain: 0 })`.
+1. On the Run click, call `ensureRunning({ latencyHint: 'playback' })` synchronously inside the gesture handler, then `buildMasterBus(ctx, { realtime: true, masterGain: 0 })`. `'playback'` (`LATENCY_HINT`) gives the audio thread a larger buffer, so another process taking the CPU causes fewer dropouts; pieces have no live input, so the added output latency is not heard.
 2. Create `new Engine(ctx, bus, { seed, realtime: true, lookahead: () => 0.25, ks: bus.worklets.ks, onFault, onError })`.
 3. Register `bus.setHandler` for safety events and show them as specified in `audio/audio-safety.md`. The callback receives `{ type }` with `type` `'fault'`, `'duck'` or `'error'` (`src/audio/master-bus.js`). Each is traced at stage `SAFETY`, component `master-bus`.
    - `fault`: the host stops the bindings and the program, calls `engine.releaseAll(t)` and `engine.rebuild()`, and shows "Audio fault — output muted and reset". Nothing restarts until the next Run.

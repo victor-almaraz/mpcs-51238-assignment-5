@@ -13,6 +13,8 @@ import { irToWidgets, chainsOf, slotsOf, changedIds } from './widgets.js';
 export const PUMP_MS = 25;
 /** Audio scheduled ahead of the context clock; it rides out main-thread stalls up to this long. */
 export const LOOKAHEAD_S = 0.25;
+/** A larger audio buffer than 'interactive': fewer dropouts when another process takes the CPU. */
+export const LATENCY_HINT = 'playback';
 /** Delay between fading out a replaced engine and disposing it (audio-engine-core.md, Teardown). */
 export const ENGINE_SWAP_MS = 50;
 
@@ -26,7 +28,7 @@ export const NOTICES = Object.freeze({
 
 /**
  * @typedef {object} EngineModule
- * @property {() => Promise<any>} ensureRunning
+ * @property {(opts?: { latencyHint?: string }) => Promise<any>} ensureRunning
  * @property {(ctx: any, opts: { realtime: boolean, masterGain: number }) => Promise<any>} buildMasterBus
  * @property {new (ctx: any, bus: any, opts: any) => any} Engine
  * @property {() => Promise<void>} [closeContext]  closes the context for Restart Audio
@@ -319,7 +321,7 @@ export function createAudioHost(options) {
       starting = true;
       let c;
       try {
-        c = await engineModule.ensureRunning();
+        c = await engineModule.ensureRunning({ latencyHint: LATENCY_HINT });
       } finally {
         starting = false;
       }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAudioHost, irToWidgets, NOTICES, LOOKAHEAD_S } from '../src/audio-host/index.js';
+import { createAudioHost, irToWidgets, NOTICES, LOOKAHEAD_S, LATENCY_HINT } from '../src/audio-host/index.js';
 import { FakeEngine, createFakeClock, createFakeSky, createTraceSink, skyObj } from './fakes.js';
 
 const kp = { op: 'swpc', args: ['kp.kp'] };
@@ -46,8 +46,9 @@ function setup() {
     }
   }
   let safetyHandler = null;
+  const ensureOpts = [];
   const engineModule = {
-    ensureRunning: () => { events.push('ensureRunning'); return Promise.resolve(ctx); },
+    ensureRunning: (opts) => { events.push('ensureRunning'); ensureOpts.push(opts); return Promise.resolve(ctx); },
     buildMasterBus: async (c, opts) => {
       events.push(['buildMasterBus', opts]);
       return { worklets: { ks: 'ks-node' }, setHandler: (fn) => { safetyHandler = fn; } };
@@ -64,7 +65,7 @@ function setup() {
     engineModule, sky, trace, notify: (n) => notices.push(n), timers: clock, now: clock.now, wallNow: clock.wallNow,
     onVisualReaction: (d) => desat.push(d),
   });
-  return { host, clock, ctx, sky, trace, notices, desat, events, engineModule, engine: () => engine, safety: (e) => safetyHandler(e) };
+  return { host, clock, ctx, sky, trace, notices, desat, events, ensureOpts, engineModule, engine: () => engine, safety: (e) => safetyHandler(e) };
 }
 
 test('irToWidgets maps instruments as documented', () => {
@@ -86,6 +87,8 @@ test('run: ensureRunning synchronously, then master bus, engine, sync, tempo, fx
   assert.deepEqual(s.events, ['ensureRunning'], 'ensureRunning is called before run() returns');
   await p;
   assert.deepEqual(s.events, ['ensureRunning', ['buildMasterBus', { realtime: true, masterGain: 0 }], 'new Engine']);
+  assert.deepEqual(s.ensureOpts, [{ latencyHint: LATENCY_HINT }]);
+  assert.equal(LATENCY_HINT, 'playback');
   const e = s.engine();
   assert.equal(e.args.ctx, s.ctx);
   assert.equal(e.args.opts.seed, 7);
