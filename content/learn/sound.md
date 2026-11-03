@@ -67,7 +67,7 @@ A group larger than the voice limit needs a choice of which objects sound. `top(
 
 ```ts
 sky.group('jpl.cad').top(6, 'distLD', 'asc').voices(swell, {
-  pitch: field('vRel').map(5, 30, 36, 60).quantize(),
+  pitch: field('vRel').map(0, 15, 36, 60).quantize(),
 });
 ```
 
@@ -85,6 +85,8 @@ sky.group('jpl.scout').on('enter').trigger(glass, {
   maxPerSecond: 1,
 });
 ```
+
+Triggers skip the objects already listed when the piece starts, and new Scout candidates can be hours apart, so this example is often silent at first. To hear it now, replay the last 24 hours or send a test `enter` ([Live data states](live-data-states#test-events)).
 
 `.when(expr)` adds a condition:
 ```ts

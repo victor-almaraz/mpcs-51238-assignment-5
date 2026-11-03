@@ -60,8 +60,8 @@ Read space weather with `sky.swpc(path)`.
 
 | Path | Meaning | Typical range |
 |---|---|---|
-| `kp.kp` | Kp index of geomagnetic activity; 5 and above is a storm | 0–9 |
-| `kp.kpEstimated` | Estimated Kp for the current minute | 0–9 |
+| `kp.kp` | Kp index of geomagnetic activity; 5 and above is a storm | 0–9; usually 0–4 |
+| `kp.kpEstimated` | Estimated Kp for the current minute | 0–9; usually 0–4 |
 | `kp.timeTag` | Time of the reading | |
 | `wind.speed` | Solar wind speed, km/s | 300–800 |
 | `wind.density` | Proton density, per cm³ | 1–20 |
@@ -69,9 +69,11 @@ Read space weather with `sky.swpc(path)`.
 | `wind.spacecraft` | Spacecraft that measured the reading, for example `SOLAR1` | |
 | `wind.timeTag` | Time of the reading | |
 | `mag.bt` | Total field strength, nT | 1–20 |
-| `mag.bz` | North–south field component, nT; negative (southward) values drive aurora | −20–20 |
+| `mag.bz` | North–south field component, nT; negative (southward) values drive aurora | −20–20; usually −6–6 |
 | `mag.spacecraft` | Spacecraft that measured the reading | |
 | `mag.timeTag` | Time of the reading | |
+
+Map from the usual range, not the full one. `sky.swpc('kp.kp').map(3, 9, 0, 1)` stays at 0 on most days, so anything it drives is silent or invisible until a storm.
 
 ### Close approaches (`jpl.cad`)
 | Field | Meaning | Typical range |
@@ -80,7 +82,7 @@ Read space weather with `sky.swpc(path)`.
 | `closeApproach` | Date and time of closest approach | |
 | `distLD` | Closest distance in lunar distances | 0–10 |
 | `distAu` | Closest distance in astronomical units | 0–0.03 |
-| `vRel` | Speed relative to Earth, km/s | 1–40 |
+| `vRel` | Speed relative to Earth, km/s | 1–40; usually 1–15 |
 | `vInf` | Speed relative to a massless Earth, km/s | 1–40 |
 | `h` | Absolute magnitude; smaller is larger | 15–32 |
 

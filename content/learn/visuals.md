@@ -38,7 +38,7 @@ layer.points(sky.group('celestrak.cosmos-2251-debris'), { size: 1, color: '#7f8e
 layer.points(sky.group('celestrak.stations'), {
   size: audio.voice(pad).env().map(0, 1, 3, 9), color: '#f6e05e', trail: 600,
 });
-layer.aurora({ intensity: sky.swpc('kp.kp').map(3, 9, 0, 1) });
+layer.aurora({ intensity: sky.swpc('kp.kp').map(0, 9, 0.3, 1) }); // visible when quiet, brighter in storms
 ```
 
 Satellites move continuously: their positions are computed in the browser from their orbits, between data updates.

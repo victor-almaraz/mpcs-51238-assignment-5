@@ -8,7 +8,7 @@ order: 3
 An **expression** describes how to compute a value from data. Expressions set pitches, velocities, parameter values, modulation and visual properties. An expression starts from a source and applies steps in a chain:
 
 ```ts
-field('vRel').map(5, 30, 36, 60).quantize()
+field('vRel').map(0, 15, 36, 60).quantize()
 ```
 
 Read it left to right: take the object's `vRel` field, map 5–30 km/s onto MIDI notes 36–60, then move to the nearest note of the scale.

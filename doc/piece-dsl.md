@@ -37,7 +37,7 @@ const shimmer = lfo({ shape: 'smooth', rate: sky.swpc('wind.speed').map(300, 800
 verb.decay.mod(breathe, { depth: 0.2 });
 echo.time.mod(shimmer, { depth: 0.05 });
 echo.feedback.mod(sky.swpc('kp.kp').map(0, 9, -1, 1), { depth: 0.4 });
-grit.drive.mod(sky.swpc('mag.bz').map(-20, 20, 1, -1), { depth: 0.3 });
+grit.drive.mod(sky.swpc('mag.bz').map(-10, 10, 1, -1), { depth: 0.3 });
 neo.cutoff.mod(breathe, { depth: 0.1 });
 
 sky.group('celestrak.stations').voices(stations, {
@@ -46,7 +46,7 @@ sky.group('celestrak.stations').voices(stations, {
 });
 
 sky.group('jpl.cad').top(6, 'distLD', 'asc').voices(neo, {
-  pitch:    field('vRel').map(5, 30, 36, 60).quantize(),
+  pitch:    field('vRel').map(0, 15, 36, 60).quantize(),
   velocity: field('distLD').map(0.5, 10, 100, 20),
 });
 
@@ -72,7 +72,7 @@ layer.points(sky.group('celestrak.cosmos-2251-debris'), { size: 1, color: '#7f8e
 layer.points(sky.group('celestrak.stations'), {
   size: audio.voice(stations).env().map(0, 1, 3, 9), color: '#f6e05e', trail: 600,
 });
-layer.aurora({ intensity: sky.swpc('kp.kp').map(3, 9, 0, 1) });
+layer.aurora({ intensity: sky.swpc('kp.kp').map(0, 9, 0.3, 1) }); // visible when quiet, brighter in storms
 ```
 
 ## Builder API
@@ -203,7 +203,7 @@ A function passed to `voices`, `when`, `trigger` or a layer constructor receives
 
 ```ts
 sky.group('jpl.cad').top(6, 'distLD', 'asc').voices(swell, (o) => ({
-  pitch:    o.vRel.map(5, 30, 36, 60).quantize(),
+  pitch:    o.vRel.map(0, 15, 36, 60).quantize(),
   velocity: o.distLD.map(0.5, 10, 100, 20),
 }));
 
@@ -230,10 +230,15 @@ const triad = [0, 4, 7];
 let root = 48;
 let step = 0;
 
-on('jpl.scout', 'enter', () => {
-  root = 48 + choose([0, 3, 5, 7, 8]);
+const chord = () => {
   pad.stopAll();
   triad.forEach((n, i) => pad.hold(`t${i}`, root + n, { velocity: 70 }));
+};
+after(0, chord);
+on('jpl.scout', 'enter', (o, e) => {
+  if (e.initial) return; // candidates listed before Run leave the chord alone
+  root = 48 + choose([0, 3, 5, 7, 8]);
+  chord();
 });
 
 every('1/8', () => {

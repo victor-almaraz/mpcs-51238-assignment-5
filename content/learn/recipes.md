@@ -51,14 +51,14 @@ drone.fx(echo, reverb({ size: 0.7, decay: 5, mix: 0.25 }));
 sky.group('swpc.wind').voices(drone, { pitch: 36 });
 
 drone.cutoff.follow(sky.swpc('wind.speed').map(300, 800, 200, 3000, 'log'), { smoothMs: 3000 });
-echo.feedback.mod(sky.swpc('mag.bz').map(-20, 20, 1, -1), { depth: 0.4 });
+echo.feedback.mod(sky.swpc('mag.bz').map(-10, 10, 1, -1), { depth: 0.4 });
 
 const breathe = lfo({ shape: 'sine', rate: 0.05 });
 drone.cutoff.mod(breathe, { depth: 0.06 });
 
 view.projection('map');
 layer.aurora({
-  intensity: sky.swpc('kp.kp').map(2, 9, 0.1, 1),
+  intensity: sky.swpc('kp.kp').map(0, 9, 0.3, 1),   // visible when quiet, brighter in storms
   drift:     sky.swpc('wind.speed').map(300, 800, 0.1, 1),
 });
 ```
@@ -74,7 +74,7 @@ const glass = fm({ volume: -8, ratio: 3.5, index: 6, indexDecay: 2 });
 glass.fx(delay({ time: 700, feedback: 0.45, mix: 0.35 }));
 
 sky.group('jpl.cad').top(6, 'distLD', 'asc').voices(swell, {
-  pitch:    field('vRel').map(5, 30, 40, 64).quantize(),
+  pitch:    field('vRel').map(0, 15, 40, 64).quantize(),
   velocity: field('distLD').map(0.5, 10, 100, 20),
 });
 

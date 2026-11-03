@@ -14,9 +14,11 @@ Use bindings ([Sound](sound)) when each object maps straight onto a note or a pa
 const bell = fm({ volume: -6, ratio: 3.5, index: 5, indexDecay: 1.5 });
 let count = 0;
 
-on('jpl.scout', 'enter', (o) => {
+on('jpl.scout', 'enter', (o, e) => {
   count += 1;
-  bell.play(60 + (count % 12), { velocity: 80, durationMs: 1500 });
+  const pitch = 60 + (count % 12);
+  // Candidates listed before Run ring one after another; a new one rings at once.
+  after(e.initial ? count * 400 : 0, () => bell.play(pitch, { velocity: 80, durationMs: 1500 }));
 });
 ```
 

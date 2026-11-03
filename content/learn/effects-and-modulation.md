@@ -121,7 +121,7 @@ An expression is a modulation source when it gives values from −1 to 1:
 
 ```ts
 echo.feedback.mod(sky.swpc('kp.kp').map(0, 9, -1, 1), { depth: 0.4 });
-grit.drive.mod(sky.swpc('mag.bz').map(-20, 20, 1, -1), { depth: 0.3 });   // southward field adds drive
+grit.drive.mod(sky.swpc('mag.bz').map(-10, 10, 1, -1), { depth: 0.3 });   // southward field adds drive
 ```
 
 Values outside −1 to 1 are limited to that range. `smoothMs` (default 250) sets how fast the source follows its data.
