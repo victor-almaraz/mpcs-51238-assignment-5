@@ -262,7 +262,7 @@ These shortcuts apply in the editor; `src/ui/shortcuts.js` holds the table. The 
 - `@codemirror/lang-javascript` in TypeScript mode provides syntax highlighting.
 - `@valtown/codemirror-ts` connects CodeMirror to the type-check worker (`piece-dsl.md`, Type checking) for completion, hover types and lint diagnostics. The worker's library files are bundled with the app, so the editor makes no runtime requests for them.
 - Until the type-check worker has loaded, a custom `CompletionSource` reads `PARAM_DEFS`, the effect registry, `src/visual/layer-defs.js` and `src/sky/groups.json` and completes builder names, options, group keys and field names.
-- Type errors appear as wavy `warn` (yellow) underlines and as `type_error` warnings in Problems. Build and validator errors appear as wavy `error` (red) underlines; build and validator warnings use the `warn` underline. When the type-check worker fails to load, the editor shows "Type checking unavailable".
+- Type errors appear as wavy `warn` (yellow) underlines and as `type_error` warnings in Problems. Build and validator errors appear as wavy `error` (red) underlines; build and validator warnings use the `warn` underline. The underlines are redrawn whenever a build finishes and when the type-check worker becomes ready, so a fixed error loses its underline without another edit. When the type-check worker fails to load, the editor shows "Type checking unavailable".
 
 ## Settings schema
 ```json

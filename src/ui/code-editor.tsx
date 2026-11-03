@@ -46,13 +46,16 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
     let worker: Worker | null = null;
     (async () => {
       try {
-        const [{ EditorView, basicSetup }, { EditorState, Compartment, Prec }, { javascript }, ac, lint, { keymap }, lang, { syntaxHighlighter }, defsMod, completionMod] = await Promise.all([
+        const [{ EditorView, basicSetup }, { EditorState, Compartment, Prec, StateEffect }, { javascript }, ac, lint, { keymap }, lang, { syntaxHighlighter }, defsMod, completionMod] = await Promise.all([
           import('codemirror'), import('@codemirror/state'), import('@codemirror/lang-javascript'), import('@codemirror/autocomplete'),
           import('@codemirror/lint'), import('@codemirror/view'), import('@codemirror/language'), import('@/src/ui/syntax.js'),
           import('@/src/dsl/load-defs.js'), import('@/src/ui/completion.js'),
         ]);
         if (disposed || !host.current) return;
         const themeComp = new Compartment();
+        // forceLinting only runs a lint that is already scheduled; this effect schedules one, so new
+        // build problems or a ready type checker redraw the underlines without another edit.
+        const refreshLint = StateEffect.define<null>();
         const themeFor = (size: number, mode: string) => [
           EditorView.theme({
             '&': { height: '100%', fontSize: `${size}px`, backgroundColor: 'var(--panel)', color: 'var(--fg)' },
@@ -135,7 +138,7 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
             javascript({ typescript: true }),
             themeComp.of(themeFor(fontSize, theme)),
             ac.autocompletion({ override: [source], activateOnTyping: true }),
-            lint.linter(lintSource, { delay: 400 }),
+            lint.linter(lintSource, { delay: 400, needsRefresh: (u: any) => u.transactions.some((tr: any) => tr.effects.some((e: any) => e.is(refreshLint))) }),
             lint.lintGutter(),
             ...tsExt,
             Prec.high(keymap.of([{ key: 'Tab', run: ac.acceptCompletion }])),
@@ -145,7 +148,10 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
         });
         const view = new EditorView({ state, parent: host.current });
         viewRef.current = view;
-        forceLint.current = () => lint.forceLinting(view);
+        forceLint.current = () => {
+          view.dispatch({ effects: refreshLint.of(null) });
+          lint.forceLinting(view);
+        };
         reconfigure.current = (size, mode) => view.dispatch({ effects: themeComp.reconfigure(themeFor(size, mode)) });
         setStatus('ready');
         onReady?.({
