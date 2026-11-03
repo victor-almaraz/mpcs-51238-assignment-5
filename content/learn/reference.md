@@ -218,6 +218,7 @@ Handlers are registered in the setup; commands and `read.*` work inside handlers
 | `inst.play(pitch, { velocity, pan, durationMs })` | One note; defaults velocity 100, pan 0, 250 ms (20–10,000) |
 | `inst.hold(key, pitch, { velocity, pan })` | A held note named `key` (1–64 characters) |
 | `inst.glide(key, pitch, ms)` | Slides a held note; `ms` 0–10,000, default 150 |
+| `inst.pan(key, pan)` | Moves a held note's pan, −1 to 1 |
 | `inst.stop(key)`, `inst.stopAll()` | Releases held notes |
 | `inst.<param>.set(value, { smoothMs })`, `slot.<param>.set(...)` | Sets a numeric parameter; `smoothMs` default 250 |
 | `inst.harmonics.set(values)` | Sets an additive instrument's 8 harmonics, each 0–1, at once |

@@ -66,6 +66,7 @@ Inside a handler, instruments, parameters and layers take commands:
 | `inst.play(pitch, { velocity, pan, durationMs })` | One note |
 | `inst.hold(key, pitch, { velocity, pan })` | A note that sounds until `inst.stop(key)` |
 | `inst.glide(key, pitch, ms)` | Slides a held note to a new pitch |
+| `inst.pan(key, pan)` | Moves a held note left (−1) or right (1), for example following live data |
 | `inst.stop(key)`, `inst.stopAll()` | Releases held notes |
 | `inst.cutoff.set(value, { smoothMs })` | Sets a parameter |
 | `delayFx.bypass.set(true)` | Bypasses an effect |

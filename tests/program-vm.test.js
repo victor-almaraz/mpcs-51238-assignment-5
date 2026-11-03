@@ -183,6 +183,7 @@ test('hold, glide, stop, set and layer commands', () => {
     on('jpl.scout', 'enter', () => {
       pad.hold('a', 60, { pan: -2 });
       pad.glide('a', 62);
+      pad.pan('a', 3);
       pad.cutoff.set(99999, { smoothMs: 100 });
       d.mix.set(0.5);
       d.bypass.set(true);
@@ -198,6 +199,7 @@ test('hold, glide, stop, set and layer commands', () => {
   assert.deepEqual(r.commands.map(strip), [
     { op: 'hold', inst: 'i0', key: 'a', pitch: 60, velocity: 100, pan: -1 },
     { op: 'glide', inst: 'i0', key: 'a', pitch: 62, ms: 150 },
+    { op: 'pan', inst: 'i0', key: 'a', pan: 1 },
     { op: 'set', target: 'i0.cutoff', value: 16000, smoothMs: 100 },
     { op: 'set', target: 'f0.mix', value: 0.5, smoothMs: 250 },
     { op: 'set', target: 'f0.bypass', value: true },

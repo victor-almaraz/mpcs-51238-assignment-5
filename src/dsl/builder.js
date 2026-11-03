@@ -310,6 +310,13 @@ export function createBuilder(defs, { line = () => null } = {}) {
       if (p === null) return;
       P.emit(where, { op: 'glide', inst: rec.id, key: k, pitch: p, ms: optNum(ms, PROGRAM.glideMs, PROGRAM.defaultGlideMs, where, 'ms') });
     },
+    /** @param {unknown} key @param {unknown} pan */
+    pan(key, pan) {
+      const where = `${rec.type}.pan()`;
+      P.inHandler(where);
+      const k = keyOf(key, where);
+      P.emit(where, { op: 'pan', inst: rec.id, key: k, pan: clampNum(pan, /** @type {[number, number]} */ (RANGES.pan), where, 'pan') });
+    },
     /** @param {unknown} key */
     stop(key) {
       const where = `${rec.type}.stop()`;

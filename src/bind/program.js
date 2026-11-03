@@ -17,7 +17,7 @@ import { coerceProp } from '../visual/layer-state.js';
  * @typedef {{ code: 'handler_error' | 'handler_timeout', line: number | null, message: string }} RuntimeProblem
  */
 
-const OPS = new Set(['play', 'hold', 'glide', 'stop', 'stopAll', 'set', 'layer']);
+const OPS = new Set(['play', 'hold', 'glide', 'pan', 'stop', 'stopAll', 'set', 'layer']);
 /** Error sources that mean the VM no longer holds the program. */
 const FATAL = new Set(['setup', 'vm']);
 
@@ -68,6 +68,10 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
   /** List parameters (`harmonics`) by target: the value waiting to be sent, rate-limited. @type {Map<string, { pending: number[] | null, lastSent: number }>} */
   const lists = new Map();
   const listIntervalMs = 1000 / PROGRAM.harmonicsPerSecond;
+  /** Held-note pans by tag: the value waiting to be sent, rate-limited like parameters. @type {Map<string, { inst: string, pending: number | null, lastSent: number, lastTraced: number }>} */
+  const pans = new Map();
+  /** Instruments without setVoicePan, traced once. @type {Set<string>} */
+  const noPan = new Set();
   /** Orbits declared with follow(sky.orbit(...)), in IR order. */
   const orbitSpecs = (ir.program?.orbits ?? []).map((/** @type {any} */ n) => ({ objectId: n.args[1], quantity: n.args[0], timeScale: n.args[2] ?? 1 }));
   /** @type {Record<string, Record<string, unknown>>} */
@@ -188,6 +192,25 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
     }
   }
 
+  /** Sends waiting held-note pans whose interval has passed. */
+  function flushPans() {
+    const n = clock.now();
+    for (const [tag, e] of pans) {
+      if (e.pending === null || n - e.lastSent < LIMITS.postIntervalMs) continue;
+      if (!held.has(tag)) { pans.delete(tag); continue; }
+      const inst = engine.get(e.inst);
+      const pan = e.pending;
+      e.pending = null;
+      e.lastSent = n;
+      try {
+        inst?.setVoicePan(tag, pan);
+      } catch (err) {
+        bind('error', { tag, message: err instanceof Error ? err.message : String(err) }, null, 'error');
+      }
+      if (n - e.lastTraced >= 1000) { e.lastTraced = n; audio('setVoicePan', { inst: e.inst, source: tag, pan }, null); }
+    }
+  }
+
   /** Applies one command. @param {any} cmd @param {string | null} traceId */
   function apply(cmd, traceId) {
     if (!cmd || typeof cmd !== 'object' || !OPS.has(cmd.op)) { invalid(cmd, 'unknown op', traceId); return; }
@@ -237,6 +260,22 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
         }
         return;
       }
+      case 'pan': {
+        const inst = instOf(cmd, traceId);
+        if (!inst) return;
+        if (typeof cmd.key !== 'string' || typeof cmd.pan !== 'number' || !Number.isFinite(cmd.pan)) { invalid(cmd, 'pan or key', traceId); return; }
+        const tag = `prog:${cmd.inst}:k:${cmd.key}`;
+        if (!held.has(tag)) return;
+        if (typeof inst.setVoicePan !== 'function') {
+          if (!noPan.has(cmd.inst)) { noPan.add(cmd.inst); audio('fallback', { inst: cmd.inst, source: tag, reason: 'no setVoicePan' }, traceId); }
+          return;
+        }
+        let e = pans.get(tag);
+        if (!e) { e = { inst: cmd.inst, pending: null, lastSent: -Infinity, lastTraced: -Infinity }; pans.set(tag, e); }
+        e.pending = clamp(cmd.pan, -1, 1);
+        flushPans();
+        return;
+      }
       case 'stop':
         if (typeof cmd.inst === 'string' && typeof cmd.key === 'string') release(`prog:${cmd.inst}:k:${cmd.key}`, t, traceId);
         else invalid(cmd, 'key', traceId);
@@ -264,7 +303,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
           let e = lists.get(target);
           if (!e) { e = { pending: null, lastSent: -Infinity }; lists.set(target, e); }
           e.pending = cmd.value.map((/** @type {number} */ x) => clamp(x, /** @type {number} */ (def.min), /** @type {number} */ (def.max)));
-          audio('setParam', { target, value: e.pending }, traceId);
+          audio('setParam', { target, values: e.pending.length }, traceId);
           flushLists();
           return;
         }
@@ -286,7 +325,9 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
         }
         if (Object.keys(props).length === 0) return;
         layerValues = { ...layerValues, [layer.id]: { ...layerValues[layer.id], ...props } };
-        emit('VISUAL', 'program', 'layerSet', { layer: layer.id, props }, { traceId });
+        // Lists (grid cells and sizes) are traced by length; a trace record per change must stay small.
+        const summary = Object.fromEntries(Object.entries(props).map(([k, v]) => [k, Array.isArray(v) ? `${v.length} values` : v]));
+        emit('VISUAL', 'program', 'layerSet', { layer: layer.id, props: summary }, { traceId });
         onLayerValues();
         return;
       }
@@ -353,6 +394,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
     if (!running) return;
     stepSmoothers();
     flushLists();
+    flushPans();
     if (inflight) return;
     inflight = true;
     const events = queue;
@@ -375,6 +417,7 @@ export function createProgramHost({ ir, vm, engine, sky, trace = () => {}, clock
     const t = clock.audioTime();
     for (const tag of [...held.keys()]) release(tag, t, null);
     lists.clear();
+    pans.clear();
     queue = [];
     fresh = [];
     if (tellVm) vm.program({ op: 'stop' }).catch(() => {});

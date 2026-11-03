@@ -143,6 +143,8 @@ interface Playable {
   hold(key: string, pitch: number | null, opts?: HoldOptions): void;
   /** Moves a held note to pitch over ms (default 150). */
   glide(key: string, pitch: number | null, ms?: number): void;
+  /** Moves a held note's pan, −1 (left) to 1 (right). */
+  pan(key: string, pan: number): void;
   /** Releases one held note. */
   stop(key: string): void;
   /** Releases every held note of this instrument. */

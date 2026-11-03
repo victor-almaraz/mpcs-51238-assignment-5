@@ -168,6 +168,21 @@ test('harmonics updates reach setParam at most 30 times a second, latest value f
   assert.equal(s.trace.of({ stage: 'BIND', event: 'invalid' }).length, 3);
 });
 
+test('pan moves a held note through setVoicePan at most 30 times a second', async () => {
+  const s = setup(scriptedVm([
+    { commands: [cmd({ op: 'hold', inst: 'i0', key: 'a', pitch: 60 }), cmd({ op: 'pan', inst: 'i0', key: 'a', pan: 0.5 }), cmd({ op: 'pan', inst: 'i0', key: 'a', pan: -0.25 }), cmd({ op: 'pan', inst: 'i0', key: 'x', pan: 1 })], errors: [], dropped: 0 },
+  ]), null, { ir: IR });
+  await s.host.start();
+  const pans = () => s.inst().callsOf('setVoicePan').map((c) => c[2]);
+  assert.deepEqual(pans(), [0.5], 'the first pan at once; a key that is not held is ignored');
+  s.clock.advance(25);
+  await flush();
+  assert.deepEqual(pans(), [0.5]);
+  s.clock.advance(25);
+  await flush();
+  assert.deepEqual(pans(), [0.5, -0.25], 'the latest waiting pan once 33 ms have passed');
+});
+
 test('a grid cells list is coerced at the boundary', async () => {
   const ir = { ...IR, layers: [{ id: 'l0', type: 'grid', group: null, props: { cells: [] } }] };
   const s = setup(scriptedVm([{ commands: [cmd({ op: 'layer', layer: 'l0', props: { cells: ['#ABCDEF', 'nope', '#000000'], sizes: [0.25, 'x', 3] } })], errors: [], dropped: 0 }]), null, { ir });
