@@ -21,13 +21,15 @@ export function isReducedMotion(setting, systemPrefersReduced) {
 }
 
 /**
- * Pixel ratio for a renderer: installation mode uses the device ratio up to
- * 2; the editor preview uses `visual.previewScale` (0.25–1).
+ * Pixel ratio for a renderer: run and installation mode use the device ratio
+ * up to 2; the editor preview uses that ratio times `visual.previewScale`
+ * (0.25–1), a fraction of the display's resolution.
  * @param {{ installation?: boolean, previewScale?: number, devicePixelRatio?: number }} o
  */
-export function pixelRatioFor({ installation = false, previewScale = 0.5, devicePixelRatio = 1 }) {
-  const r = installation ? Math.min(devicePixelRatio || 1, MAX_PIXEL_RATIO) : Math.min(1, Math.max(MIN_PIXEL_RATIO, previewScale));
-  return clampPixelRatio(r);
+export function pixelRatioFor({ installation = false, previewScale = 1, devicePixelRatio = 1 }) {
+  const device = Math.min(Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1, MAX_PIXEL_RATIO);
+  const scale = Number.isFinite(previewScale) ? Math.min(1, Math.max(0.25, previewScale)) : 1;
+  return clampPixelRatio(installation ? device : device * scale);
 }
 
 /** @param {number} r */

@@ -39,9 +39,10 @@ test('reduced motion: the setting can only make the OS preference stricter', () 
 test('pixel ratio: installation up to 2, preview at the settings scale', () => {
   assert.equal(pixelRatioFor({ installation: true, devicePixelRatio: 3 }), 2);
   assert.equal(pixelRatioFor({ installation: true, devicePixelRatio: 1.5 }), 1.5);
-  assert.equal(pixelRatioFor({ previewScale: 0.5, devicePixelRatio: 2 }), 0.5);
+  assert.equal(pixelRatioFor({ devicePixelRatio: 2 }), 2, 'the default preview is as sharp as the display');
+  assert.equal(pixelRatioFor({ previewScale: 0.5, devicePixelRatio: 2 }), 1);
   assert.equal(pixelRatioFor({ previewScale: 0.1 }), 0.25);
-  assert.equal(pixelRatioFor({ previewScale: 4 }), 1);
+  assert.equal(pixelRatioFor({ previewScale: 4, devicePixelRatio: 3 }), 2);
   assert.equal(clampPixelRatio(NaN), 1);
 });
 

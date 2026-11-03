@@ -10,7 +10,7 @@ export const DEFAULT_OBSERVER = Object.freeze({ lat: 41.79, lon: -87.6 });
 
 export const DEFAULT_SETTINGS = Object.freeze({
   audio: { masterDb: -12, maxMasterDb: 0 },
-  visual: { reducedMotion: 'system', maxFlashesPerSecond: MAX_FLASHES_PER_SECOND, previewScale: 0.5 },
+  visual: { reducedMotion: 'system', maxFlashesPerSecond: MAX_FLASHES_PER_SECOND, previewScale: 1 },
   editor: { fontSize: 14, theme: 'dark', keymap: 'default' },
   data: { replaySpeed: 100, consoleBuffer: 2000, timeZone: 'UTC', observer: { ...DEFAULT_OBSERVER } },
 });

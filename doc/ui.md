@@ -268,7 +268,7 @@ These shortcuts apply in the editor; `src/ui/shortcuts.js` holds the table. The 
 ```json
 {
   "audio":  { "masterDb": -12, "maxMasterDb": 0 },
-  "visual": { "reducedMotion": "system", "maxFlashesPerSecond": 3, "previewScale": 0.5 },
+  "visual": { "reducedMotion": "system", "maxFlashesPerSecond": 3, "previewScale": 1 },
   "editor": { "fontSize": 14, "theme": "dark", "keymap": "default" },
   "data":   { "replaySpeed": 100, "consoleBuffer": 2000, "timeZone": "UTC",
               "observer": { "lat": 41.79, "lon": -87.60 } }
@@ -280,7 +280,7 @@ These shortcuts apply in the editor; `src/ui/shortcuts.js` holds the table. The 
 | `audio.maxMasterDb` | −60 to 0 | Cannot exceed the engine maximum |
 | `visual.reducedMotion` | `system`, `on` | `off` is not a value; the OS setting can only be made stricter |
 | `visual.maxFlashesPerSecond` | 0 to 3 | Cannot exceed 3 |
-| `visual.previewScale` | 0.25 to 1 | |
+| `visual.previewScale` | 0.25 to 1 | A fraction of the display's resolution (device pixel ratio, at most 2) |
 | `editor.fontSize` | 10 to 24 | |
 | `editor.theme` | `dark`, `light` | Sets `data-theme` on the document of every screen that loads settings; the preview and run views stay dark |
 | `editor.keymap` | `default`, `vim` | `vim` falls back to the default keymap (Settings) |
