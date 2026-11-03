@@ -420,8 +420,9 @@ interface ReactionActions {
       const doc = p.type === 'number' ? `${fmt(/** @type {number} */ (p.min))}–${fmt(/** @type {number} */ (p.max))}${p.unit ? ` ${p.unit}` : ''}. Default ${fmt(/** @type {number} */ (p.default))}.`
         : p.type === 'enum' ? `${p.options?.map((o) => `'${o}'`).join(', ')}. Default '${p.default}'.`
           : p.type === 'colors' ? `Up to ${p.maxLength} colours, row by row from the top left; constants only. Default [].`
+            : p.type === 'numbers' ? `Up to ${p.maxLength} numbers, each ${fmt(/** @type {number} */ (p.min))}–${fmt(/** @type {number} */ (p.max))}, one per cell; constants only. Default [].`
             : `Default '${p.default}'.`;
-      const t = p.type === 'number' ? 'Num<C>' : p.type === 'color' ? 'ColorLike<C>' : p.type === 'colors' ? 'readonly Hex[]'
+      const t = p.type === 'number' ? 'Num<C>' : p.type === 'color' ? 'ColorLike<C>' : p.type === 'colors' ? 'readonly Hex[]' : p.type === 'numbers' ? 'readonly number[]'
         : p.type === 'enum' ? `${union(p.options ?? [])} | StrExpr<C>` : 'string | StrExpr<C>';
       L.push(`  /** ${doc} */`);
       L.push(`  ${key(name)}?: ${t};`);
@@ -431,7 +432,7 @@ interface ReactionActions {
     L.push(`interface ${pascal(type)}LayerValues {`);
     for (const name of spec.order) {
       const p = spec.props[name];
-      const t = p.type === 'number' ? 'number' : p.type === 'color' ? 'Hex' : p.type === 'colors' ? 'readonly Hex[]' : p.type === 'enum' ? union(p.options ?? []) : 'string';
+      const t = p.type === 'number' ? 'number' : p.type === 'color' ? 'Hex' : p.type === 'colors' ? 'readonly Hex[]' : p.type === 'numbers' ? 'readonly number[]' : p.type === 'enum' ? union(p.options ?? []) : 'string';
       L.push(`  ${key(name)}?: ${t};`);
     }
     L.push('}');

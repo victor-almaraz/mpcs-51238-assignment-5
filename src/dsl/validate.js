@@ -396,6 +396,11 @@ class Checker {
           else v.forEach((c, i) => { if (typeof c !== 'string' || !COLOR_HEX.test(c)) this.add('ir_schema', `${pp}/${i}`, "A colour must look like '#rrggbb'"); });
           continue;
         }
+        if (def.type === 'numbers') {
+          if (!Array.isArray(v) || v.length > /** @type {number} */ (def.maxLength)) this.add('ir_schema', pp, `${name} must be a list of at most ${def.maxLength} numbers`);
+          else v.forEach((x, i) => { if (typeof x !== 'number') this.add('ir_schema', `${pp}/${i}`, `${name} entries must be numbers`); else this.range(x, [/** @type {number} */ (def.min), /** @type {number} */ (def.max)], `${pp}/${i}`, name); });
+          continue;
+        }
         if (isNode(v)) continue;
         if (def.type === 'number') {
           if (typeof v !== 'number') this.add('ir_schema', pp, `${name} must be a number or an expression`);

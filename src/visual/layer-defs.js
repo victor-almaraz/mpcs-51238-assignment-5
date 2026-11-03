@@ -15,6 +15,7 @@
  *     | { type: 'char',   default }            // one character
  *     | { type: 'enum',   options, default }
  *     | { type: 'colors', max, default }       // list of '#rrggbb', at most `max`; constant or set from a handler
+ *     | { type: 'numbers', min, max, length, default } // list of numbers in [min, max], at most `length`; likewise
  *
  * `unit` is 'px', 's' or 'min'. `reducedMotion` is the value forced while
  * reduced motion is active.
@@ -23,7 +24,8 @@
  *   | { type: 'color', default: string }
  *   | { type: 'char', default: string }
  *   | { type: 'enum', options: readonly string[], default: string }
- *   | { type: 'colors', max: number, default: readonly string[] }} PropDef
+ *   | { type: 'colors', max: number, default: readonly string[] }
+ *   | { type: 'numbers', min: number, max: number, length: number, default: readonly number[] }} PropDef
  * @typedef {{ group: boolean, localOnly: boolean, props: Record<string, PropDef> }} LayerDef
  */
 
@@ -101,6 +103,8 @@ export const LAYER_DEFS = deepFreeze({
       gap: { type: 'number', min: 0, max: 8, default: 2, unit: 'px' },
       background: { type: 'color', default: '#000000' },
       cells: { type: 'colors', max: 1024, default: [] },
+      sizes: { type: 'numbers', min: 0, max: 1, length: 1024, default: [] },
+      shape: { type: 'enum', options: ['square', 'circle'], default: 'square' },
     },
   },
   shader: {

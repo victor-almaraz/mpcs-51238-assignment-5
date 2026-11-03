@@ -170,23 +170,24 @@ function normalizeLayerProps(type, props) {
   for (const [name, p] of Object.entries(props)) {
     if (!isObject(p)) throw new Error(`normalizeDefs: LAYER_DEFS.${type}.props.${name} must be an object`);
     const options = Array.isArray(p.options) ? p.options.map(String) : null;
-    const type2 = typeof p.type === 'string' && ['number', 'color', 'enum', 'string', 'colors'].includes(p.type)
+    const type2 = typeof p.type === 'string' && ['number', 'color', 'enum', 'string', 'colors', 'numbers'].includes(p.type)
       ? p.type
       : p.type === 'colour' ? 'color'
         : p.type === 'char' ? 'string'
         : options ? 'enum'
           : typeof p.default === 'string' ? (p.default.startsWith('#') ? 'color' : 'string')
             : 'number';
-    if (type2 === 'number' && (!Number.isFinite(p.min) || !Number.isFinite(p.max) || !Number.isFinite(p.default))) {
+    if ((type2 === 'number' || type2 === 'numbers') && (!Number.isFinite(p.min) || !Number.isFinite(p.max) || (type2 === 'number' && !Number.isFinite(p.default)))) {
       throw new Error(`normalizeDefs: LAYER_DEFS.${type}.props.${name} needs numeric min, max and default`);
     }
     out[name] = {
       type: type2,
-      min: type2 === 'number' ? p.min : null,
-      max: type2 === 'number' ? p.max : null,
+      min: type2 === 'number' || type2 === 'numbers' ? p.min : null,
+      max: type2 === 'number' || type2 === 'numbers' ? p.max : null,
       default: p.default ?? (options ? options[0] : ''),
       options,
       maxLength: type2 === 'colors' ? (Number.isFinite(p.max) ? p.max : 1024)
+        : type2 === 'numbers' ? (Number.isFinite(p.length) ? p.length : 1024)
         : Number.isFinite(p.maxLength) ? p.maxLength : p.type === 'char' || (type2 === 'string' && name === 'char') ? 1 : null,
       unit: typeof p.unit === 'string' ? p.unit : '',
     };

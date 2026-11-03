@@ -70,12 +70,13 @@ test('every layer type has a valid shape and frozen definitions', () => {
     assert.equal(typeof def.localOnly, 'boolean', type);
     assert.ok(Object.isFrozen(def.props), type);
     for (const [name, p] of Object.entries(def.props)) {
-      assert.ok(['number', 'color', 'char', 'enum', 'colors'].includes(p.type), `${type}.${name}`);
+      assert.ok(['number', 'color', 'char', 'enum', 'colors', 'numbers'].includes(p.type), `${type}.${name}`);
       if (p.type === 'number') assert.ok(p.min <= p.default && p.default <= p.max, `${type}.${name} default in range`);
       if (p.type === 'color') assert.match(p.default, /^#[0-9a-f]{6}$/);
       if (p.type === 'enum') assert.ok(p.options.includes(p.default));
       if (p.type === 'char') assert.equal([...p.default].length, 1);
       if (p.type === 'colors') assert.ok(Array.isArray(p.default) && p.max > 0, `${type}.${name} list`);
+      if (p.type === 'numbers') assert.ok(Array.isArray(p.default) && p.length > 0 && p.min < p.max, `${type}.${name} list`);
     }
   }
   assert.deepEqual(LAYER_TYPES.filter((t) => LAYER_DEFS[t].group), ['points', 'rings', 'lines', 'glyph']);

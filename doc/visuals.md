@@ -17,14 +17,14 @@ Draw the IR's layers each frame from sky data and audio signals, within the visu
 | `layer.glyph(group, props)` | One character per object |
 | `layer.field(props)` | Full-screen gradient or noise |
 | `layer.aurora(props)` | Full-screen aurora curtain |
-| `layer.grid(props)` | A grid of coloured squares, one colour per cell |
+| `layer.grid(props)` | A grid of coloured squares or circles, with one colour and one size per cell |
 | `layer.shader(glsl, props)` | Fragment shader; local-only |
 | `color(hex)` | Colour expression; `.mix(other, t)` blends toward `other` (a hex string or colour expression) by `t`, a number or expression clamped to 0–1 |
 | `audio.level(inst)` | RMS level of the instrument output, 0–1 |
 | `audio.spectrum(inst, bands)` | Array of `bands` (4–32) band levels, 0–1 |
 | `audio.voice(inst).env()` | Envelope value of the voice bound to the current object, 0–1 |
 
-Every layer constructor except `layer.shader` returns a layer handle. Inside a program's handlers, `handle.set(props)` sets constant property values (`piece-dsl.md`, Program). The session pushes them with the sky-driven values through `setLayerValues`; a pushed value overrides the layer's constant, and the flash guard holds colours, colour lists (`grid` `cells`) and opacities as it does for expression-driven ones.
+Every layer constructor except `layer.shader` returns a layer handle. Inside a program's handlers, `handle.set(props)` sets constant property values (`piece-dsl.md`, Program). The session pushes them with the sky-driven values through `setLayerValues`; a pushed value overrides the layer's constant, and the flash guard holds colours, colour lists (`grid` `cells`), the grid's `sizes` and opacities as it does for expression-driven ones.
 
 `audio.voice(inst).env()` is computed from the voice's envelope model (`envValueAt` in the engine) and needs no analyser; it reads the voice of the first `voices` binding on `inst` that sounds for the current object, and is `null` when none does. `audio.level` and `audio.spectrum` read an `AnalyserNode` tapped on the instrument output.
 
@@ -73,8 +73,10 @@ Properties and ranges live in `src/visual/layer-defs.js`, which drives validatio
 | `grid` | `gap` | number (px) | 0–8 | 2 |
 | `grid` | `background` | colour | | `#000000` |
 | `grid` | `cells` | colour list | up to 1024 | `[]` |
+| `grid` | `sizes` | number list | 0–1 each, up to 1024 | `[]` |
+| `grid` | `shape` | enum | `square`, `circle` | `square` |
 
-Every property accepts a constant or an expression, except colour lists, which are constants or values set from a handler. Expressions in layer properties are evaluated per object per frame, so `fn` is not allowed there. `shader` layers have only `opacity`.
+Every property accepts a constant or an expression, except colour and number lists, which are constants or values set from a handler. Expressions in layer properties are evaluated per object per frame, so `fn` is not allowed there. `shader` layers have only `opacity`.
 
 Property meanings:
 - `size`, `radius`, `width` are CSS pixels; the renderer multiplies them by its pixel ratio.
@@ -84,7 +86,7 @@ Property meanings:
 - `field`: a vertical gradient from the colormap, from `colormap(value / 2)` at the bottom edge to `colormap(value)` at the top edge, with static low-frequency noise of ±0.03.
 - `aurora`: a curtain with a sharp, bright, wavy lower edge, a glow that fades over about 10° of latitude toward the pole, and fine vertical rays, green at the edge and violet above it. In `map` there is one curtain per hemisphere, with its lower edge near 60° latitude; in `orbital` the curtain rises from 22% below the top of the canvas; in `sky` it rises from near the northern horizon. `intensity` scales its brightness; `drift` sets how fast the edge and the rays drift along the band, 0 to 0.05 cycles per second. At full drift, the fastest term (the edge's second wave, 1.7 × the drift rate) changes a point of the picture about 0.085 times per second, far below the flash limit.
 
-- `grid`: `cols` × `rows` square cells, rounded to whole numbers, filling the largest centred area that fits in 92% of the canvas. `background` fills that whole area, gaps included, so the projection's decorations do not show through. `cells` holds one `#rrggbb` colour per cell, row by row from the top left; a missing entry, or one that is not a colour, shows `background`. Entries past `cols × rows` are ignored. `gap` is the space between cells.
+- `grid`: `cols` × `rows` square cells, rounded to whole numbers, filling the largest centred area that fits in 92% of the canvas. `background` fills that whole area, gaps included, so the projection's decorations do not show through. `cells` holds one `#rrggbb` colour per cell, row by row from the top left; a missing entry, or one that is not a colour, shows `background`. `sizes` holds one number per cell in the same order: the fraction of the cell (inside the gap) that its square or circle fills, centred, 0 to 1; a missing entry is 1. `shape` draws each cell as a square or as a circle with a 1-pixel soft edge. Entries past `cols × rows` are ignored. `gap` is the space between cells.
 
 | Colormap | Stops (0, 0.5, 1) |
 |---|---|

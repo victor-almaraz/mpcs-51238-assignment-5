@@ -136,16 +136,17 @@ void main() {
 }`;
 
 /** Aurora band. uMode: 0 orbital (top), 1 map (±65°), 2 sky (northern horizon). */
-/** `grid` layer (doc/visuals.md, Property meanings): one cell colour per texel of uCells. */
+/** `grid` layer (doc/visuals.md, Property meanings): colour and size of each cell from uCells. */
 export const GRID_FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes;
 uniform vec4 uArea;      // grid area: x, y (top-left origin), width, height, in device pixels
 uniform vec2 uGrid;      // cols, rows
 uniform float uGap;      // device pixels
+uniform int uShape;      // 0 square, 1 circle
 uniform vec3 uBackground;
 uniform float uOpacity;
-uniform sampler2D uCells; // cols × rows, row 0 at the top; alpha 0 marks a cell without a colour
+uniform sampler2D uCells; // cols × rows, row 0 at the top: rgb colour, alpha its size (0 = no mark)
 out vec4 outColor;
 void main() {
   vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y); // top-left origin
@@ -153,13 +154,13 @@ void main() {
   if (p.x < 0.0 || p.y < 0.0 || p.x >= uArea.z || p.y >= uArea.w) { outColor = vec4(0.0); return; }
   vec2 size = uArea.zw / uGrid;
   vec2 cell = min(floor(p / size), uGrid - 1.0);
-  vec2 local = p - cell * size;
-  float inset = uGap * 0.5;
-  vec3 col = uBackground;
-  if (local.x >= inset && local.y >= inset && local.x < size.x - inset && local.y < size.y - inset) {
-    vec4 c = texelFetch(uCells, ivec2(cell), 0);
-    col = mix(uBackground, c.rgb, c.a);
-  }
+  vec2 d = p - (cell + 0.5) * size;              // from the cell centre
+  vec4 c = texelFetch(uCells, ivec2(cell), 0);
+  float r = max(0.0, (min(size.x, size.y) - uGap) * 0.5) * c.a; // half the mark's width
+  float cover;
+  if (uShape == 1) cover = clamp(r - length(d) + 0.5, 0.0, 1.0); // 1-pixel soft edge
+  else cover = (abs(d.x) < r && abs(d.y) < r) ? 1.0 : 0.0;
+  vec3 col = mix(uBackground, c.rgb, cover);
   outColor = vec4(col * uOpacity, uOpacity);
 }`;
 

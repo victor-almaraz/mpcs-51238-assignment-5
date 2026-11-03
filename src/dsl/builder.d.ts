@@ -1002,6 +1002,10 @@ interface GridLayerProps<C extends Ctx> {
   background?: ColorLike<C>;
   /** Up to 1024 colours, row by row from the top left; constants only. Default []. */
   cells?: readonly Hex[];
+  /** Up to 1024 numbers, each 0–1, one per cell; constants only. Default []. */
+  sizes?: readonly number[];
+  /** 'square', 'circle'. Default 'square'. */
+  shape?: 'square' | 'circle' | StrExpr<C>;
 }
 /** Constant values of a grid layer, for set() in handlers. */
 interface GridLayerValues {
@@ -1011,6 +1015,8 @@ interface GridLayerValues {
   gap?: number;
   background?: Hex;
   cells?: readonly Hex[];
+  sizes?: readonly number[];
+  shape?: 'square' | 'circle';
 }
 interface GridLayer {
   /** Program output, inside handlers only: sets constant property values. */

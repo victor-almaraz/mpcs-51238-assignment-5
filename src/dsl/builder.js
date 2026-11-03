@@ -551,6 +551,11 @@ export function createBuilder(defs, { line = () => null } = {}) {
       v.forEach((c, i) => { if (typeof c !== 'string' || !COLOR_HEX.test(c)) throw new TypeError(`${where}: entry ${i} must look like '#rrggbb'`); });
       return /** @type {any} */ (v.slice());
     }
+    if (spec.type === 'numbers') {
+      const max = /** @type {number} */ (spec.maxLength);
+      if (!Array.isArray(v) || v.length > max) throw new TypeError(`${where}: use a list of at most ${max} numbers`);
+      return /** @type {any} */ (v.map((x, i) => clampNum(x, [/** @type {number} */ (spec.min), /** @type {number} */ (spec.max)], where, `entry ${i}`)));
+    }
     if (isExpr(v)) return v.node;
     switch (spec.type) {
       case 'number': return clampNum(v, [/** @type {number} */ (spec.min), /** @type {number} */ (spec.max)], where, 'value');

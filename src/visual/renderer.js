@@ -776,6 +776,7 @@ class Renderer {
     const cols = Math.max(1, Math.round(p.cols));
     const rows = Math.max(1, Math.round(p.rows));
     const cells = Array.isArray(p.cells) ? p.cells : [];
+    const sizes = Array.isArray(p.sizes) ? p.sizes : [];
     let g = this.gridTex.get(id);
     if (!g) {
       const tex = /** @type {WebGLTexture} */ (gl.createTexture());
@@ -784,14 +785,15 @@ class Renderer {
       g = { tex, key: '' };
       this.gridTex.set(id, g);
     }
-    const key = `${cols}x${rows}:${cells.join(',')}`;
+    const key = `${cols}x${rows}:${cells.join(',')}:${sizes.join(',')}`;
     if (key !== g.key) {
       g.key = key;
       const data = new Uint8Array(cols * rows * 4);
       for (let i = 0; i < cols * rows; i++) {
         const rgb = parseHex(cells[i]);
         if (!rgb) continue; // alpha 0: the cell shows the background
-        data.set([Math.round(rgb[0] * 255), Math.round(rgb[1] * 255), Math.round(rgb[2] * 255), 255], i * 4);
+        const size = typeof sizes[i] === 'number' ? Math.min(1, Math.max(0, sizes[i])) : 1; // alpha: the mark's size
+        data.set([Math.round(rgb[0] * 255), Math.round(rgb[1] * 255), Math.round(rgb[2] * 255), Math.round(size * 255)], i * 4);
       }
       gl.bindTexture(gl.TEXTURE_2D, g.tex);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -807,6 +809,7 @@ class Renderer {
     gl.uniform4f(gl.getUniformLocation(prog, 'uArea'), Math.round((w - aw) / 2), Math.round((h - ah) / 2), aw, ah);
     this.u2(prog, 'uGrid', cols, rows);
     this.u1(prog, 'uGap', Math.min(p.gap * this.settings.pixelRatio, cell / 2));
+    gl.uniform1i(gl.getUniformLocation(prog, 'uShape'), p.shape === 'circle' ? 1 : 0);
     const bg = parseHex(p.background) ?? [0, 0, 0];
     gl.uniform3f(gl.getUniformLocation(prog, 'uBackground'), bg[0], bg[1], bg[2]);
     this.u1(prog, 'uOpacity', p.opacity);
