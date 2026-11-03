@@ -112,6 +112,8 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
   const editor = useRef<EditorApi | null>(null);
   const preview = useRef<PreviewHandle>(null);
   const lastRun = useMemo(() => createLastRunStore(typeof window === 'undefined' ? null : window.localStorage), []);
+  // Stable, so the memoized bottom panel does not re-render on every keystroke.
+  const gotoLine = useCallback((l: number) => editor.current?.goto(l), []);
 
   /** Builds the current source; on success loads (and hot-reloads) the IR. */
   const build = useCallback(async (text: string) => {
@@ -422,7 +424,7 @@ export function Workbench({ mode, project, initialSource, initialIr = null, sign
           {panelOpen && (
             <div className="h-[34%] min-h-32">
               <BottomPanel tab={tab} onTab={setTab} session={session} state={state} client={client} freshness={freshness} problems={problems} ir={ir}
-                onGoto={(l) => editor.current?.goto(l)} timeZone={tz} dev={dev} replaySpeed={settings.data.replaySpeed} />
+                onGoto={gotoLine} timeZone={tz} dev={dev} replaySpeed={settings.data.replaySpeed} />
             </div>
           )}
         </div>

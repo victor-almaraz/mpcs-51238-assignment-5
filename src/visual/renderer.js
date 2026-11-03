@@ -32,6 +32,7 @@ const MAX_ERROR_MESSAGES = 32;
  *   propagator?: import('./propagator.js').Propagator | null,
  *   trace?: (record: any) => void,
  *   pixelRatio?: number,
+ *   maxPixels?: number,
  *   reducedMotion?: 'system' | 'on',
  *   maxFlashesPerSecond?: number,
  *   observer?: { lat: number, lon: number },
@@ -85,6 +86,13 @@ export function safeTrace(fn) {
   return wrapTrace(fn, 'visual');
 }
 
+/** Same length and the same entries. @param {any[]} a @param {any[]} b */
+function sameValues(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 /**
  * Rate limit for a repeating error: `report(message, nowMs)` calls `emit({ message })`
  * the first time a message occurs, then `emit({ message, repeats })` at most once per
@@ -136,8 +144,12 @@ class Renderer {
     this.cancelRaf = o.cancelRaf ?? ((id) => cancelAnimationFrame(id));
     this.audioClock = o.audioClock ?? null;
     this.frameValues = o.frameValues ?? null;
+    /** The pixel ratio in effect after the pixel budget (resize). */
+    this.ratio = clampPixelRatio(o.pixelRatio ?? 1);
     this.settings = {
       pixelRatio: clampPixelRatio(o.pixelRatio ?? 1),
+      /** Most device pixels the canvas may have; the ratio is lowered to fit. */
+      maxPixels: Number.isFinite(o.maxPixels) && /** @type {number} */ (o.maxPixels) > 0 ? /** @type {number} */ (o.maxPixels) : Infinity,
       reducedMotion: o.reducedMotion ?? 'system',
       maxFlashesPerSecond: o.maxFlashesPerSecond ?? MAX_FLASHES_PER_SECOND,
       observer: o.observer ?? { ...DEFAULT_OBSERVER },
@@ -166,7 +178,7 @@ class Renderer {
     this.lastEventMs = new Map();
     /** @type {Map<string, number>} aurora drift phase per layer */
     this.auroraPhase = new Map();
-    /** @type {Map<string, { tex: WebGLTexture, key: string }>} grid cell textures per layer */
+    /** @type {Map<string, { tex: WebGLTexture, cols: number, rows: number, cells: any[], sizes: any[] }>} grid cell textures per layer, with the values last uploaded */
     this.gridTex = new Map();
     this.pathKey = '';
     this.fitKm = fitRadiusKm([]);
@@ -443,9 +455,11 @@ class Renderer {
   }
 
   resize() {
-    const ratio = this.settings.pixelRatio;
     const cssW = this.canvas.clientWidth || this.canvas.width || 1;
     const cssH = this.canvas.clientHeight || this.canvas.height || 1;
+    // The pixel budget lowers the ratio for large canvases (doc/visuals.md, Renderer).
+    const ratio = Math.min(this.settings.pixelRatio, Math.sqrt(this.settings.maxPixels / (cssW * cssH)));
+    this.ratio = ratio;
     const w = Math.max(1, Math.round(cssW * ratio));
     const h = Math.max(1, Math.round(cssH * ratio));
     if (w === this.size.w && h === this.size.h) return;
@@ -479,6 +493,8 @@ class Renderer {
   /** @param {number} perfMs */
   frame(perfMs) {
     if (this.lost) return;
+    // A hidden pane has no layout size: draw nothing until it shows again (doc/visuals.md, Renderer).
+    if (this.canvas.isConnected && this.canvas.clientWidth === 0 && this.canvas.clientHeight === 0) return;
     const gl = this.gl;
     const nowMs = this.now();
     const dt = this.lastFrameAt ? (perfMs - this.lastFrameAt) / 1000 : 1 / 60;
@@ -564,7 +580,7 @@ class Renderer {
           }
         }
         const sprites = buildSprites({
-          layer, objects, positions, projection, view, ctx, resolve, pixelRatio: this.settings.pixelRatio, nowMs,
+          layer, objects, positions, projection, view, ctx, resolve, pixelRatio: this.ratio, nowMs,
           lastEventMs: this.lastEventMs, glyphIndex: (ch) => this.glyphIndex(ch),
         });
         this.drawSprites(layer.type === 'points' ? 0 : layer.type === 'rings' ? 1 : 2, sprites.data, sprites.count);
@@ -698,7 +714,7 @@ class Renderer {
     const paths = this.propagator?.paths(key) ?? null;
     if (!paths) return;
     const seg = buildSegments({
-      paths, objects, projection, view, simNowMs: simNow, pathSimMs: paths.simMs ?? simNow, window, head, pixelRatio: this.settings.pixelRatio,
+      paths, objects, projection, view, simNowMs: simNow, pathSimMs: paths.simMs ?? simNow, window, head, pixelRatio: this.ratio,
     });
     this.drawSegmentData(seg.data, seg.count);
   }
@@ -707,7 +723,7 @@ class Renderer {
   drawDecorations(projection, view, bg) {
     const { width: w, height: h } = view;
     const line = mixRgb(bg, [1, 1, 1], 0.12);
-    const r = this.settings.pixelRatio;
+    const r = this.ratio;
     if (projection === 'orbital') {
       const d = earthDisc(view.cam);
       const fill = mixRgb(bg, [0.35, 0.5, 0.75], 0.18);
@@ -782,12 +798,14 @@ class Renderer {
       const tex = /** @type {WebGLTexture} */ (gl.createTexture());
       gl.bindTexture(gl.TEXTURE_2D, tex);
       for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-      g = { tex, key: '' };
+      g = { tex, cols: 0, rows: 0, cells: /** @type {any[]} */ ([]), sizes: /** @type {any[]} */ ([]) };
       this.gridTex.set(id, g);
     }
-    const key = `${cols}x${rows}:${cells.join(',')}:${sizes.join(',')}`;
-    if (key !== g.key) {
-      g.key = key;
+    if (g.cols !== cols || g.rows !== rows || !sameValues(g.cells, cells) || !sameValues(g.sizes, sizes)) {
+      g.cols = cols;
+      g.rows = rows;
+      g.cells = cells.slice();
+      g.sizes = sizes.slice();
       const data = new Uint8Array(cols * rows * 4);
       for (let i = 0; i < cols * rows; i++) {
         const rgb = parseHex(cells[i]);
@@ -808,7 +826,7 @@ class Renderer {
     this.u2(prog, 'uRes', w, h);
     gl.uniform4f(gl.getUniformLocation(prog, 'uArea'), Math.round((w - aw) / 2), Math.round((h - ah) / 2), aw, ah);
     this.u2(prog, 'uGrid', cols, rows);
-    this.u1(prog, 'uGap', Math.min(p.gap * this.settings.pixelRatio, cell / 2));
+    this.u1(prog, 'uGap', Math.min(p.gap * this.ratio, cell / 2));
     gl.uniform1i(gl.getUniformLocation(prog, 'uShape'), p.shape === 'circle' ? 1 : 0);
     const bg = parseHex(p.background) ?? [0, 0, 0];
     gl.uniform3f(gl.getUniformLocation(prog, 'uBackground'), bg[0], bg[1], bg[2]);
@@ -832,7 +850,7 @@ class Renderer {
     if (!obj) return;
     const pos = objectScreenPosition(obj, positions, projection, view, ctx);
     if (!pos) return;
-    const r = this.settings.pixelRatio;
+    const r = this.ratio;
     this.drawSprites(1, new Float32Array([pos.x, pos.y, 10 * r, 1.5 * r, 1, 1, 1, 0.9, 0]), 1);
   }
 

@@ -19,8 +19,11 @@ import { DEFAULT_SETTINGS } from '../lib/settings.js';
 import { createSkySwitch, createNullSky } from './sky-switch.js';
 import { createLocalFn } from './local-fn.js';
 import { audioDrivenProps, backgroundValue, computeLayerValues, orbitGroupsOf, orbitSourcesOf } from './ir-helpers.js';
+import { canonicalJson } from '../bind/canonical.js';
 
 export const LAYER_VALUES_MS = 250;
+/** Most device pixels the editor preview draws (doc/visuals.md, Renderer). */
+export const PREVIEW_MAX_PIXELS = 1_500_000;
 
 /**
  * @typedef {'stopped' | 'starting' | 'playing' | 'muted' | 'fault'} AudioState
@@ -67,6 +70,16 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
   const MAX_RUNTIME_PROBLEMS = 50;
   let noticeId = 0;
   let cfg = settings;
+  /** Sorted groups of the last follow, and canonical JSON of the last IR the visuals were given. */
+  let followedKey = null;
+  let loadedKey = null;
+  /** One layer-value push per batch of program commands. */
+  let pushQueued = false;
+  const queuePush = () => {
+    if (pushQueued) return;
+    pushQueued = true;
+    queueMicrotask(() => { pushQueued = false; pushValues(); });
+  };
   /** @type {any} */ let ir = null;
   /** @type {any} */ let renderer = null;
   /** @type {any} */ let host = null;
@@ -126,7 +139,7 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
       onProgramProblem: (p) => set({
         runtimeProblems: [...state.runtimeProblems, { severity: 'error', code: p.code, path: '/program', line: p.line, message: p.message }].slice(-MAX_RUNTIME_PROBLEMS),
       }),
-      onLayerValues: () => pushValues(),
+      onLayerValues: queuePush,
       groupSource: (g) => sourceOf(g) ?? g,
       onVisualReaction: (d) => renderer?.setDesaturate(d),
       masterLevel: () => (master ? master.level() : null),
@@ -193,11 +206,20 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
       ir = next;
       if (state.runtimeProblems.length) set({ runtimeProblems: [] });
       const groups = next.groups ?? [];
-      // The sky store traces the cause and keeps retrying (doc/sky-contract.md); the notice stays plain.
-      sky.follow(groups).catch(() => set({ error: `Live data for ${groups.join(', ')} is unavailable. Sphärenmusik keeps trying; the console shows the details.` }));
-      propagator.setGroups(orbitGroupsOf(next));
-      propagator.setOrbitSources(orbitSourcesOf(next));
-      applyIrToVisuals();
+      // The same groups keep the live-data subscription; the same IR keeps the visuals (doc/ui.md, Editor).
+      const groupsKey = [...groups].sort().join(',');
+      if (groupsKey !== followedKey) {
+        followedKey = groupsKey;
+        // The sky store traces the cause and keeps retrying (doc/sky-contract.md); the notice stays plain.
+        sky.follow(groups).catch(() => set({ error: `Live data for ${groups.join(', ')} is unavailable. Sphärenmusik keeps trying; the console shows the details.` }));
+      }
+      const irKey = canonicalJson(next);
+      if (irKey !== loadedKey) {
+        loadedKey = irKey;
+        propagator.setGroups(orbitGroupsOf(next));
+        propagator.setOrbitSources(orbitSourcesOf(next));
+        applyIrToVisuals();
+      }
       set({ followed: [...groups] });
       if (host && host.runtime && (state.audio === 'playing')) {
         const r = host.reload(next);
@@ -296,6 +318,8 @@ export function createPieceSession({ client, kiosk = false, settings = DEFAULT_S
         propagator,
         trace,
         pixelRatio: pixelRatioFor({ installation, previewScale: cfg.visual.previewScale, devicePixelRatio: globalThis.devicePixelRatio ?? 1 }),
+        // The editor preview has a pixel budget; run and installation mode draw at full resolution (doc/visuals.md, Renderer).
+        maxPixels: installation ? Infinity : PREVIEW_MAX_PIXELS,
         reducedMotion: cfg.visual.reducedMotion,
         maxFlashesPerSecond: cfg.visual.maxFlashesPerSecond,
         observer: cfg.data.observer,

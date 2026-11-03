@@ -79,7 +79,7 @@ export function CodeEditor({ initialValue, onChange, buildProblems, onTypeProble
         let tsReady = false;
         let tsAutocomplete: any = null;
         try {
-          const [{ connectTypecheck }, cmts] = await Promise.all([import('@/src/dsl/typecheck-client.js'), import('@valtown/codemirror-ts')]);
+          const [{ connectTypecheck }, cmts] = await Promise.all([import('@/src/dsl/typecheck-client.js'), import('@/src/ui/ts-editor.js')]);
           worker = new Worker(new URL('../dsl/typecheck-worker.ts', import.meta.url), { type: 'module' });
           tsClient = connectTypecheck(worker as any);
           worker.onerror = () => { if (!disposed) setWorkerState('failed'); };

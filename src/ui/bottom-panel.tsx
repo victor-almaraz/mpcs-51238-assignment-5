@@ -4,7 +4,7 @@
 // The Console tab holds the console panels of doc/console.md, the replay controls and, with
 // `?dev=1`, the synthetic trigger panel (doc/sky-contract.md, Synthetic triggers).
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { GROUPS, groupKeys } from '@/src/sky/groups.js';
 import {
   ConsoleControls, EffectsPanel, EventsPanel, ModulationPanel, ProblemsPanel, SourcesPanel, TracePanel, VoicesPanel,
@@ -23,7 +23,7 @@ const TABS: { id: BottomTab; label: string }[] = [
 const SUBTABS = ['Sources', 'Events', 'Voices', 'Modulation', 'Effects'] as const;
 const btn = button('secondary', 'sm');
 
-export function BottomPanel({ tab, onTab, session, state, client, freshness, problems, ir, onGoto, timeZone, dev = false, replaySpeed = 100 }: {
+function BottomPanelView({ tab, onTab, session, state, client, freshness, problems, ir, onGoto, timeZone, dev = false, replaySpeed = 100 }: {
   tab: BottomTab; onTab: (t: BottomTab) => void; session: PieceSession | null; state: SessionState; client: any | null;
   /** The editor's freshness, so the page polls the sky store once. */
   freshness: Freshness[];
@@ -129,3 +129,6 @@ function SyntheticPanel({ session }: { session: PieceSession | null }) {
     </div>
   );
 }
+
+/** Memoized: the workbench re-renders on every keystroke, and the panel's lists are long. */
+export const BottomPanel = memo(BottomPanelView);

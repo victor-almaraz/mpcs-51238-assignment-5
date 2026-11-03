@@ -109,7 +109,8 @@ The IR entry of `layer.shader(glsl, props)` is `{ "id", "type": "shader", "group
 - One `<canvas>` with a WebGL2 context. Each layer is one instanced draw.
 - Frame loop: `requestAnimationFrame`. Layer properties that depend only on sky data are re-evaluated on sky events and pushed with `setLayerValues`; properties that use `audio.*` are re-evaluated each frame through `frameValues`.
 - Without WebGL2, the preview shows `Visuals unavailable (WebGL2)` and a static text summary with one line per followed group (object count and freshness), and the status bar shows `Visuals unavailable (WebGL2)`.
-- Run mode and installation mode render at the device pixel ratio, at most 2. The editor preview renders at that ratio times `visual.previewScale` (0.25–1, default 1), so the default preview is as sharp as the display (`pixelRatioFor`, `src/visual/motion.js`).
+- Run mode and installation mode render at the device pixel ratio, at most 2. The editor preview renders at that ratio times `visual.previewScale` (0.25–1, default 1), lowered further when needed so the canvas has at most 1.5 million device pixels (`pixelRatioFor`, `src/visual/motion.js`; `maxPixels` in the renderer). Every pass, the flash guard's included, costs time per pixel, and the guard's readback waits for the GPU on the main thread.
+- A canvas with no layout size (its pane hidden) draws no frames until it has one again.
 - Each frame draws the scene into an offscreen texture, then a composite pass applies `desaturate` and the flash guard's limit and writes the canvas. `desaturate` changes at most 1.0 per second, with or without reduced motion.
 
 ### Interface
