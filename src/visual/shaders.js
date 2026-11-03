@@ -146,40 +146,45 @@ uniform float uPhase;
 uniform float uIntensity;
 uniform float uOpacity;
 out vec4 outColor;
-float band(float s, float d, float thick) {
-  float wave = sin(6.2831853 * (s * 3.0 + uPhase)) * 0.35 + sin(6.2831853 * (s * 7.0 - uPhase * 1.7)) * 0.15;
-  float x = d / thick - wave;
-  return exp(-x * x * 2.0) * (0.9 + 0.1 * sin(6.2831853 * (s * 23.0 + uPhase * 0.5)));
+const float TAU = 6.2831853;
+// One curtain (doc/visuals.md, Property meanings). s: position along the band, 0–1; e0: distance
+// in pixels above the base line, toward the pole; height: fade length. Returns brightness and the
+// green-to-violet mix.
+vec2 curtain(float s, float e0, float height) {
+  float wave = (sin(TAU * (s * 3.0 + uPhase)) * 0.35 + sin(TAU * (s * 7.0 - uPhase * 1.7)) * 0.15) * height * 0.5;
+  float e = e0 - wave;
+  float edge = height * 0.05;
+  float glow = e < 0.0 ? exp(-(e * e) / (edge * edge)) : exp(-e / height);
+  float line = exp(-(e * e) / (edge * edge * 1.5));
+  float r = 0.5 + 0.5 * sin(TAU * (s * 83.0 + uPhase * 0.6)) * sin(TAU * (s * 31.0 - uPhase * 0.4) + 1.0);
+  float rays = 0.35 + 0.65 * smoothstep(0.25, 0.95, r);
+  float up = clamp(e / height, 0.0, 1.0);
+  return vec2(glow * (1.0 - up * (1.0 - rays)) + 0.5 * line, clamp(e / (height * 1.6), 0.0, 1.0));
 }
 void main() {
   vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y); // top-left origin
-  float b = 0.0;
-  float fringe = 0.0;
+  vec2 c = vec2(0.0);
   if (uMode == 0) {
-    float thick = uRes.y * 0.06;
-    float d = px.y - uRes.y * 0.18;
-    b = band(px.x / uRes.x, d, thick);
-    fringe = clamp(-d / thick * 0.5, 0.0, 1.0);
+    c = curtain(px.x / uRes.x, uRes.y * 0.22 - px.y, uRes.y * 0.08);
   } else if (uMode == 1) {
-    float yN = uRect.y + (0.5 - 65.0 / 180.0) * uRect.w;
-    float yS = uRect.y + (0.5 + 65.0 / 180.0) * uRect.w;
     float s = (px.x - uRect.x) / uRect.z;
-    float thick = uRect.w * 0.04;
-    if (s >= 0.0 && s <= 1.0) b = max(band(s, px.y - yN, thick), band(s + 0.37, px.y - yS, thick));
+    if (s >= 0.0 && s <= 1.0) {
+      float height = uRect.w * (10.0 / 180.0);
+      vec2 n = curtain(s, uRect.y + (0.5 - 60.0 / 180.0) * uRect.w - px.y, height);
+      vec2 so = curtain(s + 0.37, px.y - (uRect.y + (0.5 + 60.0 / 180.0) * uRect.w), height);
+      c = n.x >= so.x ? n : so;
+    }
   } else {
     vec2 rel = px - uRes * 0.5;
-    float rho = length(rel);
     float theta = atan(-rel.x, -rel.y);
     float lim = radians(70.0);
     if (abs(theta) < lim) {
-      float thick = uSkyR * 0.07;
-      float d = rho - uSkyR * 0.85;
-      b = band(theta / (2.0 * lim) + 0.5, d, thick) * smoothstep(lim, lim * 0.7, abs(theta));
-      fringe = clamp(d / thick * 0.5, 0.0, 1.0);
+      c = curtain(theta / (2.0 * lim) + 0.5, uSkyR * 0.9 - length(rel), uSkyR * 0.12);
+      c.x *= 1.0 - smoothstep(lim * 0.7, lim, abs(theta));
     }
   }
-  vec3 col = mix(vec3(0.24, 1.0, 0.6), vec3(0.54, 0.36, 1.0), fringe);
-  float a = clamp(b * uIntensity * uOpacity * 0.8, 0.0, 1.0);
+  vec3 col = mix(vec3(0.24, 1.0, 0.6), vec3(0.54, 0.36, 1.0), c.y);
+  float a = clamp(c.x * uIntensity * uOpacity * 0.85, 0.0, 1.0);
   outColor = vec4(col * a, a);
 }`;
 

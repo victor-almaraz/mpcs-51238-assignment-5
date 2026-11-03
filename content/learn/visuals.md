@@ -23,7 +23,7 @@ A piece draws its picture with a **view** and **layers**. Layer properties accep
 | `layer.lines(group, props)` | Each object's orbit path or ground track |
 | `layer.glyph(group, props)` | A character per object, for example `+` |
 | `layer.field(props)` | A full-screen gradient |
-| `layer.aurora(props)` | A full-screen aurora band |
+| `layer.aurora(props)` | An aurora curtain with a bright lower edge and fine rays, across the whole view |
 
 ```ts piece
 const pad = additive({ volume: -6, attack: 1.5, release: 4 });

@@ -16,7 +16,7 @@ Draw the IR's layers each frame from sky data and audio signals, within the visu
 | `layer.lines(group, props)` | Ground track or orbit path per object |
 | `layer.glyph(group, props)` | One character per object |
 | `layer.field(props)` | Full-screen gradient or noise |
-| `layer.aurora(props)` | Full-screen aurora band |
+| `layer.aurora(props)` | Full-screen aurora curtain |
 | `layer.shader(glsl, props)` | Fragment shader; local-only |
 | `color(hex)` | Colour expression; `.mix(other, t)` blends toward `other` (a hex string or colour expression) by `t`, a number or expression clamped to 0–1 |
 | `audio.level(inst)` | RMS level of the instrument output, 0–1 |
@@ -76,7 +76,7 @@ Property meanings:
 - `span`: the path from `span / 2` minutes before to `span / 2` minutes after the current time, sampled once per minute. `orbital` draws the orbit path; `map` the ground track; `sky` the part above the horizon.
 - `fade`: with `fade` above 0, a glyph's opacity falls linearly from 1 to 0 over `fade` seconds after its object's last `enter` or `update` event. With 0 the glyph does not fade.
 - `field`: a vertical gradient from the colormap, from `colormap(value / 2)` at the bottom edge to `colormap(value)` at the top edge, with static low-frequency noise of ±0.03.
-- `aurora`: a wavy band at 65° geomagnetic-style latitude (both hemispheres in `map`, near the top of the canvas in `orbital`, near the northern horizon in `sky`). `intensity` scales its brightness; `drift` sets its horizontal drift speed, 0 to 0.05 cycles per second.
+- `aurora`: a curtain with a sharp, bright, wavy lower edge, a glow that fades over about 10° of latitude toward the pole, and fine vertical rays, green at the edge and violet above it. In `map` there is one curtain per hemisphere, with its lower edge near 60° latitude; in `orbital` the curtain rises from 22% below the top of the canvas; in `sky` it rises from near the northern horizon. `intensity` scales its brightness; `drift` sets how fast the edge and the rays drift along the band, 0 to 0.05 cycles per second. At full drift, the fastest term (the edge's second wave, 1.7 × the drift rate) changes a point of the picture about 0.085 times per second, far below the flash limit.
 
 | Colormap | Stops (0, 0.5, 1) |
 |---|---|
